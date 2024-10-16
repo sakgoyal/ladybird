@@ -8,9 +8,9 @@
 
 #include <AK/ByteBuffer.h>
 #include <AK/Error.h>
-#include <AK/HashMap.h>
+
 #include <AK/Noncopyable.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 
@@ -41,7 +41,7 @@ public:
     [[nodiscard]] size_t capacity() const;
     [[nodiscard]] size_t seekback_limit() const;
 
-    Optional<size_t> offset_of(StringView needle, Optional<size_t> from = {}, Optional<size_t> until = {}) const;
+    Optional<size_t> offset_of(std::string_view needle, Optional<size_t> from = {}, Optional<size_t> until = {}) const;
 
     void clear();
 

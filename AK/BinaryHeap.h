@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/Noncopyable.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 

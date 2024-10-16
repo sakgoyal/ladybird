@@ -9,7 +9,7 @@
 #include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
 #include <AK/Error.h>
-#include <AK/StringView.h>
+
 
 namespace AK {
 
@@ -24,7 +24,7 @@ constexpr u8 decode_hex_digit(char digit)
     return 255;
 }
 
-ErrorOr<ByteBuffer> decode_hex(StringView);
+ErrorOr<ByteBuffer> decode_hex(std::string_view);
 
 ByteString encode_hex(ReadonlyBytes);
 

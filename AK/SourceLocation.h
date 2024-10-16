@@ -8,15 +8,15 @@
 #pragma once
 
 #include <AK/Format.h>
-#include <AK/StringView.h>
+
 #include <AK/Types.h>
 
 namespace AK {
 
 class SourceLocation {
 public:
-    [[nodiscard]] constexpr StringView function_name() const { return { m_function, __builtin_strlen(m_function) }; }
-    [[nodiscard]] constexpr StringView filename() const { return { m_file, __builtin_strlen(m_file) }; }
+    [[nodiscard]] constexpr std::string_view function_name() const { return { m_function, __builtin_strlen(m_function) }; }
+    [[nodiscard]] constexpr std::string_view filename() const { return { m_file, __builtin_strlen(m_file) }; }
     [[nodiscard]] constexpr u32 line_number() const { return m_line; }
 
     [[nodiscard]] static constexpr SourceLocation current(char const* const file = __builtin_FILE(), u32 line = __builtin_LINE(), char const* const function = __builtin_FUNCTION())

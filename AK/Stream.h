@@ -7,12 +7,12 @@
 
 #pragma once
 
-#include <AK/Concepts.h>
+
 #include <AK/Error.h>
 #include <AK/Format.h>
 #include <AK/Forward.h>
-#include <AK/StringView.h>
-#include <AK/Traits.h>
+
+
 
 namespace AK {
 
@@ -52,7 +52,7 @@ public:
     template<Concepts::AnyString T>
     ErrorOr<void> write_until_depleted(T const& buffer)
     {
-        return write_until_depleted(StringView { buffer }.bytes());
+        return write_until_depleted(std::string_view { buffer }.bytes());
     }
 
     template<typename T>
@@ -116,7 +116,7 @@ protected:
     ErrorOr<ByteBuffer> read_until_eof_impl(size_t block_size, size_t expected_file_size = 0);
 
 private:
-    ErrorOr<void> write_formatted_impl(StringView, TypeErasedFormatParams&);
+    ErrorOr<void> write_formatted_impl(std::string_view, TypeErasedFormatParams&);
 };
 
 enum class SeekMode {

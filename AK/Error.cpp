@@ -8,7 +8,7 @@
 
 namespace AK {
 
-Error Error::from_string_view_or_print_error_and_return_errno(StringView string_literal, [[maybe_unused]] int code)
+Error Error::from_string_view_or_print_error_and_return_errno(std::string_view string_literal, [[maybe_unused]] int code)
 {
     return Error::from_string_view(string_literal);
 }

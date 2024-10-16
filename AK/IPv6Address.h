@@ -10,10 +10,10 @@
 #include <AK/Format.h>
 #include <AK/IPv4Address.h>
 #include <AK/Optional.h>
-#include <AK/String.h>
-#include <AK/StringBuilder.h>
-#include <AK/StringView.h>
-#include <AK/Vector.h>
+
+
+
+
 
 namespace AK {
 
@@ -97,7 +97,7 @@ public:
         return builder.to_string();
     }
 
-    static Optional<IPv6Address> from_string(StringView string)
+    static Optional<IPv6Address> from_string(std::string_view string)
     {
         if (string.is_null())
             return {};
@@ -253,10 +253,10 @@ struct Traits<IPv6Address> : public DefaultTraits<IPv6Address> {
 };
 
 template<>
-struct Formatter<IPv6Address> : Formatter<StringView> {
+struct Formatter<IPv6Address> : Formatter<std::string_view> {
     ErrorOr<void> format(FormatBuilder& builder, IPv6Address const& value)
     {
-        return Formatter<StringView>::format(builder, TRY(value.to_string()));
+        return Formatter<std::string_view>::format(builder, TRY(value.to_string()));
     }
 };
 

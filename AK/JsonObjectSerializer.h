@@ -35,14 +35,14 @@ public:
 
     JsonObjectSerializer(JsonObjectSerializer const&) = delete;
 
-    ErrorOr<void> add(StringView key, JsonValue const& value)
+    ErrorOr<void> add(std::string_view key, JsonValue const& value)
     {
         TRY(begin_item(key));
         value.serialize(m_builder);
         return {};
     }
 
-    ErrorOr<void> add(StringView key, StringView value)
+    ErrorOr<void> add(std::string_view key, std::string_view value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>) {
@@ -57,7 +57,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, ByteString const& value)
+    ErrorOr<void> add(std::string_view key, ByteString const& value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>) {
@@ -72,7 +72,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, char const* value)
+    ErrorOr<void> add(std::string_view key, char const* value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>) {
@@ -87,7 +87,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, bool value)
+    ErrorOr<void> add(std::string_view key, bool value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -97,7 +97,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, int value)
+    ErrorOr<void> add(std::string_view key, int value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -107,7 +107,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, unsigned value)
+    ErrorOr<void> add(std::string_view key, unsigned value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -117,7 +117,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, long value)
+    ErrorOr<void> add(std::string_view key, long value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -127,7 +127,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, long unsigned value)
+    ErrorOr<void> add(std::string_view key, long unsigned value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -137,7 +137,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, long long value)
+    ErrorOr<void> add(std::string_view key, long long value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -147,7 +147,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, long long unsigned value)
+    ErrorOr<void> add(std::string_view key, long long unsigned value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -157,7 +157,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, float value)
+    ErrorOr<void> add(std::string_view key, float value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -167,7 +167,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView key, double value)
+    ErrorOr<void> add(std::string_view key, double value)
     {
         TRY(begin_item(key));
         if constexpr (IsLegacyBuilder<Builder>)
@@ -177,13 +177,13 @@ public:
         return {};
     }
 
-    ErrorOr<JsonArraySerializer<Builder>> add_array(StringView key)
+    ErrorOr<JsonArraySerializer<Builder>> add_array(std::string_view key)
     {
         TRY(begin_item(key));
         return JsonArraySerializer<Builder>::try_create(m_builder);
     }
 
-    ErrorOr<JsonObjectSerializer<Builder>> add_object(StringView key)
+    ErrorOr<JsonObjectSerializer<Builder>> add_object(std::string_view key)
     {
         TRY(begin_item(key));
         return JsonObjectSerializer::try_create(m_builder);
@@ -206,7 +206,7 @@ private:
     {
     }
 
-    ErrorOr<void> begin_item(StringView key)
+    ErrorOr<void> begin_item(std::string_view key)
     {
         VERIFY(!m_finished);
         if (!m_empty) {

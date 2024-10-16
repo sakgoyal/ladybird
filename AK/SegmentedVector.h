@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/OwnPtr.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 
@@ -15,7 +15,7 @@ template<typename T, int segment_size = 512>
 class SegmentedVector {
 private:
     using VisibleType = RemoveReference<T>;
-    static constexpr bool contains_reference = IsLvalueReference<T>;
+    static constexpr bool contains_reference = std::is_lvalue_reference<T>;
 
 public:
     SegmentedVector() = default;

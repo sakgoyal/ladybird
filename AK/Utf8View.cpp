@@ -279,7 +279,7 @@ Optional<u32> Utf8CodePointIterator::peek(size_t offset) const
 
 ErrorOr<void> Formatter<Utf8View>::format(FormatBuilder& builder, Utf8View const& string)
 {
-    return Formatter<StringView>::format(builder, string.as_string());
+    return Formatter<std::string_view>::format(builder, string.as_string());
 }
 
 }

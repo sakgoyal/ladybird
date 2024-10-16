@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <AK/Array.h>
+
 #include <AK/BuiltinWrappers.h>
 #include <AK/FloatingPoint.h>
 #include <AK/StringFloatingPointConversions.h>

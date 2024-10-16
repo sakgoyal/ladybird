@@ -9,7 +9,6 @@
 #include <AK/ByteBuffer.h>
 #include <AK/Format.h>
 #include <AK/Forward.h>
-#include <AK/StringView.h>
 #include <stdarg.h>
 
 namespace AK {

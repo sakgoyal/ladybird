@@ -13,7 +13,7 @@ namespace AK {
 
 class JsonParser : private GenericLexer {
 public:
-    explicit JsonParser(StringView input)
+    explicit JsonParser(std::string_view input)
         : GenericLexer(input)
     {
     }

@@ -6,13 +6,13 @@
  */
 
 #include <AK/Hex.h>
-#include <AK/StringBuilder.h>
+
 #include <AK/Types.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 
-ErrorOr<ByteBuffer> decode_hex(StringView input)
+ErrorOr<ByteBuffer> decode_hex(std::string_view input)
 {
     if ((input.length() % 2) != 0)
         return Error::from_string_view_or_print_error_and_return_errno("Hex string was not an even length"sv, EINVAL);

@@ -10,18 +10,18 @@
 #include <AK/FloatingPointStringConversions.h>
 #include <AK/MemMem.h>
 #include <AK/Optional.h>
-#include <AK/String.h>
-#include <AK/StringBuilder.h>
+
+
 #include <AK/StringUtils.h>
-#include <AK/StringView.h>
-#include <AK/Vector.h>
+
+
 #include <string.h>
 
 namespace AK {
 
 namespace StringUtils {
 
-bool matches(StringView str, StringView mask, CaseSensitivity case_sensitivity, Vector<MaskSpan>* match_spans)
+bool matches(std::string_view str, std::string_view mask, CaseSensitivity case_sensitivity, Vector<MaskSpan>* match_spans)
 {
     auto record_span = [&match_spans](size_t start, size_t length) {
         if (match_spans)
@@ -87,7 +87,7 @@ bool matches(StringView str, StringView mask, CaseSensitivity case_sensitivity, 
 }
 
 template<typename T>
-Optional<T> convert_to_int(StringView str, TrimWhitespace trim_whitespace)
+Optional<T> convert_to_int(std::string_view str, TrimWhitespace trim_whitespace)
 {
     auto string = trim_whitespace == TrimWhitespace::Yes
         ? str.trim_whitespace()
@@ -121,14 +121,14 @@ Optional<T> convert_to_int(StringView str, TrimWhitespace trim_whitespace)
     return value;
 }
 
-template Optional<i8> convert_to_int(StringView str, TrimWhitespace);
-template Optional<i16> convert_to_int(StringView str, TrimWhitespace);
-template Optional<i32> convert_to_int(StringView str, TrimWhitespace);
-template Optional<long> convert_to_int(StringView str, TrimWhitespace);
-template Optional<long long> convert_to_int(StringView str, TrimWhitespace);
+template Optional<i8> convert_to_int(std::string_view str, TrimWhitespace);
+template Optional<i16> convert_to_int(std::string_view str, TrimWhitespace);
+template Optional<i32> convert_to_int(std::string_view str, TrimWhitespace);
+template Optional<long> convert_to_int(std::string_view str, TrimWhitespace);
+template Optional<long long> convert_to_int(std::string_view str, TrimWhitespace);
 
 template<typename T>
-Optional<T> convert_to_uint(StringView str, TrimWhitespace trim_whitespace)
+Optional<T> convert_to_uint(std::string_view str, TrimWhitespace trim_whitespace)
 {
     auto string = trim_whitespace == TrimWhitespace::Yes
         ? str.trim_whitespace()
@@ -152,14 +152,14 @@ Optional<T> convert_to_uint(StringView str, TrimWhitespace trim_whitespace)
     return value;
 }
 
-template Optional<u8> convert_to_uint(StringView str, TrimWhitespace);
-template Optional<u16> convert_to_uint(StringView str, TrimWhitespace);
-template Optional<u32> convert_to_uint(StringView str, TrimWhitespace);
-template Optional<unsigned long> convert_to_uint(StringView str, TrimWhitespace);
-template Optional<unsigned long long> convert_to_uint(StringView str, TrimWhitespace);
+template Optional<u8> convert_to_uint(std::string_view str, TrimWhitespace);
+template Optional<u16> convert_to_uint(std::string_view str, TrimWhitespace);
+template Optional<u32> convert_to_uint(std::string_view str, TrimWhitespace);
+template Optional<unsigned long> convert_to_uint(std::string_view str, TrimWhitespace);
+template Optional<unsigned long long> convert_to_uint(std::string_view str, TrimWhitespace);
 
 template<typename T>
-Optional<T> convert_to_uint_from_hex(StringView str, TrimWhitespace trim_whitespace)
+Optional<T> convert_to_uint_from_hex(std::string_view str, TrimWhitespace trim_whitespace)
 {
     auto string = trim_whitespace == TrimWhitespace::Yes
         ? str.trim_whitespace()
@@ -192,13 +192,13 @@ Optional<T> convert_to_uint_from_hex(StringView str, TrimWhitespace trim_whitesp
     return value;
 }
 
-template Optional<u8> convert_to_uint_from_hex(StringView str, TrimWhitespace);
-template Optional<u16> convert_to_uint_from_hex(StringView str, TrimWhitespace);
-template Optional<u32> convert_to_uint_from_hex(StringView str, TrimWhitespace);
-template Optional<u64> convert_to_uint_from_hex(StringView str, TrimWhitespace);
+template Optional<u8> convert_to_uint_from_hex(std::string_view str, TrimWhitespace);
+template Optional<u16> convert_to_uint_from_hex(std::string_view str, TrimWhitespace);
+template Optional<u32> convert_to_uint_from_hex(std::string_view str, TrimWhitespace);
+template Optional<u64> convert_to_uint_from_hex(std::string_view str, TrimWhitespace);
 
 template<typename T>
-Optional<T> convert_to_uint_from_octal(StringView str, TrimWhitespace trim_whitespace)
+Optional<T> convert_to_uint_from_octal(std::string_view str, TrimWhitespace trim_whitespace)
 {
     auto string = trim_whitespace == TrimWhitespace::Yes
         ? str.trim_whitespace()
@@ -227,13 +227,13 @@ Optional<T> convert_to_uint_from_octal(StringView str, TrimWhitespace trim_white
     return value;
 }
 
-template Optional<u8> convert_to_uint_from_octal(StringView str, TrimWhitespace);
-template Optional<u16> convert_to_uint_from_octal(StringView str, TrimWhitespace);
-template Optional<u32> convert_to_uint_from_octal(StringView str, TrimWhitespace);
-template Optional<u64> convert_to_uint_from_octal(StringView str, TrimWhitespace);
+template Optional<u8> convert_to_uint_from_octal(std::string_view str, TrimWhitespace);
+template Optional<u16> convert_to_uint_from_octal(std::string_view str, TrimWhitespace);
+template Optional<u32> convert_to_uint_from_octal(std::string_view str, TrimWhitespace);
+template Optional<u64> convert_to_uint_from_octal(std::string_view str, TrimWhitespace);
 
 template<typename T>
-Optional<T> convert_to_floating_point(StringView str, TrimWhitespace trim_whitespace)
+Optional<T> convert_to_floating_point(std::string_view str, TrimWhitespace trim_whitespace)
 {
     static_assert(IsSame<T, double> || IsSame<T, float>);
     auto string = trim_whitespace == TrimWhitespace::Yes
@@ -244,10 +244,10 @@ Optional<T> convert_to_floating_point(StringView str, TrimWhitespace trim_whites
     return parse_floating_point_completely<T>(start, start + string.length());
 }
 
-template Optional<double> convert_to_floating_point(StringView str, TrimWhitespace);
-template Optional<float> convert_to_floating_point(StringView str, TrimWhitespace);
+template Optional<double> convert_to_floating_point(std::string_view str, TrimWhitespace);
+template Optional<float> convert_to_floating_point(std::string_view str, TrimWhitespace);
 
-bool equals_ignoring_ascii_case(StringView a, StringView b)
+bool equals_ignoring_ascii_case(std::string_view a, std::string_view b)
 {
     if (a.length() != b.length())
         return false;
@@ -258,7 +258,7 @@ bool equals_ignoring_ascii_case(StringView a, StringView b)
     return true;
 }
 
-bool ends_with(StringView str, StringView end, CaseSensitivity case_sensitivity)
+bool ends_with(std::string_view str, std::string_view end, CaseSensitivity case_sensitivity)
 {
     if (end.is_empty())
         return true;
@@ -281,7 +281,7 @@ bool ends_with(StringView str, StringView end, CaseSensitivity case_sensitivity)
     return true;
 }
 
-bool starts_with(StringView str, StringView start, CaseSensitivity case_sensitivity)
+bool starts_with(std::string_view str, std::string_view start, CaseSensitivity case_sensitivity)
 {
     if (start.is_empty())
         return true;
@@ -306,7 +306,7 @@ bool starts_with(StringView str, StringView start, CaseSensitivity case_sensitiv
     return true;
 }
 
-bool contains(StringView str, StringView needle, CaseSensitivity case_sensitivity)
+bool contains(std::string_view str, std::string_view needle, CaseSensitivity case_sensitivity)
 {
     if (str.is_null() || needle.is_null() || str.is_empty() || needle.length() > str.length())
         return false;
@@ -334,12 +334,12 @@ bool contains(StringView str, StringView needle, CaseSensitivity case_sensitivit
     return false;
 }
 
-bool is_whitespace(StringView str)
+bool is_whitespace(std::string_view str)
 {
     return all_of(str, is_ascii_space);
 }
 
-StringView trim(StringView str, StringView characters, TrimMode mode)
+std::string_view trim(std::string_view str, std::string_view characters, TrimMode mode)
 {
     size_t substring_start = 0;
     size_t substring_length = str.length();
@@ -368,12 +368,12 @@ StringView trim(StringView str, StringView characters, TrimMode mode)
     return str.substring_view(substring_start, substring_length);
 }
 
-StringView trim_whitespace(StringView str, TrimMode mode)
+std::string_view trim_whitespace(std::string_view str, TrimMode mode)
 {
     return trim(str, " \n\t\v\f\r"sv, mode);
 }
 
-Optional<size_t> find(StringView haystack, char needle, size_t start)
+Optional<size_t> find(std::string_view haystack, char needle, size_t start)
 {
     if (start >= haystack.length())
         return {};
@@ -384,7 +384,7 @@ Optional<size_t> find(StringView haystack, char needle, size_t start)
     return {};
 }
 
-Optional<size_t> find(StringView haystack, StringView needle, size_t start)
+Optional<size_t> find(std::string_view haystack, std::string_view needle, size_t start)
 {
     if (start > haystack.length())
         return {};
@@ -394,7 +394,7 @@ Optional<size_t> find(StringView haystack, StringView needle, size_t start)
     return index.has_value() ? (*index + start) : index;
 }
 
-Optional<size_t> find_last(StringView haystack, char needle)
+Optional<size_t> find_last(std::string_view haystack, char needle)
 {
     for (size_t i = haystack.length(); i > 0; --i) {
         if (haystack[i - 1] == needle)
@@ -403,7 +403,7 @@ Optional<size_t> find_last(StringView haystack, char needle)
     return {};
 }
 
-Optional<size_t> find_last(StringView haystack, StringView needle)
+Optional<size_t> find_last(std::string_view haystack, std::string_view needle)
 {
     if (needle.length() > haystack.length())
         return {};
@@ -419,7 +419,7 @@ Optional<size_t> find_last(StringView haystack, StringView needle)
     return {};
 }
 
-Optional<size_t> find_last_not(StringView haystack, char needle)
+Optional<size_t> find_last_not(std::string_view haystack, char needle)
 {
     for (size_t i = haystack.length(); i > 0; --i) {
         if (haystack[i - 1] != needle)
@@ -428,7 +428,7 @@ Optional<size_t> find_last_not(StringView haystack, char needle)
     return {};
 }
 
-Vector<size_t> find_all(StringView haystack, StringView needle)
+Vector<size_t> find_all(std::string_view haystack, std::string_view needle)
 {
     Vector<size_t> positions;
     size_t current_position = 0;
@@ -444,7 +444,7 @@ Vector<size_t> find_all(StringView haystack, StringView needle)
     return positions;
 }
 
-Optional<size_t> find_any_of(StringView haystack, StringView needles, SearchDirection direction)
+Optional<size_t> find_any_of(std::string_view haystack, std::string_view needles, SearchDirection direction)
 {
     if (haystack.is_empty() || needles.is_empty())
         return {};
@@ -462,7 +462,7 @@ Optional<size_t> find_any_of(StringView haystack, StringView needles, SearchDire
     return {};
 }
 
-ByteString to_snakecase(StringView str)
+ByteString to_snakecase(std::string_view str)
 {
     auto should_insert_underscore = [&](auto i, auto current_char) {
         if (i == 0)
@@ -488,7 +488,7 @@ ByteString to_snakecase(StringView str)
     return builder.to_byte_string();
 }
 
-ByteString to_titlecase(StringView str)
+ByteString to_titlecase(std::string_view str)
 {
     StringBuilder builder;
     bool next_is_upper = true;
@@ -504,7 +504,7 @@ ByteString to_titlecase(StringView str)
     return builder.to_byte_string();
 }
 
-ByteString invert_case(StringView str)
+ByteString invert_case(std::string_view str)
 {
     StringBuilder builder(str.length());
 
@@ -521,14 +521,14 @@ ByteString invert_case(StringView str)
 // Finishes the replacing algorithm once it is known that ita least one
 // replacemnet is going to be done. Otherwise the caller may want to follow a
 // different route to construct its output.
-static StringBuilder replace_into_builder(StringView str, StringView needle, StringView replacement, ReplaceMode replace_mode, size_t first_replacement_position)
+static StringBuilder replace_into_builder(std::string_view str, std::string_view needle, std::string_view replacement, ReplaceMode replace_mode, size_t first_replacement_position)
 {
     StringBuilder replaced_string;
 
     replaced_string.append(str.substring_view(0, first_replacement_position));
     replaced_string.append(replacement);
 
-    StringView remaining = str.substring_view(first_replacement_position + needle.length());
+    std::string_view remaining = str.substring_view(first_replacement_position + needle.length());
 
     switch (replace_mode) {
     case ReplaceMode::All:
@@ -553,7 +553,7 @@ static StringBuilder replace_into_builder(StringView str, StringView needle, Str
     return replaced_string;
 }
 
-ByteString replace(StringView str, StringView needle, StringView replacement,
+ByteString replace(std::string_view str, std::string_view needle, std::string_view replacement,
     ReplaceMode replace_mode)
 {
     if (str.is_empty())
@@ -567,7 +567,7 @@ ByteString replace(StringView str, StringView needle, StringView replacement,
     return resulting_builder.to_byte_string();
 }
 
-ErrorOr<String> replace(String const& haystack, StringView needle, StringView replacement, ReplaceMode replace_mode)
+ErrorOr<String> replace(String const& haystack, std::string_view needle, std::string_view replacement, ReplaceMode replace_mode)
 {
     if (haystack.is_empty())
         return haystack;
@@ -583,7 +583,7 @@ ErrorOr<String> replace(String const& haystack, StringView needle, StringView re
 }
 
 // TODO: Benchmark against KMP (AK/MemMem.h) and switch over if it's faster for short strings too
-size_t count(StringView str, StringView needle)
+size_t count(std::string_view str, std::string_view needle)
 {
     if (needle.is_empty())
         return str.length();
@@ -596,7 +596,7 @@ size_t count(StringView str, StringView needle)
     return count;
 }
 
-size_t count(StringView str, char needle)
+size_t count(std::string_view str, char needle)
 {
     size_t count = 0;
     for (size_t i = 0; i < str.length(); ++i) {

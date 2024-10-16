@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/Assertions.h>
-#include <AK/Checked.h>
+
 #include <AK/Format.h>
 #include <AK/Types.h>
 
@@ -129,7 +129,7 @@ private:
 };
 
 template<>
-struct Formatter<Utf32View> : Formatter<StringView> {
+struct Formatter<Utf32View> : Formatter<std::string_view> {
     ErrorOr<void> format(FormatBuilder&, Utf32View const&);
 };
 

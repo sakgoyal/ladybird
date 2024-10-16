@@ -7,9 +7,9 @@
 #pragma once
 
 #include <AK/Atomic.h>
-#include <AK/StdLibExtras.h>
+
 #include <AK/Types.h>
-#include <AK/kmalloc.h>
+
 #include <sys/mman.h>
 
 namespace AK {

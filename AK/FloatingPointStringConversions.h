@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <AK/StringView.h>
-
 namespace AK {
 
 static constexpr char floating_point_decimal_separator = '.';
@@ -51,7 +49,7 @@ FloatingPointParseResults<T> parse_first_floating_point(char const* start, char 
 template<FloatingPoint T = double>
 FloatingPointParseResults<T> parse_first_floating_point_until_zero_character(char const* start);
 
-/// This function will return either a floating point, or an empty optional if the given StringView
+/// This function will return either a floating point, or an empty optional if the given std::string_view
 /// does not a floating point or contains more characters beyond the floating point. For the format
 /// check the comment on parse_first_floating_point.
 template<FloatingPoint T = double>

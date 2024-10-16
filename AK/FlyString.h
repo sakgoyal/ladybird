@@ -6,12 +6,17 @@
 
 #pragma once
 
+#include "AK/Noncopyable.h"
 #include <AK/Error.h>
 #include <AK/Format.h>
 #include <AK/Platform.h>
-#include <AK/String.h>
-#include <AK/Traits.h>
+#include <concepts>
+#include <type_traits>
 #include <AK/Types.h>
+
+// Concept to check if type T is in the list of allowed types
+template<typename T, typename... AllowedTypes>
+concept IsOneOf = (std::same_as<T, AllowedTypes> || ...);
 
 namespace AK {
 

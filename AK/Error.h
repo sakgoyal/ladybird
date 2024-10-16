@@ -6,11 +6,10 @@
 
 #pragma once
 
-#include <AK/StringView.h>
 #include <AK/Try.h>
-#include <AK/Variant.h>
 #include <errno.h>
 #include <string.h>
+#include <AK/FlyString.h>
 
 namespace AK {
 
@@ -37,7 +36,7 @@ public:
     }
     static Error from_string_view(StringView string_literal) { return Error(string_literal); }
 
-    template<OneOf<ByteString, DeprecatedFlyString, String, FlyString> T>
+    template<OneOf<ByteString, FlyString, String, FlyString> T>
     static Error from_string_view(T)
     {
         // `Error::from_string_view(ByteString::formatted(...))` is a somewhat common mistake, which leads to a UAF situation.
@@ -117,82 +116,6 @@ private:
 
     bool m_syscall { false };
 };
-
-template<typename T, typename E>
-class [[nodiscard]] ErrorOr {
-    template<typename U, typename F>
-    friend class ErrorOr;
-
-public:
-    using ResultType = T;
-    using ErrorType = E;
-
-    ErrorOr()
-    requires(IsSame<T, Empty>)
-        : m_value_or_error(Empty {})
-    {
-    }
-
-    ALWAYS_INLINE ErrorOr(ErrorOr&&) = default;
-    ALWAYS_INLINE ErrorOr& operator=(ErrorOr&&) = default;
-
-    ErrorOr(ErrorOr const&) = delete;
-    ErrorOr& operator=(ErrorOr const&) = delete;
-
-    template<typename U>
-    ALWAYS_INLINE ErrorOr(ErrorOr<U, ErrorType>&& value)
-    requires(IsConvertible<U, T>)
-        : m_value_or_error(value.m_value_or_error.visit([](U& v) { return Variant<T, ErrorType>(move(v)); }, [](ErrorType& error) { return Variant<T, ErrorType>(move(error)); }))
-    {
-    }
-
-    template<typename U>
-    ALWAYS_INLINE ErrorOr(U&& value)
-    requires(
-        requires { T(declval<U>()); } || requires { ErrorType(declval<RemoveCVReference<U>>()); })
-        : m_value_or_error(forward<U>(value))
-    {
-    }
-
-#ifdef AK_OS_SERENITY
-    ErrorOr(ErrnoCode code)
-        : m_value_or_error(Error::from_errno(code))
-    {
-    }
-#endif
-
-    T& value()
-    {
-        return m_value_or_error.template get<T>();
-    }
-    T const& value() const { return m_value_or_error.template get<T>(); }
-
-    ErrorType& error() { return m_value_or_error.template get<ErrorType>(); }
-    ErrorType const& error() const { return m_value_or_error.template get<ErrorType>(); }
-
-    bool is_error() const { return m_value_or_error.template has<ErrorType>(); }
-
-    T release_value() { return move(value()); }
-    ErrorType release_error() { return move(error()); }
-
-    T release_value_but_fixme_should_propagate_errors()
-    {
-        VERIFY(!is_error());
-        return release_value();
-    }
-
-private:
-    Variant<T, ErrorType> m_value_or_error;
-};
-
-template<typename ErrorType>
-class [[nodiscard]] ErrorOr<void, ErrorType> : public ErrorOr<Empty, ErrorType> {
-public:
-    using ResultType = void;
-    using ErrorOr<Empty, ErrorType>::ErrorOr;
-};
-
-}
 
 #if USING_AK_GLOBALLY
 using AK::Error;

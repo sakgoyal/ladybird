@@ -9,12 +9,12 @@
 #include <AK/CharacterTypes.h>
 #include <AK/GenericLexer.h>
 #include <AK/ScopeGuard.h>
-#include <AK/StringBuilder.h>
+
 #include <AK/Utf16View.h>
 
 namespace AK {
 // Consume a number of characters
-StringView GenericLexer::consume(size_t count)
+std::string_view GenericLexer::consume(size_t count)
 {
     if (count == 0)
         return {};
@@ -27,7 +27,7 @@ StringView GenericLexer::consume(size_t count)
 }
 
 // Consume the rest of the input
-StringView GenericLexer::consume_all()
+std::string_view GenericLexer::consume_all()
 {
     if (is_eof())
         return {};
@@ -38,7 +38,7 @@ StringView GenericLexer::consume_all()
 }
 
 // Consume until a new line is found
-StringView GenericLexer::consume_line()
+std::string_view GenericLexer::consume_line()
 {
     size_t start = m_index;
     while (!is_eof() && peek() != '\r' && peek() != '\n')
@@ -54,7 +54,7 @@ StringView GenericLexer::consume_line()
 }
 
 // Consume and return characters until `stop` is peek'd
-StringView GenericLexer::consume_until(char stop)
+std::string_view GenericLexer::consume_until(char stop)
 {
     size_t start = m_index;
     while (!is_eof() && peek() != stop)
@@ -67,7 +67,7 @@ StringView GenericLexer::consume_until(char stop)
 }
 
 // Consume and return characters until the string `stop` is found
-StringView GenericLexer::consume_until(char const* stop)
+std::string_view GenericLexer::consume_until(char const* stop)
 {
     size_t start = m_index;
     while (!is_eof() && !next_is(stop))
@@ -80,7 +80,7 @@ StringView GenericLexer::consume_until(char const* stop)
 }
 
 // Consume and return characters until the string `stop` is found
-StringView GenericLexer::consume_until(StringView stop)
+std::string_view GenericLexer::consume_until(std::string_view stop)
 {
     size_t start = m_index;
     while (!is_eof() && !next_is(stop))
@@ -94,11 +94,11 @@ StringView GenericLexer::consume_until(StringView stop)
 
 /*
  * Consume a string surrounded by single or double quotes. The returned
- * StringView does not include the quotes. An escape character can be provided
+ * std::string_view does not include the quotes. An escape character can be provided
  * to capture the enclosing quotes. Please note that the escape character will
- * still be in the resulting StringView
+ * still be in the resulting std::string_view
  */
-StringView GenericLexer::consume_quoted_string(char escape_char)
+std::string_view GenericLexer::consume_quoted_string(char escape_char)
 {
     if (!next_is(is_quote))
         return {};
@@ -126,7 +126,7 @@ StringView GenericLexer::consume_quoted_string(char escape_char)
     return m_input.substring_view(start, length);
 }
 
-template<Integral T>
+template<std::integral T>
 ErrorOr<T> GenericLexer::consume_decimal_integer()
 {
     using UnsignedT = MakeUnsigned<T>;
@@ -141,7 +141,7 @@ ErrorOr<T> GenericLexer::consume_decimal_integer()
         if (consume() == '-')
             has_minus_sign = true;
 
-    StringView number_view = consume_while(is_ascii_digit);
+    std::string_view number_view = consume_while(is_ascii_digit);
     if (number_view.is_empty())
         return Error::from_errno(EINVAL);
 

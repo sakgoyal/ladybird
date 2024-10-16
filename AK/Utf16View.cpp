@@ -5,9 +5,9 @@
  */
 
 #include <AK/CharacterTypes.h>
-#include <AK/Concepts.h>
-#include <AK/StringBuilder.h>
-#include <AK/StringView.h>
+
+
+
 #include <AK/Utf16View.h>
 #include <AK/Utf32View.h>
 #include <AK/Utf8View.h>
@@ -48,7 +48,7 @@ static ErrorOr<Utf16Data> to_utf16_slow(UtfViewType const& view, Endianness endi
     return utf16_data;
 }
 
-ErrorOr<Utf16Data> utf8_to_utf16(StringView utf8_view, Endianness endianness)
+ErrorOr<Utf16Data> utf8_to_utf16(std::string_view utf8_view, Endianness endianness)
 {
     return utf8_to_utf16(Utf8View { utf8_view }, endianness);
 }
@@ -129,7 +129,7 @@ ErrorOr<void> code_point_to_utf16(Utf16Data& string, u32 code_point, Endianness 
     return {};
 }
 
-size_t utf16_code_unit_length_from_utf8(StringView string)
+size_t utf16_code_unit_length_from_utf8(std::string_view string)
 {
     return simdutf::utf16_length_from_utf8(string.characters_without_null_termination(), string.length());
 }

@@ -9,13 +9,13 @@
 
 #include <AK/ByteString.h>
 #include <AK/SourceLocation.h>
-#include <AK/StringBuilder.h>
+
 
 namespace AK {
 template<bool = true>
 class ScopeLogger {
 public:
-    ScopeLogger(StringView extra, SourceLocation const& location = SourceLocation::current())
+    ScopeLogger(std::string_view extra, SourceLocation const& location = SourceLocation::current())
         : m_location(location)
         , m_extra(extra)
     {

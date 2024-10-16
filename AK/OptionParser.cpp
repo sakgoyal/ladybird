@@ -16,7 +16,7 @@ void OptionParser::reset_state()
     m_stop_on_first_non_option = false;
 }
 
-OptionParser::GetOptResult OptionParser::getopt(Span<StringView> args, StringView short_options, Span<Option const> long_options, Optional<int&> out_long_option_index)
+OptionParser::GetOptResult OptionParser::getopt(Span<std::string_view> args, std::string_view short_options, Span<Option const> long_options, Optional<int&> out_long_option_index)
 {
     m_args = args;
     m_short_options = short_options;
@@ -78,7 +78,7 @@ OptionParser::GetOptResult OptionParser::getopt(Span<StringView> args, StringVie
 
 Optional<OptionParser::ArgumentRequirement> OptionParser::lookup_short_option_requirement(char option) const
 {
-    Vector<StringView> parts = m_short_options.split_view(option, SplitBehavior::KeepEmpty);
+    Vector<std::string_view> parts = m_short_options.split_view(option, SplitBehavior::KeepEmpty);
 
     VERIFY(parts.size() <= 2);
     if (parts.size() < 2) {
@@ -101,7 +101,7 @@ Optional<OptionParser::ArgumentRequirement> OptionParser::lookup_short_option_re
 
 int OptionParser::handle_short_option()
 {
-    StringView arg = current_arg();
+    std::string_view arg = current_arg();
     VERIFY(arg.starts_with('-'));
 
     if (m_index_into_multioption_argument == 0) {
@@ -137,7 +137,7 @@ int OptionParser::handle_short_option()
     } else {
         m_index_into_multioption_argument = 0;
         if (argument_requirement != ArgumentRequirement::HasRequiredArgument) {
-            m_optarg_value = StringView();
+            m_optarg_value = std::string_view();
             m_consumed_args = 1;
         } else if (m_arg_index + 1 < m_args.size()) {
             // Treat the next argument as a value, the "-o value" syntax.
@@ -152,7 +152,7 @@ int OptionParser::handle_short_option()
     return option;
 }
 
-Optional<OptionParser::Option const&> OptionParser::lookup_long_option(StringView arg) const
+Optional<OptionParser::Option const&> OptionParser::lookup_long_option(std::string_view arg) const
 {
     for (size_t index = 0; index < m_long_options.size(); index++) {
         auto& option = m_long_options[index];
@@ -248,8 +248,8 @@ void OptionParser::shift_argv()
     // ->
     // -a b x c d
 
-    StringView buffer[2]; // We consume at most 2 arguments in one call.
-    Span<StringView> buffer_bytes { buffer, array_size(buffer) };
+    std::string_view buffer[2]; // We consume at most 2 arguments in one call.
+    Span<std::string_view> buffer_bytes { buffer, array_size(buffer) };
     m_args.slice(m_arg_index, m_consumed_args).copy_to(buffer_bytes);
     m_args.slice(m_arg_index - m_skipped_arguments, m_skipped_arguments).copy_to(m_args.slice(m_arg_index + m_consumed_args - m_skipped_arguments));
     buffer_bytes.slice(0, m_consumed_args).copy_to(m_args.slice(m_arg_index - m_skipped_arguments, m_consumed_args));
@@ -264,7 +264,7 @@ void OptionParser::shift_argv()
 bool OptionParser::find_next_option()
 {
     for (m_skipped_arguments = 0; m_arg_index < m_args.size(); m_skipped_arguments++, m_arg_index++) {
-        StringView arg = current_arg();
+        std::string_view arg = current_arg();
         // Anything that doesn't start with a "-" is not an option.
         // As a special case, a single "-" is not an option either.
         // (It's typically used by programs to refer to stdin).

@@ -11,9 +11,9 @@
 #include <AK/Format.h>
 #include <AK/Optional.h>
 #include <AK/SipHash.h>
-#include <AK/String.h>
-#include <AK/StringView.h>
-#include <AK/Vector.h>
+
+
+
 
 namespace AK {
 
@@ -78,7 +78,7 @@ public:
             octet(SubnetClass::D));
     }
 
-    static Optional<IPv4Address> from_string(StringView string)
+    static Optional<IPv4Address> from_string(std::string_view string)
     {
         if (string.is_null())
             return {};
@@ -150,10 +150,10 @@ struct Traits<IPv4Address> : public DefaultTraits<IPv4Address> {
 };
 
 template<>
-struct Formatter<IPv4Address> : Formatter<StringView> {
+struct Formatter<IPv4Address> : Formatter<std::string_view> {
     ErrorOr<void> format(FormatBuilder& builder, IPv4Address value)
     {
-        return Formatter<StringView>::format(builder, value.to_byte_string());
+        return Formatter<std::string_view>::format(builder, value.to_byte_string());
     }
 };
 

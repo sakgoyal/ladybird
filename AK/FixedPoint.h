@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <AK/Concepts.h>
+
 #include <AK/Format.h>
 #include <AK/IntegralMath.h>
 #include <AK/Math.h>
@@ -37,7 +37,7 @@ class FixedPoint {
 
 public:
     constexpr FixedPoint() = default;
-    template<Integral I>
+    template<std::integral I>
     constexpr FixedPoint(I value)
         : m_value(static_cast<Underlying>(value) << precision)
     {
@@ -61,7 +61,7 @@ public:
         return (F)m_value * pow<F>(0.5, precision);
     }
 
-    template<Integral I>
+    template<std::integral I>
     explicit constexpr operator I() const
     {
         return trunc().raw() >> precision;
@@ -269,32 +269,32 @@ public:
 #endif
     }
 
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator+(I other) const
     {
         return create_raw(m_value + (static_cast<Underlying>(other) << precision));
     }
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator-(I other) const
     {
         return create_raw(m_value - (static_cast<Underlying>(other) << precision));
     }
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator*(I other) const
     {
         return create_raw(m_value * other);
     }
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator/(I other) const
     {
         return create_raw(m_value / other);
     }
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator>>(I other) const
     {
         return create_raw(m_value >> other);
     }
-    template<Integral I>
+    template<std::integral I>
     constexpr This operator<<(I other) const
     {
         return create_raw(m_value << other);
@@ -321,37 +321,37 @@ public:
         return *this;
     }
 
-    template<Integral I>
+    template<std::integral I>
     This& operator+=(I other)
     {
         m_value += static_cast<Underlying>(other) << precision;
         return *this;
     }
-    template<Integral I>
+    template<std::integral I>
     This& operator-=(I other)
     {
         m_value -= static_cast<Underlying>(other) << precision;
         return *this;
     }
-    template<Integral I>
+    template<std::integral I>
     This& operator*=(I other)
     {
         m_value *= other;
         return *this;
     }
-    template<Integral I>
+    template<std::integral I>
     This& operator/=(I other)
     {
         m_value /= other;
         return *this;
     }
-    template<Integral I>
+    template<std::integral I>
     This& operator>>=(I other)
     {
         m_value >>= other;
         return *this;
     }
-    template<Integral I>
+    template<std::integral I>
     This& operator<<=(I other)
     {
         m_value <<= other;
@@ -366,32 +366,32 @@ public:
     bool operator<=(This const& other) const { return raw() <= other.raw(); }
 
     // FIXME: There are probably better ways to do these
-    template<Integral I>
+    template<std::integral I>
     bool operator==(I other) const
     {
         return m_value >> precision == other && !(m_value & radix_mask);
     }
-    template<Integral I>
+    template<std::integral I>
     bool operator!=(I other) const
     {
         return (m_value >> precision) != other || m_value & radix_mask;
     }
-    template<Integral I>
+    template<std::integral I>
     bool operator>(I other) const
     {
         return !(*this <= other);
     }
-    template<Integral I>
+    template<std::integral I>
     bool operator>=(I other) const
     {
         return !(*this < other);
     }
-    template<Integral I>
+    template<std::integral I>
     bool operator<(I other) const
     {
         return (m_value >> precision) < other || m_value < (static_cast<Underlying>(other) << precision);
     }
-    template<Integral I>
+    template<std::integral I>
     bool operator<=(I other) const
     {
         return *this < other || *this == other;

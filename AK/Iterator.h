@@ -109,7 +109,7 @@ private:
     {
         using RawContainerType = RemoveCV<Container>;
 
-        if constexpr (IsSame<StringView, RawContainerType> || IsSame<ByteString, RawContainerType>)
+        if constexpr (IsSame<std::string_view, RawContainerType> || IsSame<ByteString, RawContainerType>)
             return { container, container.length() };
         else
             return { container, container.size() };

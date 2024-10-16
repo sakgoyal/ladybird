@@ -11,7 +11,7 @@
 #include <AK/Forward.h>
 #include <AK/Optional.h>
 #include <AK/OwnPtr.h>
-#include <AK/StringBuilder.h>
+
 
 namespace AK {
 
@@ -26,7 +26,7 @@ public:
         Object,
     };
 
-    static ErrorOr<JsonValue> from_string(StringView);
+    static ErrorOr<JsonValue> from_string(std::string_view);
 
     JsonValue();
     ~JsonValue();
@@ -47,7 +47,7 @@ public:
     JsonValue(double);
     JsonValue(char const*);
     JsonValue(ByteString const&);
-    JsonValue(StringView);
+    JsonValue(std::string_view);
 
     template<typename T>
     requires(SameAs<RemoveCVReference<T>, bool>)
@@ -187,19 +187,19 @@ public:
             [](auto const&) { return Optional<T> {}; });
     }
 
-    template<Integral T>
+    template<std::integral T>
     bool is_integer() const
     {
         return get_integer<T>().has_value();
     }
 
-    template<Integral T>
+    template<std::integral T>
     T as_integer() const
     {
         return get_integer<T>().value();
     }
 
-    template<Integral T>
+    template<std::integral T>
     Optional<T> get_integer() const
     {
         return m_value.visit(
@@ -235,10 +235,10 @@ private:
 };
 
 template<>
-struct Formatter<JsonValue> : Formatter<StringView> {
+struct Formatter<JsonValue> : Formatter<std::string_view> {
     ErrorOr<void> format(FormatBuilder& builder, JsonValue const& value)
     {
-        return Formatter<StringView>::format(builder, value.serialized<StringBuilder>());
+        return Formatter<std::string_view>::format(builder, value.serialized<StringBuilder>());
     }
 };
 

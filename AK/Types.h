@@ -7,15 +7,25 @@
 #pragma once
 
 #include <AK/Platform.h>
+#include <cstdint>
+#include <cstdio>
+#include <string>
+#include <vector>
+#include <optional>
 
-using u64 = __UINT64_TYPE__;
-using u32 = __UINT32_TYPE__;
-using u16 = __UINT16_TYPE__;
-using u8 = __UINT8_TYPE__;
-using i64 = __INT64_TYPE__;
-using i32 = __INT32_TYPE__;
-using i16 = __INT16_TYPE__;
-using i8 = __INT8_TYPE__;
+using u64 = uint64_t;
+using u32 = uint32_t;
+using u16 = uint16_t;
+using u8 = uint8_t;
+using i64 = int64_t;
+using i32 = int32_t;
+using i16 = int16_t;
+using i8 = int8_t;
+
+template<typename T>
+using Vector = std::vector<T>;
+
+using StringView = std::string_view;
 
 using f32 = float;
 static_assert(__FLT_MANT_DIG__ == 24 && __FLT_MAX_EXP__ == 128);

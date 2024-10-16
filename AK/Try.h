@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/Diagnostics.h>
-#include <AK/StdLibExtras.h>
+#include <type_traits>
 
 // NOTE: This macro works with any result type that has the expected APIs.
 //       It's designed with AK::Result and AK::Error in mind.
@@ -26,7 +26,7 @@
         /* Ignore -Wshadow to allow nesting the macro. */                                            \
         AK_IGNORE_DIAGNOSTIC("-Wshadow",                                                             \
             auto&& _temporary_result = (expression));                                                \
-        static_assert(!::AK::Detail::IsLvalueReference<decltype(_temporary_result.release_value())>, \
+        static_assert(!std::is_lvalue_reference<decltype(_temporary_result.release_value())>, \
             "Do not return a reference from a fallible expression");                                 \
         if (_temporary_result.is_error()) [[unlikely]]                                               \
             return _temporary_result.release_error();                                                \
@@ -38,7 +38,7 @@
         /* Ignore -Wshadow to allow nesting the macro. */                                            \
         AK_IGNORE_DIAGNOSTIC("-Wshadow",                                                             \
             auto&& _temporary_result = (expression));                                                \
-        static_assert(!::AK::Detail::IsLvalueReference<decltype(_temporary_result.release_value())>, \
+        static_assert(!std::is_lvalue_reference<decltype(_temporary_result.release_value())>, \
             "Do not return a reference from a fallible expression");                                 \
         VERIFY(!_temporary_result.is_error());                                                       \
         _temporary_result.release_value();                                                           \

@@ -63,7 +63,7 @@ bool CircularBuffer::is_wrapping_around() const
     return capacity() <= m_reading_head + m_used_space;
 }
 
-Optional<size_t> CircularBuffer::offset_of(StringView needle, Optional<size_t> from, Optional<size_t> until) const
+Optional<size_t> CircularBuffer::offset_of(std::string_view needle, Optional<size_t> from, Optional<size_t> until) const
 {
     auto const read_from = from.value_or(0);
     auto const read_until = until.value_or(m_used_space);
@@ -346,7 +346,7 @@ Optional<SearchableCircularBuffer::Match> SearchableCircularBuffer::find_copy_in
 
     // Try an efficient hash-based search first.
     if (needle.size() >= HASH_CHUNK_SIZE) {
-        auto needle_hash = StringView { needle }.hash();
+        auto needle_hash = std::string_view { needle }.hash();
 
         auto maybe_starting_offset = m_hash_location_map.get(needle_hash);
 
@@ -361,7 +361,7 @@ Optional<SearchableCircularBuffer::Match> SearchableCircularBuffer::find_copy_in
                 Array<u8, HASH_CHUNK_SIZE> hash_chunk_at_offset;
                 auto hash_chunk_at_offset_span = MUST(read_with_seekback(hash_chunk_at_offset, current_search_offset + used_space()));
                 VERIFY(hash_chunk_at_offset_span.size() == HASH_CHUNK_SIZE);
-                auto found_chunk_hash = StringView { hash_chunk_at_offset }.hash();
+                auto found_chunk_hash = std::string_view { hash_chunk_at_offset }.hash();
                 if (needle_hash != found_chunk_hash) {
                     if (!previous_buffer_offset.has_value())
                         m_hash_location_map.remove(needle_hash);
@@ -516,7 +516,7 @@ ErrorOr<void> SearchableCircularBuffer::insert_location_hash(ReadonlyBytes value
 {
     VERIFY(value.size() == HASH_CHUNK_SIZE);
 
-    auto value_hash = StringView { value }.hash();
+    auto value_hash = std::string_view { value }.hash();
 
     // Discard any old entries for this offset first. This should eliminate accidental loops by breaking the chain.
     // The actual cleanup is done on access, since we can only remove invalid references when actually walking the chain.

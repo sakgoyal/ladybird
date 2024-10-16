@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/BitCast.h>
-#include <AK/Concepts.h>
+
 #include <AK/SIMD.h>
 
 // Functions returning vectors or accepting vector arguments have different calling conventions

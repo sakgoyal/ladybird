@@ -9,7 +9,7 @@
 
 #include <AK/ByteString.h>
 #include <AK/Format.h>
-#include <AK/StringView.h>
+
 #include <AK/Types.h>
 
 namespace AK {
@@ -63,7 +63,7 @@ public:
 
     Utf8View() = default;
 
-    explicit constexpr Utf8View(StringView string)
+    explicit constexpr Utf8View(std::string_view string)
         : m_string(string)
     {
     }
@@ -82,7 +82,7 @@ public:
 
     ~Utf8View() = default;
 
-    StringView as_string() const { return m_string; }
+    std::string_view as_string() const { return m_string; }
 
     Utf8CodePointIterator begin() const { return { begin_ptr(), m_string.length() }; }
     Utf8CodePointIterator end() const { return { end_ptr(), 0 }; }
@@ -170,7 +170,7 @@ private:
         return { .is_valid = false };
     }
 
-    StringView m_string;
+    std::string_view m_string;
     mutable size_t m_length { 0 };
     mutable bool m_have_length { false };
 };
@@ -210,7 +210,7 @@ private:
 };
 
 template<>
-struct Formatter<Utf8View> : Formatter<StringView> {
+struct Formatter<Utf8View> : Formatter<std::string_view> {
     ErrorOr<void> format(FormatBuilder&, Utf8View const&);
 };
 

@@ -6,17 +6,14 @@
 
 #include <AK/ByteBuffer.h>
 #include <AK/ByteString.h>
-#include <AK/DeprecatedFlyString.h>
+#include <AK/FlyString.h>
 #include <AK/Format.h>
-#include <AK/Function.h>
-#include <AK/StdLibExtras.h>
-#include <AK/StringView.h>
 #include <AK/Utf8View.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 
-bool ByteString::operator==(DeprecatedFlyString const& fly_string) const
+bool ByteString::operator==(FlyString const& fly_string) const
 {
     return m_impl == fly_string.impl() || view() == fly_string.view();
 }
@@ -26,7 +23,7 @@ bool ByteString::operator==(ByteString const& other) const
     return m_impl == other.impl() || view() == other.view();
 }
 
-bool ByteString::operator==(StringView other) const
+bool ByteString::operator==(std::string_view other) const
 {
     if (other.is_null())
         return is_empty();
@@ -81,14 +78,14 @@ ByteString ByteString::substring(size_t start) const
     return { characters() + start, length() - start };
 }
 
-StringView ByteString::substring_view(size_t start, size_t length) const&
+std::string_view ByteString::substring_view(size_t start, size_t length) const&
 {
     VERIFY(!Checked<size_t>::addition_would_overflow(start, length));
     VERIFY(start + length <= m_impl->length());
     return { characters() + start, length };
 }
 
-StringView ByteString::substring_view(size_t start) const&
+std::string_view ByteString::substring_view(size_t start) const&
 {
     VERIFY(start <= length());
     return { characters() + start, length() - start };
@@ -123,12 +120,12 @@ Vector<ByteString> ByteString::split_limit(char separator, size_t limit, SplitBe
     return v;
 }
 
-Vector<StringView> ByteString::split_view(Function<bool(char)> separator, SplitBehavior split_behavior) const&
+Vector<std::string_view> ByteString::split_view(Function<bool(char)> separator, SplitBehavior split_behavior) const&
 {
     if (is_empty())
         return {};
 
-    Vector<StringView> v;
+    Vector<std::string_view> v;
     size_t substart = 0;
     bool keep_empty = has_flag(split_behavior, SplitBehavior::KeepEmpty);
     bool keep_separator = has_flag(split_behavior, SplitBehavior::KeepTrailingSeparator);
@@ -147,7 +144,7 @@ Vector<StringView> ByteString::split_view(Function<bool(char)> separator, SplitB
     return v;
 }
 
-Vector<StringView> ByteString::split_view(char const separator, SplitBehavior split_behavior) const&
+Vector<std::string_view> ByteString::split_view(char const separator, SplitBehavior split_behavior) const&
 {
     return split_view([separator](char ch) { return ch == separator; }, split_behavior);
 }
@@ -158,7 +155,7 @@ ByteBuffer ByteString::to_byte_buffer() const
     return ByteBuffer::copy(bytes()).release_value_but_fixme_should_propagate_errors();
 }
 
-bool ByteString::starts_with(StringView str, CaseSensitivity case_sensitivity) const
+bool ByteString::starts_with(std::string_view str, CaseSensitivity case_sensitivity) const
 {
     return StringUtils::starts_with(*this, str, case_sensitivity);
 }
@@ -170,7 +167,7 @@ bool ByteString::starts_with(char ch) const
     return characters()[0] == ch;
 }
 
-bool ByteString::ends_with(StringView str, CaseSensitivity case_sensitivity) const
+bool ByteString::ends_with(std::string_view str, CaseSensitivity case_sensitivity) const
 {
     return StringUtils::ends_with(*this, str, case_sensitivity);
 }
@@ -192,7 +189,7 @@ ByteString ByteString::repeated(char ch, size_t count)
     return *impl;
 }
 
-ByteString ByteString::repeated(StringView string, size_t count)
+ByteString ByteString::repeated(std::string_view string, size_t count)
 {
     if (!count || string.is_empty())
         return empty();
@@ -203,7 +200,7 @@ ByteString ByteString::repeated(StringView string, size_t count)
     return *impl;
 }
 
-ByteString ByteString::bijective_base_from(size_t value, unsigned base, StringView map)
+ByteString ByteString::bijective_base_from(size_t value, unsigned base, std::string_view map)
 {
     value++;
     if (map.is_null())
@@ -285,27 +282,27 @@ ByteString ByteString::roman_number_from(size_t value)
     return builder.to_byte_string();
 }
 
-bool ByteString::matches(StringView mask, Vector<MaskSpan>& mask_spans, CaseSensitivity case_sensitivity) const
+bool ByteString::matches(std::string_view mask, Vector<MaskSpan>& mask_spans, CaseSensitivity case_sensitivity) const
 {
     return StringUtils::matches(*this, mask, case_sensitivity, &mask_spans);
 }
 
-bool ByteString::matches(StringView mask, CaseSensitivity case_sensitivity) const
+bool ByteString::matches(std::string_view mask, CaseSensitivity case_sensitivity) const
 {
     return StringUtils::matches(*this, mask, case_sensitivity);
 }
 
-bool ByteString::contains(StringView needle, CaseSensitivity case_sensitivity) const
+bool ByteString::contains(std::string_view needle, CaseSensitivity case_sensitivity) const
 {
     return StringUtils::contains(*this, needle, case_sensitivity);
 }
 
 bool ByteString::contains(char needle, CaseSensitivity case_sensitivity) const
 {
-    return StringUtils::contains(*this, StringView(&needle, 1), case_sensitivity);
+    return StringUtils::contains(*this, std::string_view(&needle, 1), case_sensitivity);
 }
 
-bool ByteString::equals_ignoring_ascii_case(StringView other) const
+bool ByteString::equals_ignoring_ascii_case(std::string_view other) const
 {
     return StringUtils::equals_ignoring_ascii_case(view(), other);
 }
@@ -319,7 +316,7 @@ ByteString ByteString::reverse() const
     return reversed_string.to_byte_string();
 }
 
-ByteString escape_html_entities(StringView html)
+ByteString escape_html_entities(std::string_view html)
 {
     StringBuilder builder;
     for (size_t i = 0; i < html.length(); ++i) {
@@ -375,14 +372,14 @@ bool ByteString::operator==(char const* cstring) const
     return view() == cstring;
 }
 
-ByteString ByteString::vformatted(StringView fmtstr, TypeErasedFormatParams& params)
+ByteString ByteString::vformatted(std::string_view fmtstr, TypeErasedFormatParams& params)
 {
     StringBuilder builder;
     MUST(vformat(builder, fmtstr, params));
     return builder.to_byte_string();
 }
 
-Vector<size_t> ByteString::find_all(StringView needle) const
+Vector<size_t> ByteString::find_all(std::string_view needle) const
 {
     return StringUtils::find_all(*this, needle);
 }

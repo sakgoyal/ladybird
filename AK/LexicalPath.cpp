@@ -6,9 +6,9 @@
  */
 
 #include <AK/LexicalPath.h>
-#include <AK/StringBuilder.h>
-#include <AK/StringView.h>
-#include <AK/Vector.h>
+
+
+
 
 namespace AK {
 
@@ -67,7 +67,7 @@ Vector<ByteString> LexicalPath::parts() const
     return vector;
 }
 
-bool LexicalPath::has_extension(StringView extension) const
+bool LexicalPath::has_extension(std::string_view extension) const
 {
     return m_string.ends_with(extension, CaseSensitivity::CaseInsensitive);
 }
@@ -142,7 +142,7 @@ ByteString LexicalPath::absolute_path(ByteString dir_path, ByteString target)
     return LexicalPath::canonicalized_path(join(dir_path, target).string());
 }
 
-ByteString LexicalPath::relative_path(StringView a_path, StringView a_prefix)
+ByteString LexicalPath::relative_path(std::string_view a_path, std::string_view a_prefix)
 {
     if (!a_path.starts_with('/') || !a_prefix.starts_with('/')) {
         // FIXME: This should probably VERIFY or return an Optional<ByteString>.
@@ -189,12 +189,12 @@ ByteString LexicalPath::relative_path(StringView a_path, StringView a_prefix)
     return builder.to_byte_string();
 }
 
-LexicalPath LexicalPath::append(StringView value) const
+LexicalPath LexicalPath::append(std::string_view value) const
 {
     return LexicalPath::join(m_string, value);
 }
 
-LexicalPath LexicalPath::prepend(StringView value) const
+LexicalPath LexicalPath::prepend(std::string_view value) const
 {
     return LexicalPath::join(value, m_string);
 }

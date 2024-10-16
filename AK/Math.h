@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/BuiltinWrappers.h>
-#include <AK/Concepts.h>
+
 #include <AK/Endian.h>
 #include <AK/FloatingPoint.h>
 #include <AK/NumericLimits.h>
@@ -222,11 +222,11 @@ constexpr T round(T x)
     return ceil(x - .5);
 }
 
-template<Integral I, FloatingPoint P>
+template<std::integral I, FloatingPoint P>
 ALWAYS_INLINE I round_to(P value);
 
 #if ARCH(X86_64)
-template<Integral I>
+template<std::integral I>
 ALWAYS_INLINE I round_to(long double value)
 {
     // Note: fistps outputs into a signed integer location (i16, i32, i64),
@@ -251,7 +251,7 @@ ALWAYS_INLINE I round_to(long double value)
     return static_cast<I>(ret);
 }
 
-template<Integral I>
+template<std::integral I>
 ALWAYS_INLINE I round_to(float value)
 {
     // FIXME: round_to<u64> might will cause issues, aka the indefinite value being set,
@@ -272,7 +272,7 @@ ALWAYS_INLINE I round_to(float value)
     return static_cast<I>(ret);
 }
 
-template<Integral I>
+template<std::integral I>
 ALWAYS_INLINE I round_to(double value)
 {
     // FIXME: round_to<u64> might will cause issues, aka the indefinite value being set,
@@ -363,7 +363,7 @@ ALWAYS_INLINE U round_to(double value)
 }
 
 #else
-template<Integral I, FloatingPoint P>
+template<std::integral I, FloatingPoint P>
 ALWAYS_INLINE I round_to(P value)
 {
     if constexpr (IsSame<P, long double>)
@@ -1013,7 +1013,7 @@ constexpr T pow(T x, T y)
     return exp2<T>(y * log2<T>(x));
 }
 
-template<Integral I, typename T>
+template<std::integral I, typename T>
 constexpr I clamp_to(T value)
 {
     constexpr auto max = static_cast<T>(NumericLimits<I>::max());

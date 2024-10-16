@@ -7,7 +7,7 @@
 #pragma once
 
 #include <AK/Assertions.h>
-#include <AK/Checked.h>
+
 #include <AK/Noncopyable.h>
 #include <AK/Platform.h>
 

@@ -8,7 +8,7 @@
 #include <AK/Random.h>
 #include <AK/Singleton.h>
 #include <AK/SipHash.h>
-#include <AK/Span.h>
+
 #include <AK/UFixedBigInt.h>
 
 namespace AK {

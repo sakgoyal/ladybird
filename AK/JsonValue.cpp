@@ -9,7 +9,7 @@
 #include <AK/JsonObject.h>
 #include <AK/JsonParser.h>
 #include <AK/JsonValue.h>
-#include <AK/StringView.h>
+
 
 namespace AK {
 
@@ -179,7 +179,7 @@ JsonValue::JsonValue(ByteString const& value)
 {
 }
 
-JsonValue::JsonValue(StringView value)
+JsonValue::JsonValue(std::string_view value)
     : m_value(ByteString { value })
 {
 }
@@ -204,7 +204,7 @@ JsonValue::JsonValue(JsonArray&& value)
 {
 }
 
-ErrorOr<JsonValue> JsonValue::from_string(StringView input)
+ErrorOr<JsonValue> JsonValue::from_string(std::string_view input)
 {
     return JsonParser(input).parse();
 }

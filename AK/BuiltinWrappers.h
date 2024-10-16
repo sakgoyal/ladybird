@@ -6,9 +6,12 @@
 
 #pragma once
 
-#include "Concepts.h"
-
+#include <concepts>
+#include <cstdio>
 namespace AK {
+
+template<typename T>
+concept Unsigned = std::same_as<T, unsigned int>;
 
 template<Unsigned IntType>
 inline constexpr int popcount(IntType value)
@@ -132,7 +135,7 @@ inline constexpr int count_leading_zeroes_safe(IntType value)
 // zero, returns zero. (See __builtin_ffs.)
 //
 // For numbers above zero, bit_scan_forward(n) == count_trailing_zeroes(n) + 1.
-template<Integral IntType>
+template<std::integral IntType>
 inline constexpr int bit_scan_forward(IntType value)
 {
 #if defined(AK_COMPILER_CLANG) || (defined(AK_COMPILER_GCC) && (!ARCH(RISCV64) || defined(__riscv_zbb)))

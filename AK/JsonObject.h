@@ -9,9 +9,9 @@
 #pragma once
 
 #include <AK/ByteString.h>
-#include <AK/Concepts.h>
+
 #include <AK/Error.h>
-#include <AK/HashMap.h>
+
 #include <AK/JsonArray.h>
 #include <AK/JsonObjectSerializer.h>
 #include <AK/JsonValue.h>
@@ -35,27 +35,27 @@ public:
     [[nodiscard]] size_t size() const;
     [[nodiscard]] bool is_empty() const;
 
-    [[nodiscard]] bool has(StringView key) const;
+    [[nodiscard]] bool has(std::string_view key) const;
 
-    [[nodiscard]] bool has_null(StringView key) const;
-    [[nodiscard]] bool has_bool(StringView key) const;
-    [[nodiscard]] bool has_string(StringView key) const;
-    [[nodiscard]] bool has_i8(StringView key) const;
-    [[nodiscard]] bool has_u8(StringView key) const;
-    [[nodiscard]] bool has_i16(StringView key) const;
-    [[nodiscard]] bool has_u16(StringView key) const;
-    [[nodiscard]] bool has_i32(StringView key) const;
-    [[nodiscard]] bool has_u32(StringView key) const;
-    [[nodiscard]] bool has_i64(StringView key) const;
-    [[nodiscard]] bool has_u64(StringView key) const;
-    [[nodiscard]] bool has_number(StringView key) const;
-    [[nodiscard]] bool has_array(StringView key) const;
-    [[nodiscard]] bool has_object(StringView key) const;
+    [[nodiscard]] bool has_null(std::string_view key) const;
+    [[nodiscard]] bool has_bool(std::string_view key) const;
+    [[nodiscard]] bool has_string(std::string_view key) const;
+    [[nodiscard]] bool has_i8(std::string_view key) const;
+    [[nodiscard]] bool has_u8(std::string_view key) const;
+    [[nodiscard]] bool has_i16(std::string_view key) const;
+    [[nodiscard]] bool has_u16(std::string_view key) const;
+    [[nodiscard]] bool has_i32(std::string_view key) const;
+    [[nodiscard]] bool has_u32(std::string_view key) const;
+    [[nodiscard]] bool has_i64(std::string_view key) const;
+    [[nodiscard]] bool has_u64(std::string_view key) const;
+    [[nodiscard]] bool has_number(std::string_view key) const;
+    [[nodiscard]] bool has_array(std::string_view key) const;
+    [[nodiscard]] bool has_object(std::string_view key) const;
 
-    Optional<JsonValue const&> get(StringView key) const;
+    Optional<JsonValue const&> get(std::string_view key) const;
 
-    template<Integral T>
-    Optional<T> get_integer(StringView key) const
+    template<std::integral T>
+    Optional<T> get_integer(std::string_view key) const
     {
         auto maybe_value = get(key);
         if (maybe_value.has_value() && maybe_value->is_integer<T>())
@@ -63,24 +63,24 @@ public:
         return {};
     }
 
-    Optional<i8> get_i8(StringView key) const;
-    Optional<u8> get_u8(StringView key) const;
-    Optional<i16> get_i16(StringView key) const;
-    Optional<u16> get_u16(StringView key) const;
-    Optional<i32> get_i32(StringView key) const;
-    Optional<u32> get_u32(StringView key) const;
-    Optional<i64> get_i64(StringView key) const;
-    Optional<u64> get_u64(StringView key) const;
-    Optional<FlatPtr> get_addr(StringView key) const;
-    Optional<bool> get_bool(StringView key) const;
+    Optional<i8> get_i8(std::string_view key) const;
+    Optional<u8> get_u8(std::string_view key) const;
+    Optional<i16> get_i16(std::string_view key) const;
+    Optional<u16> get_u16(std::string_view key) const;
+    Optional<i32> get_i32(std::string_view key) const;
+    Optional<u32> get_u32(std::string_view key) const;
+    Optional<i64> get_i64(std::string_view key) const;
+    Optional<u64> get_u64(std::string_view key) const;
+    Optional<FlatPtr> get_addr(std::string_view key) const;
+    Optional<bool> get_bool(std::string_view key) const;
 
-    Optional<ByteString> get_byte_string(StringView key) const;
+    Optional<ByteString> get_byte_string(std::string_view key) const;
 
-    Optional<JsonObject const&> get_object(StringView key) const;
-    Optional<JsonArray const&> get_array(StringView key) const;
+    Optional<JsonObject const&> get_object(std::string_view key) const;
+    Optional<JsonArray const&> get_array(std::string_view key) const;
 
-    Optional<double> get_double_with_precision_loss(StringView key) const;
-    Optional<float> get_float_with_precision_loss(StringView key) const;
+    Optional<double> get_double_with_precision_loss(std::string_view key) const;
+    Optional<float> get_float_with_precision_loss(std::string_view key) const;
 
     void set(ByteString const& key, JsonValue value);
 
@@ -99,7 +99,7 @@ public:
         return {};
     }
 
-    bool remove(StringView key);
+    bool remove(std::string_view key);
 
     template<typename Builder>
     typename Builder::OutputType serialized() const;

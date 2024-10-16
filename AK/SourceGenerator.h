@@ -10,9 +10,9 @@
 
 #include <AK/ByteString.h>
 #include <AK/GenericLexer.h>
-#include <AK/HashMap.h>
-#include <AK/String.h>
-#include <AK/StringBuilder.h>
+
+
+
 
 namespace AK {
 
@@ -20,7 +20,7 @@ class SourceGenerator {
     AK_MAKE_NONCOPYABLE(SourceGenerator);
 
 public:
-    using MappingType = HashMap<StringView, String>;
+    using MappingType = HashMap<std::string_view, String>;
 
     explicit SourceGenerator(StringBuilder& builder, char opening = '@', char closing = '@', char escape = '\\')
         : m_builder(builder)
@@ -47,7 +47,7 @@ public:
         return SourceGenerator { m_builder, MUST(m_mapping.clone()), m_opening, m_closing };
     }
 
-    void set(StringView key, String value)
+    void set(std::string_view key, String value)
     {
         if (key.contains(m_opening) || key.contains(m_closing)) {
             warnln("SourceGenerator keys cannot contain the opening/closing delimiters `{}` and `{}`. (Keys are only wrapped in these when using them, not when setting them.)", m_opening, m_closing);
@@ -56,7 +56,7 @@ public:
         m_mapping.set(key, move(value));
     }
 
-    String get(StringView key) const
+    String get(std::string_view key) const
     {
         auto result = m_mapping.get(key);
         if (!result.has_value()) {
@@ -66,9 +66,9 @@ public:
         return result.release_value();
     }
 
-    StringView as_string_view() const { return m_builder.string_view(); }
+    std::string_view as_string_view() const { return m_builder.string_view(); }
 
-    void append(StringView pattern)
+    void append(std::string_view pattern)
     {
         GenericLexer lexer { pattern };
 
@@ -101,7 +101,7 @@ public:
         }
     }
 
-    void appendln(StringView pattern)
+    void appendln(std::string_view pattern)
     {
         append(pattern);
         m_builder.append('\n');
@@ -110,36 +110,36 @@ public:
     template<size_t N>
     String get(char const (&key)[N])
     {
-        return get(StringView { key, N - 1 });
+        return get(std::string_view { key, N - 1 });
     }
 
     template<size_t N>
     void set(char const (&key)[N], String value)
     {
-        set(StringView { key, N - 1 }, value);
+        set(std::string_view { key, N - 1 }, value);
     }
 
     template<size_t N>
     void append(char const (&pattern)[N])
     {
-        append(StringView { pattern, N - 1 });
+        append(std::string_view { pattern, N - 1 });
     }
 
     template<size_t N>
     void appendln(char const (&pattern)[N])
     {
-        appendln(StringView { pattern, N - 1 });
+        appendln(std::string_view { pattern, N - 1 });
     }
 
     // FIXME: These are deprecated.
-    void set(StringView key, ByteString value)
+    void set(std::string_view key, ByteString value)
     {
         set(key, MUST(String::from_byte_string(value)));
     }
     template<size_t N>
     void set(char const (&key)[N], ByteString value)
     {
-        set(StringView { key, N - 1 }, value);
+        set(std::string_view { key, N - 1 }, value);
     }
 
 private:

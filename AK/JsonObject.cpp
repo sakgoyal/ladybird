@@ -47,7 +47,7 @@ bool JsonObject::is_empty() const
     return m_members.is_empty();
 }
 
-Optional<JsonValue const&> JsonObject::get(StringView key) const
+Optional<JsonValue const&> JsonObject::get(std::string_view key) const
 {
     auto it = m_members.find(key);
     if (it == m_members.end())
@@ -55,52 +55,52 @@ Optional<JsonValue const&> JsonObject::get(StringView key) const
     return it->value;
 }
 
-Optional<i8> JsonObject::get_i8(StringView key) const
+Optional<i8> JsonObject::get_i8(std::string_view key) const
 {
     return get_integer<i8>(key);
 }
 
-Optional<u8> JsonObject::get_u8(StringView key) const
+Optional<u8> JsonObject::get_u8(std::string_view key) const
 {
     return get_integer<u8>(key);
 }
 
-Optional<i16> JsonObject::get_i16(StringView key) const
+Optional<i16> JsonObject::get_i16(std::string_view key) const
 {
     return get_integer<i16>(key);
 }
 
-Optional<u16> JsonObject::get_u16(StringView key) const
+Optional<u16> JsonObject::get_u16(std::string_view key) const
 {
     return get_integer<u16>(key);
 }
 
-Optional<i32> JsonObject::get_i32(StringView key) const
+Optional<i32> JsonObject::get_i32(std::string_view key) const
 {
     return get_integer<i32>(key);
 }
 
-Optional<u32> JsonObject::get_u32(StringView key) const
+Optional<u32> JsonObject::get_u32(std::string_view key) const
 {
     return get_integer<u32>(key);
 }
 
-Optional<i64> JsonObject::get_i64(StringView key) const
+Optional<i64> JsonObject::get_i64(std::string_view key) const
 {
     return get_integer<i64>(key);
 }
 
-Optional<u64> JsonObject::get_u64(StringView key) const
+Optional<u64> JsonObject::get_u64(std::string_view key) const
 {
     return get_integer<u64>(key);
 }
 
-Optional<FlatPtr> JsonObject::get_addr(StringView key) const
+Optional<FlatPtr> JsonObject::get_addr(std::string_view key) const
 {
     return get_integer<FlatPtr>(key);
 }
 
-Optional<bool> JsonObject::get_bool(StringView key) const
+Optional<bool> JsonObject::get_bool(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value() && maybe_value->is_bool())
@@ -108,7 +108,7 @@ Optional<bool> JsonObject::get_bool(StringView key) const
     return {};
 }
 
-Optional<ByteString> JsonObject::get_byte_string(StringView key) const
+Optional<ByteString> JsonObject::get_byte_string(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value() && maybe_value->is_string())
@@ -116,7 +116,7 @@ Optional<ByteString> JsonObject::get_byte_string(StringView key) const
     return {};
 }
 
-Optional<JsonObject const&> JsonObject::get_object(StringView key) const
+Optional<JsonObject const&> JsonObject::get_object(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value() && maybe_value->is_object())
@@ -124,7 +124,7 @@ Optional<JsonObject const&> JsonObject::get_object(StringView key) const
     return {};
 }
 
-Optional<JsonArray const&> JsonObject::get_array(StringView key) const
+Optional<JsonArray const&> JsonObject::get_array(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value() && maybe_value->is_array())
@@ -132,7 +132,7 @@ Optional<JsonArray const&> JsonObject::get_array(StringView key) const
     return {};
 }
 
-Optional<double> JsonObject::get_double_with_precision_loss(StringView key) const
+Optional<double> JsonObject::get_double_with_precision_loss(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value())
@@ -140,7 +140,7 @@ Optional<double> JsonObject::get_double_with_precision_loss(StringView key) cons
     return {};
 }
 
-Optional<float> JsonObject::get_float_with_precision_loss(StringView key) const
+Optional<float> JsonObject::get_float_with_precision_loss(std::string_view key) const
 {
     auto maybe_value = get(key);
     if (maybe_value.has_value())
@@ -148,90 +148,90 @@ Optional<float> JsonObject::get_float_with_precision_loss(StringView key) const
     return {};
 }
 
-bool JsonObject::has(StringView key) const
+bool JsonObject::has(std::string_view key) const
 {
     return m_members.contains(key);
 }
 
-bool JsonObject::has_null(StringView key) const
+bool JsonObject::has_null(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_null();
 }
 
-bool JsonObject::has_bool(StringView key) const
+bool JsonObject::has_bool(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_bool();
 }
 
-bool JsonObject::has_string(StringView key) const
+bool JsonObject::has_string(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_string();
 }
 
-bool JsonObject::has_i8(StringView key) const
+bool JsonObject::has_i8(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<i8>();
 }
 
-bool JsonObject::has_u8(StringView key) const
+bool JsonObject::has_u8(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<u8>();
 }
 
-bool JsonObject::has_i16(StringView key) const
+bool JsonObject::has_i16(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<i16>();
 }
 
-bool JsonObject::has_u16(StringView key) const
+bool JsonObject::has_u16(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<u16>();
 }
 
-bool JsonObject::has_i32(StringView key) const
+bool JsonObject::has_i32(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<i32>();
 }
 
-bool JsonObject::has_u32(StringView key) const
+bool JsonObject::has_u32(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<u32>();
 }
 
-bool JsonObject::has_i64(StringView key) const
+bool JsonObject::has_i64(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<i64>();
 }
 
-bool JsonObject::has_u64(StringView key) const
+bool JsonObject::has_u64(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_integer<u64>();
 }
 
-bool JsonObject::has_number(StringView key) const
+bool JsonObject::has_number(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_number();
 }
 
-bool JsonObject::has_array(StringView key) const
+bool JsonObject::has_array(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_array();
 }
 
-bool JsonObject::has_object(StringView key) const
+bool JsonObject::has_object(std::string_view key) const
 {
     auto value = get(key);
     return value.has_value() && value->is_object();
@@ -242,7 +242,7 @@ void JsonObject::set(ByteString const& key, JsonValue value)
     m_members.set(key, move(value));
 }
 
-bool JsonObject::remove(StringView key)
+bool JsonObject::remove(std::string_view key)
 {
     return m_members.remove(key);
 }

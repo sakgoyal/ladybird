@@ -4,8 +4,6 @@ set(SOURCES
     CircularBuffer.cpp
     ConstrainedStream.cpp
     CountingStream.cpp
-    DOSPackedTime.cpp
-    DeprecatedFlyString.cpp
     ByteString.cpp
     Error.cpp
     FloatingPointStringConversions.cpp
@@ -22,20 +20,12 @@ set(SOURCES
     OptionParser.cpp
     Random.cpp
     SipHash.cpp
-    StackInfo.cpp
     Stream.cpp
-    String.cpp
-    StringBase.cpp
-    StringBuilder.cpp
     StringFloatingPointConversions.cpp
-    StringImpl.cpp
     StringUtils.cpp
-    StringView.cpp
-    Time.cpp
     Utf16View.cpp
     Utf32View.cpp
     Utf8View.cpp
-    kmalloc.cpp
 )
 
 serenity_lib(AK ak)
@@ -60,6 +50,7 @@ endif()
 find_package(simdutf REQUIRED)
 swizzle_target_properties_for_swift(simdutf::simdutf)
 target_link_libraries(AK PRIVATE simdutf::simdutf)
+set_property(TARGET AK PROPERTY CXX_STANDARD 23)
 
 if (ENABLE_SWIFT)
     generate_clang_module_map(AK

@@ -47,7 +47,7 @@ public:
         return {};
     }
 
-    ErrorOr<void> add(StringView value)
+    ErrorOr<void> add(std::string_view value)
     {
         TRY(begin_item());
         if constexpr (IsLegacyBuilder<Builder>) {

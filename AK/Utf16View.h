@@ -12,21 +12,21 @@
 #include <AK/Format.h>
 #include <AK/Forward.h>
 #include <AK/Optional.h>
-#include <AK/Span.h>
-#include <AK/String.h>
+
+
 #include <AK/Types.h>
-#include <AK/Vector.h>
+
 
 namespace AK {
 
 using Utf16Data = Vector<u16, 1>;
 
-ErrorOr<Utf16Data> utf8_to_utf16(StringView, Endianness = Endianness::Host);
+ErrorOr<Utf16Data> utf8_to_utf16(std::string_view, Endianness = Endianness::Host);
 ErrorOr<Utf16Data> utf8_to_utf16(Utf8View const&, Endianness = Endianness::Host);
 ErrorOr<Utf16Data> utf32_to_utf16(Utf32View const&, Endianness = Endianness::Host);
 ErrorOr<void> code_point_to_utf16(Utf16Data&, u32, Endianness = Endianness::Host);
 
-size_t utf16_code_unit_length_from_utf8(StringView);
+size_t utf16_code_unit_length_from_utf8(std::string_view);
 
 class Utf16View;
 

@@ -9,9 +9,11 @@
 #include <AK/FloatingPointStringConversions.h>
 #include <AK/Format.h>
 #include <AK/ScopeGuard.h>
-#include <AK/StringView.h>
+#include <concepts>
 #include <AK/UFixedBigInt.h>
 #include <AK/UFixedBigIntDivision.h>
+#include <cstdint>
+#include <type_traits>
 
 namespace AK {
 
@@ -22,7 +24,7 @@ namespace AK {
 // at https://nigeltao.github.io/blog/2020/eisel-lemire.html
 
 template<typename T>
-concept ParseableFloatingPoint = IsFloatingPoint<T> && (sizeof(T) == sizeof(u32) || sizeof(T) == sizeof(u64));
+concept ParseableFloatingPoint = ::std::is_floating_point<T>::value && (sizeof(T) == sizeof(uint32_t) || sizeof(T) == sizeof(uint64_t));
 
 template<ParseableFloatingPoint T>
 struct FloatingPointInfo {

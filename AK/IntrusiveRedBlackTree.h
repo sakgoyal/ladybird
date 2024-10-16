@@ -11,7 +11,7 @@
 
 namespace AK::Detail {
 
-template<Integral K, typename V, typename Container = RawPtr<V>>
+template<std::integral K, typename V, typename Container = RawPtr<V>>
 class IntrusiveRedBlackTreeNode;
 
 struct ExtractIntrusiveRedBlackTreeTypes {
@@ -23,10 +23,10 @@ struct ExtractIntrusiveRedBlackTreeTypes {
     static Container container(IntrusiveRedBlackTreeNode<K, V, Container> T::*x);
 };
 
-template<Integral K, typename V, typename Container = RawPtr<V>>
+template<std::integral K, typename V, typename Container = RawPtr<V>>
 using SubstitutedIntrusiveRedBlackTreeNode = IntrusiveRedBlackTreeNode<K, V, typename SubstituteIntrusiveContainerType<V, Container>::Type>;
 
-template<Integral K, typename V, typename Container, SubstitutedIntrusiveRedBlackTreeNode<K, V, Container> V::*member>
+template<std::integral K, typename V, typename Container, SubstitutedIntrusiveRedBlackTreeNode<K, V, Container> V::*member>
 class IntrusiveRedBlackTree : public BaseRedBlackTree<K> {
 
 public:
@@ -178,7 +178,7 @@ private:
     }
 };
 
-template<Integral K, typename V, typename Container>
+template<std::integral K, typename V, typename Container>
 class IntrusiveRedBlackTreeNode : public BaseRedBlackTree<K>::Node {
 public:
     ~IntrusiveRedBlackTreeNode()
@@ -200,7 +200,7 @@ public:
 
 #if !defined(AK_COMPILER_CLANG)
 private:
-    template<Integral TK, typename TV, typename TContainer, SubstitutedIntrusiveRedBlackTreeNode<TK, TV, TContainer> TV::*member>
+    template<std::integral TK, typename TV, typename TContainer, SubstitutedIntrusiveRedBlackTreeNode<TK, TV, TContainer> TV::*member>
     friend class ::AK::Detail::IntrusiveRedBlackTree;
 #endif
 
@@ -211,7 +211,7 @@ private:
 // Specialise IntrusiveRedBlackTree for NonnullRefPtr
 // By default, red black trees cannot contain null entries anyway, so switch to RefPtr
 // and just make the user-facing functions deref the pointers.
-template<Integral K, typename V, SubstitutedIntrusiveRedBlackTreeNode<K, V, NonnullRefPtr<V>> V::*member>
+template<std::integral K, typename V, SubstitutedIntrusiveRedBlackTreeNode<K, V, NonnullRefPtr<V>> V::*member>
 class IntrusiveRedBlackTree<K, V, NonnullRefPtr<V>, member> : public IntrusiveRedBlackTree<K, V, RefPtr<V>, member> {
 public:
     [[nodiscard]] NonnullRefPtr<V> find(K key) const { return IntrusiveRedBlackTree<K, V, RefPtr<V>, member>::find(key).release_nonnull(); }
@@ -223,7 +223,7 @@ public:
 
 namespace AK {
 
-template<Integral K, typename V, typename Container = RawPtr<K>>
+template<std::integral K, typename V, typename Container = RawPtr<K>>
 using IntrusiveRedBlackTreeNode = Detail::SubstitutedIntrusiveRedBlackTreeNode<K, V, Container>;
 
 template<auto member>

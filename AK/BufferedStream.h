@@ -115,18 +115,18 @@ public:
         return m_buffer.read(buffer);
     }
 
-    ErrorOr<StringView> read_line_with_resize(ByteBuffer& buffer)
+    ErrorOr<std::string_view> read_line_with_resize(ByteBuffer& buffer)
     {
-        return StringView { TRY(read_until_with_resize(buffer, "\n"sv)) };
+        return std::string_view { TRY(read_until_with_resize(buffer, "\n"sv)) };
     }
 
-    ErrorOr<Bytes> read_until_with_resize(ByteBuffer& buffer, StringView candidate)
+    ErrorOr<Bytes> read_until_with_resize(ByteBuffer& buffer, std::string_view candidate)
     {
         return read_until_any_of_with_resize(buffer, Array { candidate });
     }
 
     template<size_t N>
-    ErrorOr<Bytes> read_until_any_of_with_resize(ByteBuffer& buffer, Array<StringView, N> candidates)
+    ErrorOr<Bytes> read_until_any_of_with_resize(ByteBuffer& buffer, Array<std::string_view, N> candidates)
     {
         if (!stream().is_open())
             return Error::from_errno(ENOTCONN);
@@ -167,7 +167,7 @@ public:
     };
 
     template<size_t N>
-    ErrorOr<Optional<Match>> find_and_populate_until_any_of(Array<StringView, N> const& candidates, Optional<size_t> max_offset = {})
+    ErrorOr<Optional<Match>> find_and_populate_until_any_of(Array<std::string_view, N> const& candidates, Optional<size_t> max_offset = {})
     {
         Optional<size_t> longest_candidate;
         for (auto& candidate : candidates) {
@@ -228,7 +228,7 @@ public:
         if (stream().is_eof())
             return m_buffer.offset_of(delimiter).has_value();
 
-        auto maybe_match = TRY(find_and_populate_until_any_of(Array { StringView { delimiter } }));
+        auto maybe_match = TRY(find_and_populate_until_any_of(Array { std::string_view { delimiter } }));
         if (maybe_match.has_value())
             return true;
 
@@ -344,21 +344,21 @@ public:
         return m_helper.stream().truncate(length);
     }
 
-    ErrorOr<StringView> read_line(Bytes buffer) { return m_helper.read_line(buffer); }
+    ErrorOr<std::string_view> read_line(Bytes buffer) { return m_helper.read_line(buffer); }
     ErrorOr<bool> can_read_line()
     {
         return TRY(m_helper.can_read_up_to_delimiter("\n"sv.bytes())) || m_helper.is_eof_with_data_left_over();
     }
-    ErrorOr<Bytes> read_until(Bytes buffer, StringView candidate) { return m_helper.read_until(buffer, candidate); }
+    ErrorOr<Bytes> read_until(Bytes buffer, std::string_view candidate) { return m_helper.read_until(buffer, candidate); }
     template<size_t N>
-    ErrorOr<Bytes> read_until_any_of(Bytes buffer, Array<StringView, N> candidates) { return m_helper.read_until_any_of(buffer, move(candidates)); }
+    ErrorOr<Bytes> read_until_any_of(Bytes buffer, Array<std::string_view, N> candidates) { return m_helper.read_until_any_of(buffer, move(candidates)); }
     ErrorOr<bool> can_read_up_to_delimiter(ReadonlyBytes delimiter) { return m_helper.can_read_up_to_delimiter(delimiter); }
 
     // Methods for reading stream into an auto-adjusting buffer
-    ErrorOr<StringView> read_line_with_resize(ByteBuffer& buffer) { return m_helper.read_line_with_resize(buffer); }
-    ErrorOr<Bytes> read_until_with_resize(ByteBuffer& buffer, StringView candidate) { return m_helper.read_until_with_resize(buffer, candidate); }
+    ErrorOr<std::string_view> read_line_with_resize(ByteBuffer& buffer) { return m_helper.read_line_with_resize(buffer); }
+    ErrorOr<Bytes> read_until_with_resize(ByteBuffer& buffer, std::string_view candidate) { return m_helper.read_until_with_resize(buffer, candidate); }
     template<size_t N>
-    ErrorOr<Bytes> read_until_any_of_with_resize(ByteBuffer& buffer, Array<StringView, N> candidates) { return m_helper.read_until_any_of_with_resize(buffer, move(candidates)); }
+    ErrorOr<Bytes> read_until_any_of_with_resize(ByteBuffer& buffer, Array<std::string_view, N> candidates) { return m_helper.read_until_any_of_with_resize(buffer, move(candidates)); }
 
     size_t buffer_size() const { return m_helper.buffer_size(); }
 

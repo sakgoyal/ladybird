@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <AK/StdLibExtras.h>
+
 #include <AK/Types.h>
 
 namespace AK::SIMD {
@@ -85,7 +85,7 @@ template<typename T>
 struct IndexVectorFor;
 
 template<SIMDVector T>
-requires(IsIntegral<ElementOf<T>>)
+requires(std::is_integral<ElementOf<T>>)
 struct IndexVectorFor<T> {
     using Type = T;
 };

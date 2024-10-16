@@ -8,8 +8,8 @@
 #pragma once
 
 #include <AK/Format.h>
-#include <AK/StringView.h>
-#include <AK/Vector.h>
+
+
 
 namespace AK {
 
@@ -22,7 +22,7 @@ public:
     };
     // Note: This is weird, but this class is used as a backend for getopt, so we're mirroring getopt here.
     struct Option {
-        StringView name;
+        std::string_view name;
         ArgumentRequirement requirement;
         int* flag;
         int val;
@@ -31,24 +31,24 @@ public:
     struct GetOptResult {
         int result;                        // Whatever getopt is supposed to return.
         Optional<int> optopt_value;        // The new contents of `optopt' after this call
-        Optional<StringView> optarg_value; // The new contents of `optarg' after this call
+        Optional<std::string_view> optarg_value; // The new contents of `optarg' after this call
         size_t consumed_args;
     };
 
-    GetOptResult getopt(Span<StringView> args, StringView short_options, Span<Option const> long_options, Optional<int&> out_long_option_index);
+    GetOptResult getopt(Span<std::string_view> args, std::string_view short_options, Span<Option const> long_options, Optional<int&> out_long_option_index);
     void reset_state();
 
 private:
     Optional<ArgumentRequirement> lookup_short_option_requirement(char option) const;
     int handle_short_option();
 
-    Optional<Option const&> lookup_long_option(StringView raw) const;
+    Optional<Option const&> lookup_long_option(std::string_view raw) const;
     int handle_long_option();
 
     void shift_argv();
     bool find_next_option();
 
-    StringView current_arg() const
+    std::string_view current_arg() const
     {
         if (m_arg_index >= m_args.size())
             return {};
@@ -63,12 +63,12 @@ private:
     }
 
     // NOTE: These are ephemeral, and effectively only last for one call of `getopt()'.
-    Span<StringView> m_args {};
-    StringView m_short_options {};
+    Span<std::string_view> m_args {};
+    std::string_view m_short_options {};
     Span<Option const> m_long_options {};
     mutable Optional<int&> m_out_long_option_index {};
     mutable Optional<int> m_optopt_value {};
-    mutable Optional<StringView> m_optarg_value {};
+    mutable Optional<std::string_view> m_optarg_value {};
 
     size_t m_arg_index { 0 };
     size_t m_skipped_arguments { 0 };

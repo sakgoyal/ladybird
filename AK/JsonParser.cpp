@@ -213,7 +213,7 @@ ErrorOr<JsonValue> JsonParser::parse_number()
         //        use that in the floating point parser.
 
         // The first part should be just ascii digits
-        StringView view = m_input.substring_view(start_index);
+        std::string_view view = m_input.substring_view(start_index);
 
         char const* start = view.characters_without_null_termination();
         auto parse_result = parse_first_floating_point(start, start + view.length());
@@ -269,7 +269,7 @@ ErrorOr<JsonValue> JsonParser::parse_number()
     if (negative && all_zero)
         return JsonValue(-0.0);
 
-    StringView number_string(number_buffer.data(), number_buffer.size());
+    std::string_view number_string(number_buffer.data(), number_buffer.size());
 
     if (auto number = number_string.to_number<u64>(); number.has_value())
         return JsonValue(*number);

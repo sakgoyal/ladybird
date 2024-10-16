@@ -6,14 +6,14 @@
 
 #pragma once
 
-#include <AK/Concepts.h>
+
 #include <AK/Error.h>
 #include <AK/Noncopyable.h>
-#include <AK/kmalloc.h>
+
 
 namespace AK {
 
-template<Integral K>
+template<std::integral K>
 class BaseRedBlackTree {
     AK_MAKE_NONCOPYABLE(BaseRedBlackTree);
     AK_MAKE_NONMOVABLE(BaseRedBlackTree);
@@ -440,7 +440,7 @@ private:
     typename TreeType::Node* m_prev { nullptr };
 };
 
-template<Integral K, typename V>
+template<std::integral K, typename V>
 class RedBlackTree final : public BaseRedBlackTree<K> {
 public:
     RedBlackTree() = default;

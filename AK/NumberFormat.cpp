@@ -11,7 +11,7 @@
 namespace AK {
 
 // FIXME: Remove this hackery once printf() supports floats.
-static String number_string_with_one_decimal(u64 number, u64 unit, StringView suffix, UseThousandsSeparator use_thousands_separator)
+static String number_string_with_one_decimal(u64 number, u64 unit, std::string_view suffix, UseThousandsSeparator use_thousands_separator)
 {
     constexpr auto max_unit_size = NumericLimits<u64>::max() / 10;
     VERIFY(unit < max_unit_size);
@@ -24,7 +24,7 @@ static String number_string_with_one_decimal(u64 number, u64 unit, StringView su
     return MUST(String::formatted("{}.{} {}", integer_part, decimal_part, suffix));
 }
 
-String human_readable_quantity(u64 quantity, HumanReadableBasedOn based_on, StringView unit, UseThousandsSeparator use_thousands_separator)
+String human_readable_quantity(u64 quantity, HumanReadableBasedOn based_on, std::string_view unit, UseThousandsSeparator use_thousands_separator)
 {
     u64 size_of_unit = based_on == HumanReadableBasedOn::Base2 ? 1024 : 1000;
     constexpr auto unit_prefixes = AK::Array { "", "K", "M", "G", "T", "P", "E" };

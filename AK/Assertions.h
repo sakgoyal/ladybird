@@ -30,5 +30,5 @@ extern "C" __attribute__((noreturn)) void ak_assertion_failed(char const*);
 #    define ASSERT_NOT_REACHED ASSERT(false) /* NOLINT(cert-dcl03-c,misc-static-assert) No, this can't be static_assert, it's a runtime check */
 #else
 #    define ASSERT(expr)
-#    define ASSERT_NOT_REACHED() __builtin_unreachable()
+#    define ASSERT_NOT_REACHED() std::unreachable()
 #endif
