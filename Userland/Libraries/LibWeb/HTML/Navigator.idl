@@ -9,6 +9,7 @@
 #import <HTML/PluginArray.idl>
 #import <HTML/ServiceWorkerContainer.idl>
 #import <HTML/UserActivation.idl>
+#import <Keyboard/Keyboard.idl>
 #import <MediaCapabilitiesAPI/MediaCapabilities.idl>
 #import <StorageAPI/NavigatorStorage.idl>
 
@@ -34,6 +35,9 @@ interface Navigator {
 
     // https://w3c.github.io/media-capabilities/#dom-navigator-mediacapabilities
     [SameObject] readonly attribute MediaCapabilities mediaCapabilities;
+
+    // https://wicg.github.io/keyboard-lock/#h-navigator-keyboard
+    [SecureContext, SameObject] readonly attribute Keyboard keyboard;
 };
 
 // NOTE: As NavigatorContentUtils, NavigatorCookies, NavigatorPlugins, and NavigatorAutomationInformation

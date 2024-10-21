@@ -315,6 +315,7 @@ shared_library("LibWeb") {
            "Infra",
            "Internals",
            "IntersectionObserver",
+           "Keyboard",
            "Layout",
            "Loader",
            "MathML",

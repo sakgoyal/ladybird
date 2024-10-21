@@ -264,6 +264,7 @@ standard_idl_files = [
   "//Userland/Libraries/LibWeb/Internals/Internals.idl",
   "//Userland/Libraries/LibWeb/IntersectionObserver/IntersectionObserver.idl",
   "//Userland/Libraries/LibWeb/IntersectionObserver/IntersectionObserverEntry.idl",
+  "//Userland/Libraries/LibWeb/Keyboard/Keyboard.idl",
   "//Userland/Libraries/LibWeb/MathML/MathMLElement.idl",
   "//Userland/Libraries/LibWeb/MediaCapabilitiesAPI/MediaCapabilities.idl",
   "//Userland/Libraries/LibWeb/NavigationTiming/PerformanceTiming.idl",
