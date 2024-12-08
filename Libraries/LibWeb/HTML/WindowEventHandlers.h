@@ -25,8 +25,9 @@
     E(onrejectionhandled, HTML::EventNames::rejectionhandled)     \
     E(onstorage, HTML::EventNames::storage)                       \
     E(onunhandledrejection, HTML::EventNames::unhandledrejection) \
-    E(onunload, HTML::EventNames::unload)
-
+    E(onunload, HTML::EventNames::unload)                         \
+    E(onpagereveal, HTML::EventNames::onpagereveal)               \
+    E(onpageswap, HTML::EventNames::onpageswap)
 namespace Web::HTML {
 
 class WindowEventHandlers {

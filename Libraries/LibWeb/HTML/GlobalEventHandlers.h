@@ -19,6 +19,12 @@
     E(onchange, HTML::EventNames::change)                                     \
     E(onclick, UIEvents::EventNames::click)                                   \
     E(onclose, HTML::EventNames::close)                                       \
+    E(oncut, HTML::EventNames::cut)                                           \
+    E(onpaste, HTML::EventNames::paste)                                       \
+    E(onbeforeinput, HTML::EventNames::onbeforeinput)                         \
+    E(onbeforetoggle, HTML::EventNames::onbeforetoggle)                       \
+    E(oncopy, HTML::EventNames::oncopy)                                       \
+    E(onscrollend, HTML::EventNames::onscrollend)                             \
     E(oncontextmenu, HTML::EventNames::contextmenu)                           \
     E(oncuechange, HTML::EventNames::cuechange)                               \
     E(ondblclick, UIEvents::EventNames::dblclick)                             \

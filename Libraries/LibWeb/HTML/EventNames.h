@@ -28,6 +28,14 @@ namespace Web::HTML::EventNames {
     __ENUMERATE_HTML_EVENT(blocked)                  \
     __ENUMERATE_HTML_EVENT(blur)                     \
     __ENUMERATE_HTML_EVENT(cancel)                   \
+    __ENUMERATE_HTML_EVENT(onbeforeinput)            \
+    __ENUMERATE_HTML_EVENT(onbeforetoggle)           \
+    __ENUMERATE_HTML_EVENT(oncopy)                   \
+    __ENUMERATE_HTML_EVENT(oncut)                    \
+    __ENUMERATE_HTML_EVENT(onpaste)                  \
+    __ENUMERATE_HTML_EVENT(onpageswap)               \
+    __ENUMERATE_HTML_EVENT(onpagereveal)             \
+    __ENUMERATE_HTML_EVENT(onscrollend)              \
     __ENUMERATE_HTML_EVENT(canplay)                  \
     __ENUMERATE_HTML_EVENT(canplaythrough)           \
     __ENUMERATE_HTML_EVENT(change)                   \
