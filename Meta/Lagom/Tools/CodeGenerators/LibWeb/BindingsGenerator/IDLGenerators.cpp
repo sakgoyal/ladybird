@@ -69,6 +69,7 @@ static bool is_platform_object(Type const& type)
         "ImageData"sv,
         "Instance"sv,
         "IntersectionObserverEntry"sv,
+        "Keyboard"sv,
         "KeyframeEffect"sv,
         "MediaList"sv,
         "Memory"sv,
@@ -3809,7 +3810,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.getter_callback@)
             else if (attribute.type->is_nullable() && attribute.type->name() == "Element") {
                 // The getter steps are to return the result of running this's get the attr-associated element.
                 attribute_generator.append(R"~~~(
-    auto retval = GC::Ptr<Element> {};                
+    auto retval = GC::Ptr<Element> {};
 )~~~");
 
                 // 1. Let element be the result of running reflectedTarget's get the element.
@@ -4424,6 +4425,7 @@ using namespace Web::HTML;
 using namespace Web::IndexedDB;
 using namespace Web::Internals;
 using namespace Web::IntersectionObserver;
+using namespace Web::Keyboard;
 using namespace Web::MediaCapabilitiesAPI;
 using namespace Web::MediaSourceExtensions;
 using namespace Web::NavigationTiming;

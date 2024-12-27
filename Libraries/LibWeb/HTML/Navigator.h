@@ -16,6 +16,7 @@
 #include <LibWeb/HTML/NavigatorOnLine.h>
 #include <LibWeb/HTML/PluginArray.h>
 #include <LibWeb/HTML/UserActivation.h>
+#include <LibWeb/Keyboard/Keyboard.h>
 #include <LibWeb/MediaCapabilitiesAPI/MediaCapabilities.h>
 #include <LibWeb/StorageAPI/NavigatorStorage.h>
 
@@ -54,6 +55,7 @@ public:
     [[nodiscard]] GC::Ref<PluginArray> plugins();
     [[nodiscard]] GC::Ref<Clipboard::Clipboard> clipboard();
     [[nodiscard]] GC::Ref<UserActivation> user_activation();
+    [[nodiscard]] GC::Ref<Keyboard::Keyboard> keyboard();
 
     Optional<FlyString> do_not_track() const;
 
@@ -90,6 +92,9 @@ private:
 
     // https://w3c.github.io/media-capabilities/#dom-navigator-mediacapabilities
     GC::Ptr<MediaCapabilitiesAPI::MediaCapabilities> m_media_capabilities;
+
+    // https://wicg.github.io/keyboard-lock/#navigator-interface
+    GC::Ptr<Keyboard::Keyboard> m_keyboard;
 };
 
 }

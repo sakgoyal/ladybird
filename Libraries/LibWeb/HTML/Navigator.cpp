@@ -14,6 +14,7 @@
 #include <LibWeb/HTML/Navigator.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Window.h>
+#include <LibWeb/Keyboard/Keyboard.h>
 #include <LibWeb/Loader/ResourceLoader.h>
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
@@ -68,6 +69,7 @@ void Navigator::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_user_activation);
     visitor.visit(m_service_worker_container);
     visitor.visit(m_media_capabilities);
+    visitor.visit(m_keyboard);
 }
 
 GC::Ref<MimeTypeArray> Navigator::mime_types()
@@ -96,6 +98,13 @@ GC::Ref<UserActivation> Navigator::user_activation()
     if (!m_user_activation)
         m_user_activation = realm().create<UserActivation>(realm());
     return *m_user_activation;
+}
+
+GC::Ref<Keyboard::Keyboard> Navigator::keyboard()
+{
+    if (!m_keyboard)
+        m_keyboard = realm().create<Keyboard::Keyboard>(realm());
+    return *m_keyboard;
 }
 
 // https://w3c.github.io/pointerevents/#dom-navigator-maxtouchpoints

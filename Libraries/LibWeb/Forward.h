@@ -598,6 +598,11 @@ class IntersectionObserverEntry;
 struct IntersectionObserverRegistration;
 }
 
+namespace Web::Keyboard {
+class Keyboard;
+// class KeyboardLayoutMap;
+}
+
 namespace Web::Layout {
 class AudioBox;
 class BlockContainer;
