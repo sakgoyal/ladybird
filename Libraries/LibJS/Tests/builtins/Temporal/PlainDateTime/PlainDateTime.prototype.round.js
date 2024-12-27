@@ -163,6 +163,9 @@ describe("errors", () => {
         }).toThrowWithMessage(RangeError, "0 is not a valid value for option roundingIncrement");
         expect(() => {
             plainDateTime.round({ smallestUnit: "second", roundingIncrement: Infinity });
-        }).toThrowWithMessage(RangeError, "inf is not a valid value for option roundingIncrement");
+        }).toThrowWithMessage(
+            RangeError,
+            "Infinity is not a valid value for option roundingIncrement"
+        );
     });
 });

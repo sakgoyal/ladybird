@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <AK/LexicalPath.h>
 #include <LibGfx/ImageFormats/AVIFLoader.h>
 #include <LibGfx/ImageFormats/BMPLoader.h>
 #include <LibGfx/ImageFormats/GIFLoader.h>
@@ -46,6 +45,14 @@ static ErrorOr<OwnPtr<ImageDecoderPlugin>> probe_and_sniff_for_appropriate_plugi
         return TRY(plugin.create(bytes));
     }
     return OwnPtr<ImageDecoderPlugin> {};
+}
+
+ErrorOr<ColorSpace> ImageDecoder::color_space()
+{
+    auto maybe_icc_data = TRY(icc_data());
+    if (!maybe_icc_data.has_value())
+        return ColorSpace {};
+    return ColorSpace::load_from_icc_bytes(maybe_icc_data.value());
 }
 
 ErrorOr<RefPtr<ImageDecoder>> ImageDecoder::try_create_for_raw_bytes(ReadonlyBytes bytes, [[maybe_unused]] Optional<ByteString> mime_type)

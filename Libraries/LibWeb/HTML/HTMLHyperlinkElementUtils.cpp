@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2024, Shannon Booth <shannon@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -27,17 +28,23 @@ void HTMLHyperlinkElementUtils::reinitialize_url() const
 // https://html.spec.whatwg.org/multipage/links.html#concept-hyperlink-url-set
 void HTMLHyperlinkElementUtils::set_the_url()
 {
-    // 1. If this element's href content attribute is absent, set this element's url to null.
+    // 1. Set this element's url to null.
+    m_url = {};
+
+    // 2. If this element's href content attribute is absent, then return.
     auto href_content_attribute = hyperlink_element_utils_href();
     if (!href_content_attribute.has_value()) {
-        m_url = {};
         hyperlink_element_utils_element().invalidate_style(DOM::StyleInvalidationReason::HTMLHyperlinkElementHrefChange);
         return;
     }
 
-    // 2. Otherwise, parse this element's href content attribute value relative to this element's node document.
-    //    If parsing is successful, set this element's url to the result; otherwise, set this element's url to null.
-    m_url = hyperlink_element_utils_document().parse_url(*href_content_attribute);
+    // 3. Let url be the result of encoding-parsing a URL given this element's href content attribute's value, relative to this element's node document.
+    auto url = hyperlink_element_utils_document().encoding_parse_url(*href_content_attribute);
+
+    // 4. If url is not failure, then set this element's url to url.
+    if (url.is_valid())
+        m_url = move(url);
+
     hyperlink_element_utils_element().invalidate_style(DOM::StyleInvalidationReason::HTMLHyperlinkElementHrefChange);
 }
 
@@ -52,7 +59,7 @@ String HTMLHyperlinkElementUtils::origin() const
         return String {};
 
     // 3. Return the serialization of this element's url's origin.
-    return MUST(String::from_byte_string(m_url->origin().serialize()));
+    return m_url->origin().serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-protocol
@@ -167,15 +174,15 @@ String HTMLHyperlinkElementUtils::host() const
     auto const& url = m_url;
 
     // 3. If url or url's host is null, return the empty string.
-    if (!url.has_value() || url->host().has<Empty>())
+    if (!url.has_value() || !url->host().has_value())
         return String {};
 
     // 4. If url's port is null, return url's host, serialized.
     if (!url->port().has_value())
-        return MUST(url->serialized_host());
+        return url->serialized_host();
 
     // 5. Return url's host, serialized, followed by ":" and url's port, serialized.
-    return MUST(String::formatted("{}:{}", MUST(url->serialized_host()), url->port().value()));
+    return MUST(String::formatted("{}:{}", url->serialized_host(), url->port().value()));
 }
 
 // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-host
@@ -198,21 +205,24 @@ void HTMLHyperlinkElementUtils::set_host(StringView host)
     update_href();
 }
 
+// https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-hostname
 String HTMLHyperlinkElementUtils::hostname() const
 {
     // 1. Reinitialize url.
-    //
+    reinitialize_url();
+
     // 2. Let url be this element's url.
-    URL::URL url(href());
+    auto url = m_url;
 
     // 3. If url or url's host is null, return the empty string.
-    if (url.host().has<Empty>())
+    if (!url.has_value() || !url->host().has_value())
         return String {};
 
     // 4. Return url's host, serialized.
-    return MUST(url.serialized_host());
+    return url->serialized_host();
 }
 
+// https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-hostname
 void HTMLHyperlinkElementUtils::set_hostname(StringView hostname)
 {
     // 1. Reinitialize url.
@@ -417,11 +427,11 @@ String HTMLHyperlinkElementUtils::href() const
         return String {};
 
     // 4. Otherwise, if url is null, return this element's href content attribute's value.
-    if (!url->is_valid())
+    if (!url.has_value())
         return href_content_attribute.release_value();
 
     // 5. Return url, serialized.
-    return MUST(String::from_byte_string(url->serialize()));
+    return url->serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/links.html#dom-hyperlink-href
@@ -435,7 +445,7 @@ WebIDL::ExceptionOr<void> HTMLHyperlinkElementUtils::set_href(String href)
 void HTMLHyperlinkElementUtils::update_href()
 {
     // To update href, set the element's href content attribute's value to the element's url, serialized.
-    MUST(set_hyperlink_element_utils_href(MUST(String::from_byte_string(m_url->serialize()))));
+    MUST(set_hyperlink_element_utils_href(m_url->serialize()));
 }
 
 bool HTMLHyperlinkElementUtils::cannot_navigate() const
@@ -483,22 +493,15 @@ void HTMLHyperlinkElementUtils::follow_the_hyperlink(Optional<String> hyperlink_
 
     // 8. Let urlString be the result of encoding-parsing-and-serializing a URL given subject's href attribute value,
     //    relative to subject's node document.
-    auto url = hyperlink_element_utils_document().parse_url(href());
+    auto url_string = hyperlink_element_utils_document().encoding_parse_and_serialize_url(href());
 
     // 9. If urlString is failure, then return.
-    if (!url.is_valid())
+    if (!url_string.has_value())
         return;
 
-    auto url_string = MUST(url.to_string());
-
     // 10. If hyperlinkSuffix is non-null, then append it to urlString.
-    if (hyperlink_suffix.has_value()) {
-        StringBuilder url_builder;
-        url_builder.append(url_string);
-        url_builder.append(*hyperlink_suffix);
-
-        url_string = MUST(url_builder.to_string());
-    }
+    if (hyperlink_suffix.has_value())
+        url_string = MUST(String::formatted("{}{}", *url_string, *hyperlink_suffix));
 
     // 11. Let referrerPolicy be the current state of subject's referrerpolicy content attribute.
     auto referrer_policy = ReferrerPolicy::from_string(hyperlink_element_utils_referrerpolicy().value_or({})).value_or(ReferrerPolicy::ReferrerPolicy::EmptyString);
@@ -506,7 +509,7 @@ void HTMLHyperlinkElementUtils::follow_the_hyperlink(Optional<String> hyperlink_
     // FIXME: 12. If subject's link types includes the noreferrer keyword, then set referrerPolicy to "no-referrer".
 
     // 13. Navigate targetNavigable to urlString using subject's node document, with referrerPolicy set to referrerPolicy and userInvolvement set to userInvolvement.
-    MUST(target_navigable->navigate({ .url = url_string, .source_document = hyperlink_element_utils_document(), .referrer_policy = referrer_policy, .user_involvement = user_involvement }));
+    MUST(target_navigable->navigate({ .url = *url_string, .source_document = hyperlink_element_utils_document(), .referrer_policy = referrer_policy, .user_involvement = user_involvement }));
 }
 
 }

@@ -228,6 +228,16 @@ function(lagom_lib target_name fs_name)
         target_link_libraries(${target_name} PRIVATE AK)
     endif()
 
+    if (WIN32)
+        find_package(pthread REQUIRED)
+        target_include_directories(${target_name} PRIVATE ${PTHREAD_INCLUDE_DIR})
+        target_link_libraries(${target_name} PRIVATE ${PTHREAD_LIBRARY})
+
+        find_package(mman REQUIRED)
+        target_include_directories(${target_name} PRIVATE ${MMAN_INCLUDE_DIR})
+        target_link_libraries(${target_name} PRIVATE ${MMAN_LIBRARY})
+    endif()
+
     # FIXME: Clean these up so that we don't need so many include dirs
     if (ENABLE_INSTALL_HEADERS)
         target_include_directories(${target_name} INTERFACE
@@ -378,10 +388,10 @@ endif()
 
 # Lagom Libraries
 set(lagom_standard_libraries
-    Archive
     Compress
     Crypto
     Diff
+    DNS
     GC
     HTTP
     IPC
@@ -448,18 +458,14 @@ endif()
 # Lagom Utilities
 lagom_utility(abench SOURCES ../../Utilities/abench.cpp LIBS LibMain LibFileSystem LibMedia)
 
+lagom_utility(dns SOURCES ../../Utilities/dns.cpp LIBS LibDNS LibMain LibTLS LibCrypto)
+
 if (ENABLE_GUI_TARGETS)
     lagom_utility(animation SOURCES ../../Utilities/animation.cpp LIBS LibGfx LibMain)
-    lagom_utility(icc SOURCES ../../Utilities/icc.cpp LIBS LibGfx LibMain LibURL)
     lagom_utility(image SOURCES ../../Utilities/image.cpp LIBS LibGfx LibMain)
 endif()
 
 lagom_utility(js SOURCES ../../Utilities/js.cpp LIBS LibCrypto LibJS LibLine LibUnicode LibMain LibTextCodec LibGC Threads::Threads)
-
-lagom_utility(gzip SOURCES ../../Utilities/gzip.cpp LIBS LibCompress LibMain)
-lagom_utility(lzcat SOURCES ../../Utilities/lzcat.cpp LIBS LibCompress LibMain)
-
-lagom_utility(tar SOURCES ../../Utilities/tar.cpp LIBS LibArchive LibCompress LibFileSystem LibMain)
 lagom_utility(test262-runner SOURCES ../../Tests/LibJS/test262-runner.cpp LIBS LibJS LibFileSystem LibGC)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -481,7 +487,6 @@ endif()
 
 lagom_utility(wasm SOURCES ../../Utilities/wasm.cpp LIBS LibFileSystem LibWasm LibLine LibMain LibJS)
 lagom_utility(xml SOURCES ../../Utilities/xml.cpp LIBS LibFileSystem LibMain LibXML LibURL)
-lagom_utility(xzcat SOURCES ../../Utilities/xzcat.cpp LIBS LibCompress LibMain)
 
 include(CTest)
 if (BUILD_TESTING)
@@ -507,6 +512,7 @@ if (BUILD_TESTING)
         AK
         LibCrypto
         LibCompress
+        LibGC
         LibTest
         LibTextCodec
         LibThreading

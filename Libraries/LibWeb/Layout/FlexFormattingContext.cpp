@@ -25,7 +25,7 @@ CSSPixels FlexFormattingContext::get_pixel_width(Box const& box, CSS::Size const
 
 CSSPixels FlexFormattingContext::get_pixel_height(Box const& box, CSS::Size const& size) const
 {
-    return calculate_inner_height(box, m_available_space->height, size);
+    return calculate_inner_height(box, m_available_space.value(), size);
 }
 
 FlexFormattingContext::FlexFormattingContext(LayoutState& state, LayoutMode layout_mode, Box const& flex_container, FormattingContext* parent)
@@ -1201,7 +1201,7 @@ void FlexFormattingContext::calculate_cross_size_of_each_flex_line()
     }
 }
 
-// https://www.w3.org/TR/css-flexbox-1/#cross-sizing
+// https://www.w3.org/TR/css-flexbox-1/#algo-stretch
 void FlexFormattingContext::determine_used_cross_size_of_each_flex_item()
 {
     for (auto& flex_line : m_flex_lines) {
@@ -1499,11 +1499,15 @@ void FlexFormattingContext::align_all_flex_items_along_the_cross_axis()
                 //  Fallthrough
             case CSS::AlignItems::Start:
             case CSS::AlignItems::FlexStart:
+            case CSS::AlignItems::SelfStart:
             case CSS::AlignItems::Stretch:
+                // FIXME: 'start', 'flex-start' and 'self-start' have subtly different behavior.
+                //        The same goes for the end values.
                 item.cross_offset = -half_line_size + item.margins.cross_before + item.borders.cross_before + item.padding.cross_before;
                 break;
             case CSS::AlignItems::End:
             case CSS::AlignItems::FlexEnd:
+            case CSS::AlignItems::SelfEnd:
                 item.cross_offset = half_line_size - item.cross_size.value() - item.margins.cross_after - item.borders.cross_after - item.padding.cross_after;
                 break;
             case CSS::AlignItems::Center:

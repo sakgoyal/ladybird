@@ -16,7 +16,7 @@ describe("errors", () => {
             new Temporal.PlainYearMonth(0, Infinity);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
         expect(() => {
-            new Temporal.PlainYearMonth(0, 1, {}, Infinity);
+            new Temporal.PlainYearMonth(0, 1, undefined, Infinity);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
         expect(() => {
             new Temporal.PlainYearMonth(-Infinity);
@@ -25,7 +25,7 @@ describe("errors", () => {
             new Temporal.PlainYearMonth(0, -Infinity);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
         expect(() => {
-            new Temporal.PlainYearMonth(0, 1, {}, -Infinity);
+            new Temporal.PlainYearMonth(0, 1, undefined, -Infinity);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
     });
 
@@ -34,7 +34,7 @@ describe("errors", () => {
             new Temporal.PlainYearMonth(0, 0);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
         expect(() => {
-            new Temporal.PlainYearMonth(0, 1, {}, 0);
+            new Temporal.PlainYearMonth(0, 1, undefined, 0);
         }).toThrowWithMessage(RangeError, "Invalid plain year month");
     });
 });
@@ -53,7 +53,8 @@ describe("normal behavior", () => {
 
     test("default reference day is 1", () => {
         const plainYearMonth = new Temporal.PlainYearMonth(2021, 7);
-        const fields = plainYearMonth.getISOFields();
-        expect(fields.isoDay).toBe(1);
+        const fields = plainYearMonth.toString({ calendarName: "always" });
+        const day = fields.split("-")[2].split("[")[0];
+        expect(day).toBe("01");
     });
 });

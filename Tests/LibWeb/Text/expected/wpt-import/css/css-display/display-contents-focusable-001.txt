@@ -1,11 +1,6 @@
-Summary
-
 Harness status: OK
-
-Rerun
 
 Found 1 tests
 
-1 Fail
-Details
-Result	Test Name	MessageFail	element with display:contents is focusable	
+1 Pass
+Pass	element with display:contents is focusable

@@ -9,6 +9,7 @@
 #include <LibUnicode/CharacterTypes.h>
 #include <LibUnicode/Segmenter.h>
 #include <LibWeb/DOM/Document.h>
+#include <LibWeb/DOM/EditingHostManager.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/DOM/Position.h>
 #include <LibWeb/DOM/SelectionchangeEventDispatching.h>
@@ -22,6 +23,7 @@
 #include <LibWeb/HTML/HTMLTextAreaElement.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/Painting/Paintable.h>
+#include <LibWeb/Selection/Selection.h>
 
 namespace Web::HTML {
 
@@ -191,7 +193,7 @@ String FormAssociatedElement::form_action() const
     }
 
     auto document_base_url = html_element.document().base_url();
-    return MUST(document_base_url.complete_url(form_action_attribute.value()).to_string());
+    return document_base_url.complete_url(form_action_attribute.value()).to_string();
 }
 
 WebIDL::ExceptionOr<void> FormAssociatedElement::set_form_action(String const& value)
@@ -588,7 +590,7 @@ void FormAssociatedTextControlElement::set_the_selection_range(Optional<WebIDL::
 void FormAssociatedTextControlElement::handle_insert(String const& data)
 {
     auto text_node = form_associated_element_to_text_node();
-    if (!text_node || !text_node->is_editable())
+    if (!text_node || !is_mutable())
         return;
 
     String data_for_insertion = data;
@@ -613,7 +615,7 @@ void FormAssociatedTextControlElement::handle_insert(String const& data)
 void FormAssociatedTextControlElement::handle_delete(DeleteDirection direction)
 {
     auto text_node = form_associated_element_to_text_node();
-    if (!text_node || !text_node->is_editable())
+    if (!text_node || !is_mutable())
         return;
     auto selection_start = this->selection_start();
     auto selection_end = this->selection_end();
@@ -691,6 +693,8 @@ void FormAssociatedTextControlElement::select_all()
 
 void FormAssociatedTextControlElement::set_selection_anchor(GC::Ref<DOM::Node> anchor_node, size_t anchor_offset)
 {
+    auto editing_host_manager = form_associated_element_to_html_element().document().editing_host_manager();
+    editing_host_manager->set_selection_anchor(anchor_node, anchor_offset);
     auto text_node = form_associated_element_to_text_node();
     if (!text_node || anchor_node != text_node)
         return;
@@ -700,6 +704,8 @@ void FormAssociatedTextControlElement::set_selection_anchor(GC::Ref<DOM::Node> a
 
 void FormAssociatedTextControlElement::set_selection_focus(GC::Ref<DOM::Node> focus_node, size_t focus_offset)
 {
+    auto editing_host_manager = form_associated_element_to_html_element().document().editing_host_manager();
+    editing_host_manager->set_selection_focus(focus_node, focus_offset);
     auto text_node = form_associated_element_to_text_node();
     if (!text_node || focus_node != text_node)
         return;
@@ -794,7 +800,7 @@ void FormAssociatedTextControlElement::decrement_cursor_position_to_previous_wor
 
     while (true) {
         if (auto offset = text_node->word_segmenter().previous_boundary(m_selection_end); offset.has_value()) {
-            auto word = text_node->data().code_points().substring_view(m_selection_end, m_selection_end - *offset);
+            auto word = text_node->data().code_points().substring_view(*offset, m_selection_end - *offset);
             if (collapse == CollapseSelection::Yes) {
                 collapse_selection_to_offset(*offset);
             } else {

@@ -3,14 +3,13 @@
  * Copyright (c) 2021-2022, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2023, MacDue <macdue@dueutil.tech>
  * Copyright (c) 2024, Aliaksandr Kalenik <kalenik.aliaksandr@gmail.com>
+ * Copyright (c) 2024, Lucien Fiorini <lucienfiorini@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <AK/OwnPtr.h>
-#include <LibGfx/DeprecatedPainter.h>
 #include <LibGfx/PainterSkia.h>
-#include <LibGfx/Quad.h>
 #include <LibGfx/Rect.h>
 #include <LibUnicode/Segmenter.h>
 #include <LibWeb/Bindings/CanvasRenderingContext2DPrototype.h>
@@ -22,6 +21,7 @@
 #include <LibWeb/HTML/ImageData.h>
 #include <LibWeb/HTML/Path2D.h>
 #include <LibWeb/HTML/TextMetrics.h>
+#include <LibWeb/HTML/TraversableNavigable.h>
 #include <LibWeb/Infra/CharacterTypes.h>
 #include <LibWeb/Layout/TextNode.h>
 #include <LibWeb/Painting/Paintable.h>
@@ -42,6 +42,7 @@ CanvasRenderingContext2D::CanvasRenderingContext2D(JS::Realm& realm, HTMLCanvasE
     : PlatformObject(realm)
     , CanvasPath(static_cast<Bindings::PlatformObject&>(*this), *this)
     , m_element(element)
+    , m_size(element.bitmap_size_for_canvas())
 {
 }
 
@@ -177,7 +178,7 @@ WebIDL::ExceptionOr<void> CanvasRenderingContext2D::draw_image_internal(CanvasIm
     }
 
     if (auto* painter = this->painter()) {
-        painter->draw_bitmap(destination_rect, *bitmap, source_rect.to_rounded<int>(), scaling_mode, drawing_state().global_alpha);
+        painter->draw_bitmap(destination_rect, *bitmap, source_rect.to_rounded<int>(), scaling_mode, drawing_state().filters, drawing_state().global_alpha);
         did_draw(destination_rect);
     }
 
@@ -198,13 +199,29 @@ void CanvasRenderingContext2D::did_draw(Gfx::FloatRect const&)
 
 Gfx::Painter* CanvasRenderingContext2D::painter()
 {
-    if (!canvas_element().surface()) {
-        if (!canvas_element().allocate_painting_surface())
-            return nullptr;
+    allocate_painting_surface_if_needed();
+    auto surface = canvas_element().surface();
+    if (!m_painter && surface) {
         canvas_element().document().invalidate_display_list();
         m_painter = make<Gfx::PainterSkia>(*canvas_element().surface());
     }
     return m_painter.ptr();
+}
+
+void CanvasRenderingContext2D::set_size(Gfx::IntSize const& size)
+{
+    if (m_size == size)
+        return;
+    m_size = size;
+    m_surface = nullptr;
+}
+
+void CanvasRenderingContext2D::allocate_painting_surface_if_needed()
+{
+    if (m_surface || m_size.is_empty())
+        return;
+    auto skia_backend_context = canvas_element().navigable()->traversable_navigable()->skia_backend_context();
+    m_surface = Gfx::PaintingSurface::create_with_size(skia_backend_context, canvas_element().bitmap_size_for_canvas(), Gfx::BitmapFormat::BGRA8888, Gfx::AlphaType::Premultiplied);
 }
 
 Gfx::Path CanvasRenderingContext2D::text_path(StringView text, float x, float y, Optional<double> max_width)
@@ -285,12 +302,7 @@ void CanvasRenderingContext2D::stroke_internal(Gfx::Path const& path)
     auto& state = drawing_state();
 
     // FIXME: Honor state's line_cap, line_join, miter_limit, dash_list, and line_dash_offset.
-
-    if (auto color = state.stroke_style.as_color(); color.has_value()) {
-        painter->stroke_path(path, color->with_opacity(state.global_alpha), state.line_width);
-    } else {
-        painter->stroke_path(path, state.stroke_style.to_gfx_paint_style(), state.line_width, state.global_alpha);
-    }
+    painter->stroke_path(path, state.stroke_style.to_gfx_paint_style(), state.filters, state.line_width, state.global_alpha);
 
     did_draw(path.bounding_box());
 }
@@ -326,11 +338,7 @@ void CanvasRenderingContext2D::fill_internal(Gfx::Path const& path, Gfx::Winding
     auto path_to_fill = path;
     path_to_fill.close_all_subpaths();
     auto& state = this->drawing_state();
-    if (auto color = state.fill_style.as_color(); color.has_value()) {
-        painter->fill_path(path_to_fill, color->with_opacity(state.global_alpha), winding_rule);
-    } else {
-        painter->fill_path(path_to_fill, state.fill_style.to_gfx_paint_style(), state.global_alpha, winding_rule);
-    }
+    painter->fill_path(path_to_fill, state.fill_style.to_gfx_paint_style(), state.filters, state.global_alpha, winding_rule);
 
     did_draw(path_to_fill.bounding_box());
 }
@@ -422,7 +430,7 @@ WebIDL::ExceptionOr<GC::Ptr<ImageData>> CanvasRenderingContext2D::get_image_data
     ASSERT(image_data->bitmap().alpha_type() == Gfx::AlphaType::Unpremultiplied);
 
     auto painter = Gfx::Painter::create(image_data->bitmap());
-    painter->draw_bitmap(image_data->bitmap().rect().to_type<float>(), *snapshot, source_rect_intersected, Gfx::ScalingMode::NearestNeighbor, drawing_state().global_alpha);
+    painter->draw_bitmap(image_data->bitmap().rect().to_type<float>(), *snapshot, source_rect_intersected, Gfx::ScalingMode::NearestNeighbor, {}, drawing_state().global_alpha);
 
     // 7. Set the pixels values of imageData for areas of the source rectangle that are outside of the output bitmap to transparent black.
     // NOTE: No-op, already done during creation.
@@ -435,7 +443,7 @@ void CanvasRenderingContext2D::put_image_data(ImageData const& image_data, float
 {
     if (auto* painter = this->painter()) {
         auto dst_rect = Gfx::FloatRect(x, y, image_data.width(), image_data.height());
-        painter->draw_bitmap(dst_rect, Gfx::ImmutableBitmap::create(image_data.bitmap()), image_data.bitmap().rect(), Gfx::ScalingMode::NearestNeighbor, 1.0f);
+        painter->draw_bitmap(dst_rect, Gfx::ImmutableBitmap::create(image_data.bitmap()), image_data.bitmap().rect(), Gfx::ScalingMode::NearestNeighbor, drawing_state().filters, 1.0f);
         did_draw(dst_rect);
     }
 }
@@ -575,7 +583,7 @@ CanvasRenderingContext2D::PreparedText CanvasRenderingContext2D::prepare_text(By
     Gfx::FloatPoint anchor { 0, 0 };
     auto physical_alignment = Gfx::TextAlignment::CenterLeft;
 
-    auto glyph_run = Gfx::shape_text(anchor, 0, replaced_text.code_points(), *font, Gfx::GlyphRun::TextType::Ltr);
+    auto glyph_run = Gfx::shape_text(anchor, 0, replaced_text.code_points(), *font, Gfx::GlyphRun::TextType::Ltr, {});
 
     // 8. Let result be an array constructed by iterating over each glyph in the inline box from left to right (if any), adding to the array, for each glyph, the shape of the glyph as it is in the inline box, positioned on a coordinate space using CSS pixels with its origin is at the anchor point.
     PreparedText prepared_text { glyph_run, physical_alignment, { 0, 0, static_cast<int>(glyph_run->width()), static_cast<int>(height) } };
@@ -765,6 +773,22 @@ void CanvasRenderingContext2D::set_shadow_offset_y(float offsetY)
     drawing_state().shadow_offset_y = offsetY;
 }
 
+float CanvasRenderingContext2D::shadow_blur() const
+{
+    return drawing_state().shadow_blur;
+}
+
+// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-shadowblur
+void CanvasRenderingContext2D::set_shadow_blur(float blur_radius)
+{
+    // On setting, the attribute must be set to the new value,
+    // except if the value is negative, infinite or NaN, in which case the new value must be ignored.
+    if (blur_radius < 0 || isinf(blur_radius) || isnan(blur_radius))
+        return;
+
+    drawing_state().shadow_blur = blur_radius;
+}
+
 String CanvasRenderingContext2D::shadow_color() const
 {
     // https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-shadowcolor
@@ -773,14 +797,10 @@ String CanvasRenderingContext2D::shadow_color() const
 
 void CanvasRenderingContext2D::set_shadow_color(String color)
 {
-    auto& realm = static_cast<CanvasRenderingContext2D&>(*this).realm();
-
     // 1. Let context be this's canvas attribute's value, if that is an element; otherwise null.
-    auto parser = CSS::Parser::Parser::create(CSS::Parser::ParsingContext(realm), color);
-
-    auto style_value = parser.parse_as_css_value(CSS::PropertyID::Color);
 
     // 2. Let parsedValue be the result of parsing the given value with context if non-null.
+    auto style_value = parse_css_value(CSS::Parser::ParsingContext(), color, CSS::PropertyID::Color);
     if (style_value && style_value->has_color()) {
         auto parsedValue = style_value->to_color(OptionalNone());
 
@@ -807,7 +827,7 @@ void CanvasRenderingContext2D::paint_shadow_for_fill_internal(Gfx::Path const& p
     Gfx::AffineTransform transform;
     transform.translate(state.shadow_offset_x, state.shadow_offset_y);
     painter->set_transform(transform);
-    painter->fill_path(path_to_fill, state.shadow_color.with_opacity(state.global_alpha), winding_rule);
+    painter->fill_path(path_to_fill, state.shadow_color.with_opacity(state.global_alpha), winding_rule, state.shadow_blur);
 
     painter->restore();
 
@@ -827,11 +847,87 @@ void CanvasRenderingContext2D::paint_shadow_for_stroke_internal(Gfx::Path const&
     Gfx::AffineTransform transform;
     transform.translate(state.shadow_offset_x, state.shadow_offset_y);
     painter->set_transform(transform);
-    painter->stroke_path(path, state.shadow_color.with_opacity(state.global_alpha), state.line_width);
+    painter->stroke_path(path, state.shadow_color.with_opacity(state.global_alpha), state.line_width, state.shadow_blur);
 
     painter->restore();
 
     did_draw(path.bounding_box());
+}
+
+String CanvasRenderingContext2D::filter() const
+{
+    if (!drawing_state().filters_string.has_value()) {
+        return String::from_utf8_without_validation("none"sv.bytes());
+    }
+
+    return drawing_state().filters_string.value();
+}
+
+// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-filter
+void CanvasRenderingContext2D::set_filter(String filter)
+{
+    drawing_state().filters.clear();
+
+    // 1. If the given value is "none", then set this's current filter to "none" and return.
+    if (filter == "none"sv) {
+        drawing_state().filters_string.clear();
+        return;
+    }
+
+    auto& realm = static_cast<CanvasRenderingContext2D&>(*this).realm();
+    auto parser = CSS::Parser::Parser::create(CSS::Parser::ParsingContext(realm), filter);
+
+    // 2. Let parsedValue be the result of parsing the given values as a <filter-value-list>.
+    //    If any property-independent style sheet syntax like 'inherit' or 'initial' is present,
+    //    then this parsing must return failure.
+    auto style_value = parser.parse_as_css_value(CSS::PropertyID::Filter);
+
+    if (style_value && style_value->is_filter_value_list()) {
+        auto filter_value_list = style_value->as_filter_value_list().filter_value_list();
+
+        drawing_state().filters.grow_capacity(filter_value_list.size());
+
+        // Note: The layout must be updated to make sure the canvas's layout node isn't null.
+        canvas_element().document().update_layout();
+        auto layout_node = canvas_element().layout_node();
+
+        // 4. Set this's current filter to the given value.
+        for (auto& item : filter_value_list) {
+            // FIXME: Add support for SVG filters when they get implement by the CSS parser.
+            item.visit(
+                [&](CSS::FilterOperation::Blur const& blur_filter) {
+                    float radius = blur_filter.resolved_radius(*layout_node);
+                    drawing_state().filters.append(Gfx::BlurFilter { radius });
+                },
+                [&](CSS::FilterOperation::Color const& color) {
+                    float amount = color.resolved_amount();
+                    drawing_state().filters.append(Gfx::ColorFilter { color.operation, amount });
+                },
+                [&](CSS::FilterOperation::HueRotate const& hue_rotate) {
+                    float angle = hue_rotate.angle_degrees(*layout_node);
+                    drawing_state().filters.append(Gfx::HueRotateFilter { angle });
+                },
+                [&](CSS::FilterOperation::DropShadow const& drop_shadow) {
+                    auto resolution_context = CSS::Length::ResolutionContext::for_layout_node(*layout_node);
+
+                    float offset_x = static_cast<float>(drop_shadow.offset_x.resolved(resolution_context).raw_value());
+                    float offset_y = static_cast<float>(drop_shadow.offset_y.resolved(resolution_context).raw_value());
+
+                    float radius = 0.0f;
+                    if (drop_shadow.radius.has_value()) {
+                        radius = drop_shadow.radius->resolved(resolution_context).raw_value();
+                    };
+
+                    auto color = drop_shadow.color.value_or(Gfx::Color { 0, 0, 0, 255 });
+
+                    drawing_state().filters.append(Gfx::DropShadowFilter { offset_x, offset_y, radius, color });
+                });
+        }
+
+        drawing_state().filters_string = move(filter);
+    }
+
+    // 3. If parsedValue is failure, then return.
 }
 
 }

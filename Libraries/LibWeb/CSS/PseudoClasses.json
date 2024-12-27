@@ -11,9 +11,6 @@
   "checked": {
     "argument": ""
   },
-  "closed": {
-    "argument": ""
-  },
   "defined": {
     "argument": ""
   },
@@ -102,6 +99,9 @@
     "argument": ""
   },
   "open": {
+    "argument": ""
+  },
+  "popover-open": {
     "argument": ""
   },
   "paused": {

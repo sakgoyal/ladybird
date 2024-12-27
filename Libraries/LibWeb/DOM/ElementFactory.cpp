@@ -151,7 +151,7 @@ ErrorOr<FixedArray<FlyString>> valid_local_names_for_given_html_element_interfac
         return FixedArray<FlyString>::create({ HTML::TagNames::dl });
     if (html_element_interface_name == "HTMLEmbedElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::embed });
-    if (html_element_interface_name == "HTMLFieldsetElement"sv)
+    if (html_element_interface_name == "HTMLFieldSetElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::fieldset });
     if (html_element_interface_name == "HTMLFontElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::font });
@@ -187,12 +187,18 @@ ErrorOr<FixedArray<FlyString>> valid_local_names_for_given_html_element_interfac
         return FixedArray<FlyString>::create({ HTML::TagNames::marquee });
     if (html_element_interface_name == "HTMLMenuElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::menu });
+    if (html_element_interface_name == "HTMLMetaElement"sv)
+        return FixedArray<FlyString>::create({ HTML::TagNames::meta });
     if (html_element_interface_name == "HTMLMeterElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::meter });
     if (html_element_interface_name == "HTMLModElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::ins, HTML::TagNames::del });
+    if (html_element_interface_name == "HTMLOListElement"sv)
+        return FixedArray<FlyString>::create({ HTML::TagNames::ol });
     if (html_element_interface_name == "HTMLObjectElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::object });
+    if (html_element_interface_name == "HTMLOptGroupElement"sv)
+        return FixedArray<FlyString>::create({ HTML::TagNames::optgroup });
     if (html_element_interface_name == "HTMLOutputElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::output });
     if (html_element_interface_name == "HTMLParagraphElement"sv)
@@ -244,7 +250,7 @@ ErrorOr<FixedArray<FlyString>> valid_local_names_for_given_html_element_interfac
     if (html_element_interface_name == "HTMLVideoElement"sv)
         return FixedArray<FlyString>::create({ HTML::TagNames::video });
     if (html_element_interface_name == "HTMLElement"sv)
-        return FixedArray<FlyString>::create({ HTML::TagNames::article, HTML::TagNames::section, HTML::TagNames::nav, HTML::TagNames::aside, HTML::TagNames::hgroup, HTML::TagNames::header, HTML::TagNames::footer, HTML::TagNames::address, HTML::TagNames::dt, HTML::TagNames::dd, HTML::TagNames::figure, HTML::TagNames::figcaption, HTML::TagNames::main, HTML::TagNames::em, HTML::TagNames::strong, HTML::TagNames::small, HTML::TagNames::s, HTML::TagNames::cite, HTML::TagNames::dfn, HTML::TagNames::abbr, HTML::TagNames::ruby, HTML::TagNames::rt, HTML::TagNames::rp, HTML::TagNames::code, HTML::TagNames::var, HTML::TagNames::samp, HTML::TagNames::kbd, HTML::TagNames::sub, HTML::TagNames::sup, HTML::TagNames::i, HTML::TagNames::b, HTML::TagNames::u, HTML::TagNames::mark, HTML::TagNames::bdi, HTML::TagNames::bdo, HTML::TagNames::wbr, HTML::TagNames::summary, HTML::TagNames::noscript, HTML::TagNames::acronym, HTML::TagNames::basefont, HTML::TagNames::big, HTML::TagNames::center, HTML::TagNames::nobr, HTML::TagNames::noembed, HTML::TagNames::noframes, HTML::TagNames::plaintext, HTML::TagNames::rb, HTML::TagNames::rtc, HTML::TagNames::strike, HTML::TagNames::tt });
+        return FixedArray<FlyString>::create({ HTML::TagNames::article, HTML::TagNames::search, HTML::TagNames::section, HTML::TagNames::nav, HTML::TagNames::aside, HTML::TagNames::hgroup, HTML::TagNames::header, HTML::TagNames::footer, HTML::TagNames::address, HTML::TagNames::dt, HTML::TagNames::dd, HTML::TagNames::figure, HTML::TagNames::figcaption, HTML::TagNames::main, HTML::TagNames::em, HTML::TagNames::strong, HTML::TagNames::small, HTML::TagNames::s, HTML::TagNames::cite, HTML::TagNames::dfn, HTML::TagNames::abbr, HTML::TagNames::ruby, HTML::TagNames::rt, HTML::TagNames::rp, HTML::TagNames::code, HTML::TagNames::var, HTML::TagNames::samp, HTML::TagNames::kbd, HTML::TagNames::sub, HTML::TagNames::sup, HTML::TagNames::i, HTML::TagNames::b, HTML::TagNames::u, HTML::TagNames::mark, HTML::TagNames::bdi, HTML::TagNames::bdo, HTML::TagNames::wbr, HTML::TagNames::summary, HTML::TagNames::noscript, HTML::TagNames::acronym, HTML::TagNames::basefont, HTML::TagNames::big, HTML::TagNames::center, HTML::TagNames::nobr, HTML::TagNames::noembed, HTML::TagNames::noframes, HTML::TagNames::plaintext, HTML::TagNames::rb, HTML::TagNames::rtc, HTML::TagNames::strike, HTML::TagNames::tt });
     return FixedArray<FlyString>::create({});
 }
 
@@ -420,7 +426,7 @@ static GC::Ref<Element> create_html_element(JS::Realm& realm, Document& document
     if (tag_name == HTML::TagNames::video)
         return realm.create<HTML::HTMLVideoElement>(document, move(qualified_name));
     if (tag_name.is_one_of(
-            HTML::TagNames::article, HTML::TagNames::section, HTML::TagNames::nav, HTML::TagNames::aside, HTML::TagNames::hgroup, HTML::TagNames::header, HTML::TagNames::footer, HTML::TagNames::address, HTML::TagNames::dt, HTML::TagNames::dd, HTML::TagNames::figure, HTML::TagNames::figcaption, HTML::TagNames::main, HTML::TagNames::em, HTML::TagNames::strong, HTML::TagNames::small, HTML::TagNames::s, HTML::TagNames::cite, HTML::TagNames::dfn, HTML::TagNames::abbr, HTML::TagNames::ruby, HTML::TagNames::rt, HTML::TagNames::rp, HTML::TagNames::code, HTML::TagNames::var, HTML::TagNames::samp, HTML::TagNames::kbd, HTML::TagNames::sub, HTML::TagNames::sup, HTML::TagNames::i, HTML::TagNames::b, HTML::TagNames::u, HTML::TagNames::mark, HTML::TagNames::bdi, HTML::TagNames::bdo, HTML::TagNames::wbr, HTML::TagNames::noscript,
+            HTML::TagNames::article, HTML::TagNames::search, HTML::TagNames::section, HTML::TagNames::nav, HTML::TagNames::aside, HTML::TagNames::hgroup, HTML::TagNames::header, HTML::TagNames::footer, HTML::TagNames::address, HTML::TagNames::dt, HTML::TagNames::dd, HTML::TagNames::figure, HTML::TagNames::figcaption, HTML::TagNames::main, HTML::TagNames::em, HTML::TagNames::strong, HTML::TagNames::small, HTML::TagNames::s, HTML::TagNames::cite, HTML::TagNames::dfn, HTML::TagNames::abbr, HTML::TagNames::ruby, HTML::TagNames::rt, HTML::TagNames::rp, HTML::TagNames::code, HTML::TagNames::var, HTML::TagNames::samp, HTML::TagNames::kbd, HTML::TagNames::sub, HTML::TagNames::sup, HTML::TagNames::i, HTML::TagNames::b, HTML::TagNames::u, HTML::TagNames::mark, HTML::TagNames::bdi, HTML::TagNames::bdo, HTML::TagNames::wbr, HTML::TagNames::noscript,
             // Obsolete
             HTML::TagNames::acronym, HTML::TagNames::basefont, HTML::TagNames::big, HTML::TagNames::center, HTML::TagNames::nobr, HTML::TagNames::noembed, HTML::TagNames::noframes, HTML::TagNames::plaintext, HTML::TagNames::rb, HTML::TagNames::rtc, HTML::TagNames::strike, HTML::TagNames::tt))
         return realm.create<HTML::HTMLElement>(document, move(qualified_name));

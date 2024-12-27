@@ -69,6 +69,7 @@ bool is_widget_role(Role role)
         Role::link,
         Role::menuitem,
         Role::menuitemcheckbox,
+        Role::menuitemradio,
         Role::option,
         Role::progressbar,
         Role::radio,
@@ -102,6 +103,7 @@ bool is_document_structure_role(Role role)
         Role::blockquote,
         Role::caption,
         Role::cell,
+        Role::code,
         Role::columnheader,
         Role::definition,
         Role::deletion,
@@ -129,6 +131,8 @@ bool is_document_structure_role(Role role)
         Role::separator, // TODO: Only when not focusable
         Role::strong,
         Role::subscript,
+        Role::suggestion,
+        Role::superscript,
         Role::table,
         Role::term,
         Role::time,
@@ -167,15 +171,6 @@ bool is_windows_role(Role role)
     return first_is_one_of(role,
         Role::alertdialog,
         Role::dialog);
-}
-
-bool is_non_abstract_role(Role role)
-{
-    return is_widget_role(role)
-        || is_document_structure_role(role)
-        || is_landmark_role(role)
-        || is_live_region_role(role)
-        || is_windows_role(role);
 }
 
 // https://www.w3.org/TR/wai-aria-1.2/#namefromcontent

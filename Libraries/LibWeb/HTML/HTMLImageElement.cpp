@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2024, Aliaksandr Kalenik <kalenik.aliaksandr@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -11,7 +11,9 @@
 #include <LibWeb/Bindings/HTMLImageElementPrototype.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/StyleComputer.h>
+#include <LibWeb/CSS/StyleValues/CSSKeywordValue.h>
 #include <LibWeb/CSS/StyleValues/DisplayStyleValue.h>
+#include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
@@ -26,6 +28,7 @@
 #include <LibWeb/HTML/HTMLSourceElement.h>
 #include <LibWeb/HTML/ImageRequest.h>
 #include <LibWeb/HTML/ListOfAvailableImages.h>
+#include <LibWeb/HTML/Numbers.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/PotentialCORSRequest.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
@@ -79,24 +82,49 @@ void HTMLImageElement::visit_edges(Cell::Visitor& visitor)
     visit_lazy_loading_element(visitor);
 }
 
-void HTMLImageElement::apply_presentational_hints(CSS::StyleProperties& style) const
+bool HTMLImageElement::is_presentational_hint(FlyString const& name) const
+{
+    if (Base::is_presentational_hint(name))
+        return true;
+
+    return first_is_one_of(name,
+        HTML::AttributeNames::hspace,
+        HTML::AttributeNames::vspace,
+        HTML::AttributeNames::border);
+}
+
+void HTMLImageElement::apply_presentational_hints(GC::Ref<CSS::CascadedProperties> cascaded_properties) const
 {
     for_each_attribute([&](auto& name, auto& value) {
         if (name == HTML::AttributeNames::hspace) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::MarginLeft, *parsed_value);
-                style.set_property(CSS::PropertyID::MarginRight, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginLeft, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginRight, *parsed_value);
             }
         } else if (name == HTML::AttributeNames::vspace) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::MarginTop, *parsed_value);
-                style.set_property(CSS::PropertyID::MarginBottom, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginTop, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginBottom, *parsed_value);
+            }
+        } else if (name == HTML::AttributeNames::border) {
+            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value()) {
+                auto width_value = CSS::LengthStyleValue::create(CSS::Length::make_px(*parsed_value));
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderTopWidth, width_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderRightWidth, width_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderBottomWidth, width_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderLeftWidth, width_value);
+
+                auto solid_value = CSS::CSSKeywordValue::create(CSS::Keyword::Solid);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderTopStyle, solid_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderRightStyle, solid_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderBottomStyle, solid_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderLeftStyle, solid_value);
             }
         }
     });
 }
 
-void HTMLImageElement::form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value)
+void HTMLImageElement::form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value, Optional<FlyString> const&)
 {
     if (name == HTML::AttributeNames::crossorigin) {
         m_cors_setting = cors_setting_attribute_from_keyword(value);
@@ -110,14 +138,19 @@ void HTMLImageElement::form_associated_element_attribute_changed(FlyString const
         if (layout_node())
             did_update_alt_text(verify_cast<Layout::ImageBox>(*layout_node()));
     }
+
+    if (name == HTML::AttributeNames::decoding) {
+        if (value.has_value() && (value->equals_ignoring_ascii_case("sync"sv) || value->equals_ignoring_ascii_case("async"sv)))
+            dbgln("FIXME: HTMLImageElement.decoding = '{}' is not implemented yet", value->to_ascii_lowercase());
+    }
 }
 
-GC::Ptr<Layout::Node> HTMLImageElement::create_layout_node(CSS::StyleProperties style)
+GC::Ptr<Layout::Node> HTMLImageElement::create_layout_node(GC::Ref<CSS::ComputedProperties> style)
 {
     return heap().allocate<Layout::ImageBox>(document(), *this, move(style), *this);
 }
 
-void HTMLImageElement::adjust_computed_style(CSS::StyleProperties& style)
+void HTMLImageElement::adjust_computed_style(CSS::ComputedProperties& style)
 {
     // https://drafts.csswg.org/css-display-3/#unbox
     if (style.display().is_contents())
@@ -168,7 +201,7 @@ void HTMLImageElement::set_visible_in_viewport(bool)
 }
 
 // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
-unsigned HTMLImageElement::width() const
+WebIDL::UnsignedLong HTMLImageElement::width() const
 {
     const_cast<DOM::Document&>(document()).update_layout();
 
@@ -176,9 +209,9 @@ unsigned HTMLImageElement::width() const
     if (auto* paintable_box = this->paintable_box())
         return paintable_box->content_width().to_int();
 
-    // NOTE: This step seems to not be in the spec, but all browsers do it.
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
     if (auto width_attr = get_attribute(HTML::AttributeNames::width); width_attr.has_value()) {
-        if (auto converted = width_attr->to_number<unsigned>(); converted.has_value())
+        if (auto converted = parse_non_negative_integer(*width_attr); converted.has_value() && *converted <= 2147483647)
             return *converted;
     }
 
@@ -191,13 +224,15 @@ unsigned HTMLImageElement::width() const
     return 0;
 }
 
-WebIDL::ExceptionOr<void> HTMLImageElement::set_width(unsigned width)
+WebIDL::ExceptionOr<void> HTMLImageElement::set_width(WebIDL::UnsignedLong width)
 {
+    if (width > 2147483647)
+        width = 0;
     return set_attribute(HTML::AttributeNames::width, String::number(width));
 }
 
 // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-height
-unsigned HTMLImageElement::height() const
+WebIDL::UnsignedLong HTMLImageElement::height() const
 {
     const_cast<DOM::Document&>(document()).update_layout();
 
@@ -205,9 +240,9 @@ unsigned HTMLImageElement::height() const
     if (auto* paintable_box = this->paintable_box())
         return paintable_box->content_height().to_int();
 
-    // NOTE: This step seems to not be in the spec, but all browsers do it.
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
     if (auto height_attr = get_attribute(HTML::AttributeNames::height); height_attr.has_value()) {
-        if (auto converted = height_attr->to_number<unsigned>(); converted.has_value())
+        if (auto converted = parse_non_negative_integer(*height_attr); converted.has_value() && *converted <= 2147483647)
             return *converted;
     }
 
@@ -220,8 +255,10 @@ unsigned HTMLImageElement::height() const
     return 0;
 }
 
-WebIDL::ExceptionOr<void> HTMLImageElement::set_height(unsigned height)
+WebIDL::ExceptionOr<void> HTMLImageElement::set_height(WebIDL::UnsignedLong height)
 {
+    if (height > 2147483647)
+        height = 0;
     return set_attribute(HTML::AttributeNames::height, String::number(height));
 }
 
@@ -280,7 +317,7 @@ String HTMLImageElement::current_src() const
     auto current_url = m_current_request->current_url();
     if (!current_url.is_valid())
         return {};
-    return MUST(current_url.to_string());
+    return current_url.to_string();
 }
 
 // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
@@ -293,6 +330,9 @@ WebIDL::ExceptionOr<GC::Ref<WebIDL::Promise>> HTMLImageElement::decode() const
 
     // 2. Queue a microtask to perform the following steps:
     queue_a_microtask(&document(), GC::create_function(realm.heap(), [this, promise, &realm]() mutable {
+        // 1. Let global be this's relevant global object.
+        auto& global = relevant_global_object(*this);
+
         auto reject_if_document_not_fully_active = [this, promise, &realm]() -> bool {
             if (this->document().is_fully_active())
                 return false;
@@ -313,55 +353,68 @@ WebIDL::ExceptionOr<GC::Ref<WebIDL::Promise>> HTMLImageElement::decode() const
             return true;
         };
 
-        // 2.1 If any of the following are true:
-        // 2.1.1 this's node document is not fully active;
-        // 2.1.1 then reject promise with an "EncodingError" DOMException.
-        if (reject_if_document_not_fully_active())
+        // 2. If any of the following are true:
+        //    - this's node document is not fully active;
+        //    - or this's current request's state is broken,
+        //    then reject promise with an "EncodingError" DOMException.
+        if (reject_if_document_not_fully_active() || reject_if_current_request_state_broken()) {
             return;
+        }
 
-        // 2.1.2  or this's current request's state is broken,
-        // 2.1.2 then reject promise with an "EncodingError" DOMException.
-        if (reject_if_current_request_state_broken())
-            return;
+        // 3. Otherwise, in parallel wait for one of the following cases to occur, and perform the corresponding actions:
+        Platform::EventLoopPlugin::the().deferred_invoke(GC::create_function(heap(), [this, promise, &realm, &global] {
+            Platform::EventLoopPlugin::the().spin_until(GC::create_function(heap(), [this, promise, &realm, &global] {
+                auto queue_reject_task = [promise, &realm, &global](String const& message) {
+                    queue_global_task(Task::Source::DOMManipulation, global, GC::create_function(realm.heap(), [&realm, promise, message = String(message)] {
+                        auto exception = WebIDL::EncodingError::create(realm, message);
+                        HTML::TemporaryExecutionContext context(realm);
+                        WebIDL::reject_promise(realm, promise, exception);
+                    }));
+                };
 
-        // 2.2 Otherwise, in parallel wait for one of the following cases to occur, and perform the corresponding actions:
-        Platform::EventLoopPlugin::the().deferred_invoke(GC::create_function(heap(), [this, promise, &realm, reject_if_document_not_fully_active, reject_if_current_request_state_broken] {
-            Platform::EventLoopPlugin::the().spin_until(GC::create_function(heap(), [&] {
+                // -> This img element's node document stops being fully active
+                if (!document().is_fully_active()) {
+                    // Queue a global task on the DOM manipulation task source with global to reject promise with an "EncodingError" DOMException.
+                    queue_reject_task("Node document not fully active"_string);
+                    return true;
+                }
+
                 auto state = this->current_request().state();
 
-                return !this->document().is_fully_active() || state == ImageRequest::State::Broken || state == ImageRequest::State::CompletelyAvailable;
+                // -> FIXME: This img element's current request changes or is mutated
+                if (false) {
+                    // Queue a global task on the DOM manipulation task source with global to reject promise with an "EncodingError" DOMException.
+                    queue_reject_task("Current request changed or was mutated"_string);
+                    return true;
+                }
+
+                // -> This img element's current request's state becomes broken
+                if (state == ImageRequest::State::Broken) {
+                    // Queue a global task on the DOM manipulation task source with global to reject promise with an "EncodingError" DOMException.
+                    queue_reject_task("Current request state is broken"_string);
+                    return true;
+                }
+
+                // -> This img element's current request's state becomes completely available
+                if (state == ImageRequest::State::CompletelyAvailable) {
+                    // FIXME: Decode the image.
+                    // FIXME: If decoding does not need to be performed for this image (for example because it is a vector graphic) or the decoding process completes successfully, then queue a global task on the DOM manipulation task source with global to resolve promise with undefined.
+                    // FIXME: If decoding fails (for example due to invalid image data), then queue a global task on the DOM manipulation task source with global to reject promise with an "EncodingError" DOMException.
+
+                    // NOTE: For now we just resolve it.
+                    queue_global_task(Task::Source::DOMManipulation, global, GC::create_function(realm.heap(), [&realm, promise] {
+                        HTML::TemporaryExecutionContext context(realm);
+                        WebIDL::resolve_promise(realm, promise, JS::js_undefined());
+                    }));
+                    return true;
+                }
+
+                return false;
             }));
-
-            // 2.2.1 This img element's node document stops being fully active
-            // 2.2.1 Reject promise with an "EncodingError" DOMException.
-            if (reject_if_document_not_fully_active())
-                return;
-
-            // FIXME: 2.2.2 This img element's current request changes or is mutated
-            // FIXME: 2.2.2 Reject promise with an "EncodingError" DOMException.
-
-            // 2.2.3 This img element's current request's state becomes broken
-            // 2.2.3 Reject promise with an "EncodingError" DOMException.
-            if (reject_if_current_request_state_broken())
-                return;
-
-            // 2.2.4 This img element's current request's state becomes completely available
-            if (this->current_request().state() == ImageRequest::State::CompletelyAvailable) {
-                // 2.2.4.1 FIXME: Decode the image.
-                // 2.2.4.2 FIXME: If decoding does not need to be performed for this image (for example because it is a vector graphic), resolve promise with undefined.
-                // 2.2.4.3 FIXME: If decoding fails (for example due to invalid image data), reject promise with an "EncodingError" DOMException.
-                // 2.2.4.4 FIXME: If the decoding process completes successfully, resolve promise with undefined.
-                // 2.2.4.5 FIXME: User agents should ensure that the decoded media data stays readily available until at least the end of the next successful update
-                // the rendering step in the event loop. This is an important part of the API contract, and should not be broken if at all possible.
-                // (Typically, this would only be violated in low-memory situations that require evicting decoded image data, or when the image is too large
-                // to keep in decoded form for this period of time.)
-
-                HTML::TemporaryExecutionContext context(realm);
-                WebIDL::resolve_promise(realm, promise, JS::js_undefined());
-            }
         }));
     }));
 
+    // 3. Return promise.
     return promise;
 }
 
@@ -369,10 +422,15 @@ Optional<ARIA::Role> HTMLImageElement::default_role() const
 {
     // https://www.w3.org/TR/html-aria/#el-img
     // https://www.w3.org/TR/html-aria/#el-img-no-alt
+    // https://w3c.github.io/aria/#image
+    // NOTE: The "image" role value is a synonym for the older "img" role value; however, the el-img test in
+    //       https://wpt.fyi/results/html-aam/roles.html expects the value to be "image" (not "img").
     if (!alt().is_empty())
-        return ARIA::Role::img;
+        return ARIA::Role::image;
     // https://www.w3.org/TR/html-aria/#el-img-empty-alt
-    return ARIA::Role::presentation;
+    // NOTE: The "none" role value is a synonym for the older "presentation" role value; however, the el-img-alt-no-value
+    //       test in https://wpt.fyi/results/html-aam/roles.html expects the value to be "none" (not "presentation").
+    return ARIA::Role::none;
 }
 
 // https://html.spec.whatwg.org/multipage/images.html#use-srcset-or-picture
@@ -703,12 +761,12 @@ void HTMLImageElement::add_callbacks_to_image_request(GC::Ref<ImageRequest> imag
                 // 3. Add the image to the list of available images using the key key, with the ignore higher-layer caching flag set.
                 document().list_of_available_images().add(key, *image_data, true);
 
+                set_needs_style_update(true);
+                document().set_needs_layout();
+
                 // 4. If maybe omit events is not set or previousURL is not equal to urlString, then fire an event named load at the img element.
                 if (!maybe_omit_events || previous_url != url_string)
                     dispatch_event(DOM::Event::create(realm(), HTML::EventNames::load));
-
-                set_needs_style_update(true);
-                document().set_needs_layout();
 
                 if (image_data->is_animated() && image_data->frame_count() > 1) {
                     m_current_frame_index = 0;
@@ -979,7 +1037,7 @@ static void update_the_source_set(DOM::Element& element)
         TODO();
 
     // 2. Let elements be « el ».
-    GC::MarkedVector<DOM::Element*> elements(element.heap());
+    GC::RootVector<DOM::Element*> elements(element.heap());
     elements.append(&element);
 
     // 3. If el is an img element whose parent node is a picture element,
@@ -1152,32 +1210,6 @@ void HTMLImageElement::animate()
 
     if (paintable())
         paintable()->set_needs_display();
-}
-
-StringView HTMLImageElement::decoding() const
-{
-    switch (m_decoding_hint) {
-    case ImageDecodingHint::Sync:
-        return "sync"sv;
-    case ImageDecodingHint::Async:
-        return "async"sv;
-    case ImageDecodingHint::Auto:
-        return "auto"sv;
-    default:
-        VERIFY_NOT_REACHED();
-    }
-}
-
-void HTMLImageElement::set_decoding(String decoding)
-{
-    if (decoding == "sync"sv) {
-        dbgln("FIXME: HTMLImageElement.decoding = 'sync' is not implemented yet");
-        m_decoding_hint = ImageDecodingHint::Sync;
-    } else if (decoding == "async"sv) {
-        dbgln("FIXME: HTMLImageElement.decoding = 'async' is not implemented yet");
-        m_decoding_hint = ImageDecodingHint::Async;
-    } else
-        m_decoding_hint = ImageDecodingHint::Auto;
 }
 
 bool HTMLImageElement::allows_auto_sizes() const

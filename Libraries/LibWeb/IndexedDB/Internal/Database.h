@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include <AK/HashMap.h>
 #include <LibGC/Ptr.h>
 #include <LibWeb/DOM/EventTarget.h>
 #include <LibWeb/IndexedDB/IDBDatabase.h>
@@ -25,6 +24,9 @@ public:
     u64 version() const { return m_version; }
     String name() const { return m_name; }
 
+    void set_upgrade_transaction(GC::Ptr<IDBTransaction> transaction) { m_upgrade_transaction = transaction; }
+    [[nodiscard]] GC::Ptr<IDBTransaction> upgrade_transaction() { return m_upgrade_transaction; }
+
     void associate(GC::Ref<IDBDatabase> connection) { m_associated_connections.append(connection); }
     ReadonlySpan<GC::Ref<IDBDatabase>> associated_connections() { return m_associated_connections; }
     Vector<GC::Root<IDBDatabase>> associated_connections_except(IDBDatabase& connection)
@@ -37,7 +39,7 @@ public:
         return connections;
     }
 
-    [[nodiscard]] static Optional<GC::Root<Database>> for_key_and_name(StorageAPI::StorageKey&, String&);
+    [[nodiscard]] static Optional<GC::Root<Database> const&> for_key_and_name(StorageAPI::StorageKey&, String&);
     [[nodiscard]] static ErrorOr<GC::Root<Database>> create_for_key_and_name(JS::Realm&, StorageAPI::StorageKey&, String&);
     [[nodiscard]] static ErrorOr<void> delete_for_key_and_name(StorageAPI::StorageKey&, String&);
 
@@ -66,7 +68,8 @@ private:
     // A database has a version. When a database is first created, its version is 0 (zero).
     u64 m_version { 0 };
 
-    // FIXME: A database has at most one associated upgrade transaction, which is either null or an upgrade transaction, and is initially null.
+    // A database has at most one associated upgrade transaction, which is either null or an upgrade transaction, and is initially null.
+    GC::Ptr<IDBTransaction> m_upgrade_transaction;
 };
 
 }

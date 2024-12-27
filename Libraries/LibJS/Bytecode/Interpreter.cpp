@@ -1074,6 +1074,12 @@ inline ThrowCompletionOr<Value> get_by_value(VM& vm, Optional<IdentifierTableInd
                     return fast_typed_array_get_element<i32>(typed_array, index);
                 case TypedArrayBase::Kind::Uint8ClampedArray:
                     return fast_typed_array_get_element<u8>(typed_array, index);
+                case TypedArrayBase::Kind::Float16Array:
+                    return fast_typed_array_get_element<f16>(typed_array, index);
+                case TypedArrayBase::Kind::Float32Array:
+                    return fast_typed_array_get_element<float>(typed_array, index);
+                case TypedArrayBase::Kind::Float64Array:
+                    return fast_typed_array_get_element<double>(typed_array, index);
                 default:
                     // FIXME: Support more TypedArray kinds.
                     break;
@@ -1312,33 +1318,49 @@ inline ThrowCompletionOr<void> put_by_value(VM& vm, Value base, Optional<Depreca
             auto& typed_array = static_cast<TypedArrayBase&>(object);
             auto canonical_index = CanonicalIndex { CanonicalIndex::Type::Index, index };
 
-            if (value.is_int32() && is_valid_integer_index(typed_array, canonical_index)) {
-                switch (typed_array.kind()) {
-                case TypedArrayBase::Kind::Uint8Array:
-                    fast_typed_array_set_element<u8>(typed_array, index, static_cast<u8>(value.as_i32()));
-                    return {};
-                case TypedArrayBase::Kind::Uint16Array:
-                    fast_typed_array_set_element<u16>(typed_array, index, static_cast<u16>(value.as_i32()));
-                    return {};
-                case TypedArrayBase::Kind::Uint32Array:
-                    fast_typed_array_set_element<u32>(typed_array, index, static_cast<u32>(value.as_i32()));
-                    return {};
-                case TypedArrayBase::Kind::Int8Array:
-                    fast_typed_array_set_element<i8>(typed_array, index, static_cast<i8>(value.as_i32()));
-                    return {};
-                case TypedArrayBase::Kind::Int16Array:
-                    fast_typed_array_set_element<i16>(typed_array, index, static_cast<i16>(value.as_i32()));
-                    return {};
-                case TypedArrayBase::Kind::Int32Array:
-                    fast_typed_array_set_element<i32>(typed_array, index, value.as_i32());
-                    return {};
-                case TypedArrayBase::Kind::Uint8ClampedArray:
-                    fast_typed_array_set_element<u8>(typed_array, index, clamp(value.as_i32(), 0, 255));
-                    return {};
-                default:
-                    // FIXME: Support more TypedArray kinds.
-                    break;
+            if (is_valid_integer_index(typed_array, canonical_index)) {
+                if (value.is_int32()) {
+                    switch (typed_array.kind()) {
+                    case TypedArrayBase::Kind::Uint8Array:
+                        fast_typed_array_set_element<u8>(typed_array, index, static_cast<u8>(value.as_i32()));
+                        return {};
+                    case TypedArrayBase::Kind::Uint16Array:
+                        fast_typed_array_set_element<u16>(typed_array, index, static_cast<u16>(value.as_i32()));
+                        return {};
+                    case TypedArrayBase::Kind::Uint32Array:
+                        fast_typed_array_set_element<u32>(typed_array, index, static_cast<u32>(value.as_i32()));
+                        return {};
+                    case TypedArrayBase::Kind::Int8Array:
+                        fast_typed_array_set_element<i8>(typed_array, index, static_cast<i8>(value.as_i32()));
+                        return {};
+                    case TypedArrayBase::Kind::Int16Array:
+                        fast_typed_array_set_element<i16>(typed_array, index, static_cast<i16>(value.as_i32()));
+                        return {};
+                    case TypedArrayBase::Kind::Int32Array:
+                        fast_typed_array_set_element<i32>(typed_array, index, value.as_i32());
+                        return {};
+                    case TypedArrayBase::Kind::Uint8ClampedArray:
+                        fast_typed_array_set_element<u8>(typed_array, index, clamp(value.as_i32(), 0, 255));
+                        return {};
+                    default:
+                        break;
+                    }
+                } else if (value.is_double()) {
+                    switch (typed_array.kind()) {
+                    case TypedArrayBase::Kind::Float16Array:
+                        fast_typed_array_set_element<f16>(typed_array, index, static_cast<f16>(value.as_double()));
+                        return {};
+                    case TypedArrayBase::Kind::Float32Array:
+                        fast_typed_array_set_element<float>(typed_array, index, static_cast<float>(value.as_double()));
+                        return {};
+                    case TypedArrayBase::Kind::Float64Array:
+                        fast_typed_array_set_element<double>(typed_array, index, value.as_double());
+                        return {};
+                    default:
+                        break;
+                    }
                 }
+                // FIXME: Support more TypedArray kinds.
             }
 
             if (typed_array.kind() == TypedArrayBase::Kind::Uint32Array && value.is_integral_number()) {
@@ -1436,13 +1458,13 @@ inline Value new_regexp(VM& vm, ParsedRegex const& parsed_regex, ByteString cons
 }
 
 // 13.3.8.1 https://tc39.es/ecma262/#sec-runtime-semantics-argumentlistevaluation
-inline GC::MarkedVector<Value> argument_list_evaluation(VM& vm, Value arguments)
+inline GC::RootVector<Value> argument_list_evaluation(VM& vm, Value arguments)
 {
     // Note: Any spreading and actual evaluation is handled in preceding opcodes
     // Note: The spec uses the concept of a list, while we create a temporary array
     //       in the preceding opcodes, so we have to convert in a manner that is not
     //       visible to the user
-    GC::MarkedVector<Value> argument_values { vm.heap() };
+    GC::RootVector<Value> argument_values { vm.heap() };
 
     auto& argument_array = arguments.as_array();
     auto array_length = argument_array.indexed_properties().array_like_size();
@@ -1519,7 +1541,7 @@ inline ThrowCompletionOr<GC::Ref<Object>> super_call_with_argument_array(VM& vm,
     auto* func = get_super_constructor(vm);
 
     // 4. Let argList be ? ArgumentListEvaluation of Arguments.
-    GC::MarkedVector<Value> arg_list { vm.heap() };
+    GC::RootVector<Value> arg_list { vm.heap() };
     if (is_synthetic) {
         VERIFY(argument_array.is_object() && is<Array>(argument_array.as_object()));
         auto const& array_value = static_cast<Array const&>(argument_array.as_object());

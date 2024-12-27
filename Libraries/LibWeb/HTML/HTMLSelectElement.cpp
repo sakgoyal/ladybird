@@ -64,7 +64,7 @@ void HTMLSelectElement::visit_edges(Cell::Visitor& visitor)
     }
 }
 
-void HTMLSelectElement::adjust_computed_style(CSS::StyleProperties& style)
+void HTMLSelectElement::adjust_computed_style(CSS::ComputedProperties& style)
 {
     // https://drafts.csswg.org/css-display-3/#unbox
     if (style.display().is_contents())
@@ -77,7 +77,7 @@ void HTMLSelectElement::adjust_computed_style(CSS::StyleProperties& style)
 }
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#concept-select-size
-WebIDL::UnsignedLong HTMLSelectElement::size() const
+u32 HTMLSelectElement::display_size() const
 {
     // The size IDL attribute must reflect the respective content attributes of the same name. The size IDL attribute has a default value of 0.
     if (auto size_string = get_attribute(HTML::AttributeNames::size); size_string.has_value()) {
@@ -94,8 +94,22 @@ WebIDL::UnsignedLong HTMLSelectElement::size() const
     return 1;
 }
 
+// https://html.spec.whatwg.org/multipage/form-elements.html#dom-select-size
+WebIDL::UnsignedLong HTMLSelectElement::size() const
+{
+    // The multiple, required, and size IDL attributes must reflect the respective content attributes of the same name. The size IDL attribute has a default value of 0.
+    if (auto size_string = get_attribute(HTML::AttributeNames::size); size_string.has_value()) {
+        if (auto size = parse_non_negative_integer(*size_string); size.has_value() && *size <= 2147483647)
+            return *size;
+    }
+
+    return 0;
+}
+
 WebIDL::ExceptionOr<void> HTMLSelectElement::set_size(WebIDL::UnsignedLong size)
 {
+    if (size > 2147483647)
+        size = 0;
     return set_attribute(HTML::AttributeNames::size, String::number(size));
 }
 
@@ -502,11 +516,11 @@ void HTMLSelectElement::form_associated_element_was_removed(DOM::Node*)
     set_shadow_root(nullptr);
 }
 
-void HTMLSelectElement::computed_css_values_changed()
+void HTMLSelectElement::computed_properties_changed()
 {
     // Hide chevron icon when appearance is none
     if (m_chevron_icon_element) {
-        auto appearance = computed_css_values()->appearance();
+        auto appearance = computed_properties()->appearance();
         if (appearance.has_value() && *appearance == CSS::Appearance::None) {
             MUST(m_chevron_icon_element->style_for_bindings()->set_property(CSS::PropertyID::Display, "none"_string));
         } else {
@@ -574,7 +588,7 @@ void HTMLSelectElement::update_selectedness()
         return;
 
     // If element's multiple attribute is absent, and element's display size is 1,
-    if (size() == 1) {
+    if (display_size() == 1) {
         bool has_selected_elements = false;
         for (auto const& option_element : list_of_options()) {
             if (option_element->selected()) {

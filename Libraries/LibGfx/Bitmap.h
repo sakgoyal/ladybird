@@ -7,11 +7,9 @@
 
 #pragma once
 
-#include <AK/Forward.h>
 #include <AK/Function.h>
 #include <AK/RefCounted.h>
 #include <LibCore/AnonymousBuffer.h>
-#include <LibCore/Forward.h>
 #include <LibGfx/Color.h>
 #include <LibGfx/Forward.h>
 #include <LibGfx/Rect.h>
@@ -70,9 +68,6 @@ public:
     [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> create(BitmapFormat, AlphaType, IntSize);
     [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> create_shareable(BitmapFormat, AlphaType, IntSize);
     [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> create_wrapper(BitmapFormat, AlphaType, IntSize, size_t pitch, void*, Function<void()>&& destruction_callback = {});
-    [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> load_from_file(StringView path, Optional<IntSize> ideal_size = {});
-    [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> load_from_file(NonnullOwnPtr<Core::File>, StringView path, Optional<IntSize> ideal_size = {});
-    [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> load_from_bytes(ReadonlyBytes, Optional<IntSize> ideal_size = {}, Optional<ByteString> mine_type = {});
     [[nodiscard]] static ErrorOr<NonnullRefPtr<Bitmap>> create_with_anonymous_buffer(BitmapFormat, AlphaType, Core::AnonymousBuffer, IntSize);
 
     ErrorOr<NonnullRefPtr<Gfx::Bitmap>> clone() const;
@@ -114,25 +109,7 @@ public:
 
     [[nodiscard]] size_t pitch() const { return m_pitch; }
 
-    [[nodiscard]] static unsigned bpp_for_format(BitmapFormat format)
-    {
-        switch (format) {
-        case BitmapFormat::BGRx8888:
-        case BitmapFormat::BGRA8888:
-            return 32;
-        default:
-            VERIFY_NOT_REACHED();
-        case BitmapFormat::Invalid:
-            return 0;
-        }
-    }
-
     [[nodiscard]] static size_t minimum_pitch(size_t width, BitmapFormat);
-
-    [[nodiscard]] unsigned bpp() const
-    {
-        return bpp_for_format(m_format);
-    }
 
     [[nodiscard]] bool has_alpha_channel() const { return m_format == BitmapFormat::BGRA8888 || m_format == BitmapFormat::RGBA8888; }
     [[nodiscard]] BitmapFormat format() const { return m_format; }
@@ -286,40 +263,21 @@ ALWAYS_INLINE Color Bitmap::get_pixel(int x, int y) const
     }
 }
 
-template<>
-ALWAYS_INLINE void Bitmap::set_pixel<StorageFormat::BGRx8888>(int x, int y, Color color)
+template<StorageFormat storage_format>
+ALWAYS_INLINE void Bitmap::set_pixel(int x, int y, Color color)
 {
     VERIFY(x >= 0);
     VERIFY(x < width());
-    scanline(y)[x] = color.value();
-}
 
-template<>
-ALWAYS_INLINE void Bitmap::set_pixel<StorageFormat::BGRA8888>(int x, int y, Color color)
-{
-    VERIFY(x >= 0);
-    VERIFY(x < width());
-    scanline(y)[x] = color.value(); // drop alpha
-}
-
-template<>
-ALWAYS_INLINE void Bitmap::set_pixel<StorageFormat::RGBA8888>(int x, int y, Color color)
-{
-    VERIFY(x >= 0);
-    VERIFY(x < width());
-    // FIXME: There's a lot of inaccurately named functions in the Color class right now (RGBA vs BGRA),
-    //        clear those up and then make this more convenient.
-    auto rgba = (color.alpha() << 24) | (color.blue() << 16) | (color.green() << 8) | color.red();
-    scanline(y)[x] = rgba;
-}
-
-template<>
-ALWAYS_INLINE void Bitmap::set_pixel<StorageFormat::RGBx8888>(int x, int y, Color color)
-{
-    VERIFY(x >= 0);
-    VERIFY(x < width());
-    auto rgb = (color.blue() << 16) | (color.green() << 8) | color.red();
-    scanline(y)[x] = rgb;
+    if constexpr (storage_format == StorageFormat::BGRx8888 || storage_format == StorageFormat::BGRA8888) {
+        scanline(y)[x] = color.value();
+    } else if constexpr (storage_format == StorageFormat::RGBA8888) {
+        scanline(y)[x] = (color.alpha() << 24) | (color.blue() << 16) | (color.green() << 8) | color.red();
+    } else if constexpr (storage_format == StorageFormat::RGBx8888) {
+        scanline(y)[x] = (color.blue() << 16) | (color.green() << 8) | color.red();
+    } else {
+        static_assert(false, "There's a new storage format not in Bitmap::set_pixel");
+    }
 }
 
 ALWAYS_INLINE void Bitmap::set_pixel(int x, int y, Color color)
@@ -327,19 +285,18 @@ ALWAYS_INLINE void Bitmap::set_pixel(int x, int y, Color color)
     switch (determine_storage_format(m_format)) {
     case StorageFormat::BGRx8888:
         set_pixel<StorageFormat::BGRx8888>(x, y, color);
-        break;
+        return;
     case StorageFormat::BGRA8888:
         set_pixel<StorageFormat::BGRA8888>(x, y, color);
-        break;
+        return;
     case StorageFormat::RGBA8888:
         set_pixel<StorageFormat::RGBA8888>(x, y, color);
-        break;
+        return;
     case StorageFormat::RGBx8888:
         set_pixel<StorageFormat::RGBx8888>(x, y, color);
-        break;
-    default:
-        VERIFY_NOT_REACHED();
+        return;
     }
+    VERIFY_NOT_REACHED();
 }
 
 }

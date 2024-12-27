@@ -2,140 +2,123 @@
  * Copyright (c) 2021, Idan Horowitz <idan.horowitz@serenityos.org>
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2023-2024, Shannon Booth <shannon@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #pragma once
 
+#include <AK/Optional.h>
+#include <AK/String.h>
+#include <AK/Vector.h>
+#include <LibJS/Forward.h>
 #include <LibJS/Runtime/Completion.h>
-#include <LibJS/Runtime/Object.h>
-#include <LibJS/Runtime/Temporal/PlainDate.h>
-#include <LibJS/Runtime/Temporal/PlainMonthDay.h>
-#include <LibJS/Runtime/Temporal/PlainYearMonth.h>
-#include <LibJS/Runtime/Value.h>
+#include <LibJS/Runtime/Temporal/AbstractOperations.h>
 
 namespace JS::Temporal {
 
-class Calendar final : public Object {
-    JS_OBJECT(Calendar, Object);
-    GC_DECLARE_ALLOCATOR(Calendar);
-
-public:
-    virtual ~Calendar() override = default;
-
-    [[nodiscard]] String const& identifier() const { return m_identifier; }
-
-private:
-    Calendar(String identifier, Object& prototype);
-
-    // 12.5 Properties of Temporal.Calendar Instances, https://tc39.es/proposal-temporal/#sec-properties-of-temporal-calendar-instances
-    String m_identifier; // [[Identifier]]
-};
-
-// 14.2 The Year-Week Record Specification Type, https://tc39.es/proposal-temporal/#sec-year-week-record-specification-type
-struct YearWeekRecord {
-    u8 week { 0 };
+// 12.2.1 Calendar Date Records, https://tc39.es/proposal-temporal/#sec-temporal-calendar-date-records
+struct CalendarDate {
+    Optional<String> era;
+    Optional<i32> era_year;
     i32 year { 0 };
+    u8 month { 0 };
+    String month_code;
+    u8 day { 0 };
+    u8 day_of_week { 0 };
+    u16 day_of_year { 0 };
+    YearWeek week_of_year;
+    u8 days_in_week { 0 };
+    u8 days_in_month { 0 };
+    u16 days_in_year { 0 };
+    u8 months_in_year { 0 };
+    bool in_leap_year { false };
 };
 
-bool is_builtin_calendar(StringView identifier);
-ReadonlySpan<StringView> available_calendars();
-ThrowCompletionOr<Calendar*> create_temporal_calendar(VM&, String const& identifier, FunctionObject const* new_target = nullptr);
-ThrowCompletionOr<Calendar*> get_builtin_calendar(VM&, String const& identifier);
-Calendar* get_iso8601_calendar(VM&);
-ThrowCompletionOr<Vector<String>> calendar_fields(VM&, Object& calendar, Vector<StringView> const& field_names);
-ThrowCompletionOr<Object*> calendar_merge_fields(VM&, Object& calendar, Object& fields, Object& additional_fields);
-ThrowCompletionOr<PlainDate*> calendar_date_add(VM&, Object& calendar, Value date, Duration&, Object* options = nullptr, FunctionObject* date_add = nullptr);
-ThrowCompletionOr<GC::Ref<Duration>> calendar_date_until(VM&, CalendarMethods const&, Value one, Value two, Object const& options);
-ThrowCompletionOr<double> calendar_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_month(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<String> calendar_month_code(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_day(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_day_of_week(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_day_of_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_week_of_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_year_of_week(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_days_in_week(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_days_in_month(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_days_in_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<double> calendar_months_in_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<Value> calendar_in_leap_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<Value> calendar_era(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<Value> calendar_era_year(VM&, Object& calendar, Object& date_like);
-ThrowCompletionOr<Object*> to_temporal_calendar(VM&, Value);
-ThrowCompletionOr<Object*> to_temporal_calendar_with_iso_default(VM&, Value);
-ThrowCompletionOr<Object*> get_temporal_calendar_with_iso_default(VM&, Object&);
-ThrowCompletionOr<PlainDate*> calendar_date_from_fields(VM&, Object& calendar, Object const& fields, Object const* options = nullptr);
-ThrowCompletionOr<PlainYearMonth*> calendar_year_month_from_fields(VM&, Object& calendar, Object const& fields, Object const* options = nullptr);
-ThrowCompletionOr<PlainMonthDay*> calendar_month_day_from_fields(VM&, Object& calendar, Object const& fields, Object const* options = nullptr);
-ThrowCompletionOr<String> maybe_format_calendar_annotation(VM&, Object const* calendar_object, StringView show_calendar);
-ThrowCompletionOr<String> format_calendar_annotation(VM&, StringView id, StringView show_calendar);
-ThrowCompletionOr<bool> calendar_equals(VM&, Object& one, Object& two);
-ThrowCompletionOr<Object*> consolidate_calendars(VM&, Object& one, Object& two);
-u8 iso_days_in_month(i32 year, u8 month);
-YearWeekRecord to_iso_week_of_year(i32 year, u8 month, u8 day);
-ThrowCompletionOr<String> iso_month_code(VM&, u8 month);
-ThrowCompletionOr<double> resolve_iso_month(VM&, Object const& fields);
-ThrowCompletionOr<ISODateRecord> iso_date_from_fields(VM&, Object const& fields, Object const& options);
-ThrowCompletionOr<ISOYearMonth> iso_year_month_from_fields(VM&, Object const& fields, Object const& options);
-ThrowCompletionOr<ISOMonthDay> iso_month_day_from_fields(VM&, Object const& fields, Object const& options);
-ThrowCompletionOr<Object*> default_merge_calendar_fields(VM&, Object const& fields, Object const& additional_fields);
-u16 to_iso_day_of_year(i32 year, u8 month, u8 day);
-u8 to_iso_day_of_week(i32 year, u8 month, u8 day);
-
-// https://tc39.es/proposal-temporal/#table-temporal-calendar-methods-record-fields
-struct CalendarMethods {
-    // The calendar object, or a string indicating a built-in time zone.
-    Variant<String, GC::Ref<Object>> receiver; // [[Reciever]]
-
-    // The calendar's dateAdd method. For a built-in calendar this is always %Temporal.Calendar.prototype.dateAdd%.
-    GC::Ptr<FunctionObject> date_add; // [[DateAdd]]
-
-    // The calendar's dateFromFields method. For a built-in calendar this is always %Temporal.Calendar.prototype.dateFromFields%.
-    GC::Ptr<FunctionObject> date_from_fields; // [[DateFromFields]]
-
-    // The calendar's dateUntil method. For a built-in calendar this is always %Temporal.Calendar.prototype.dateUntil%.
-    GC::Ptr<FunctionObject> date_until; // [[DateUntil]]
-
-    // The calendar's day method. For a built-in calendar this is always %Temporal.Calendar.prototype.day%.
-    GC::Ptr<FunctionObject> day; // [[Day]]
-
-    // The calendar's fields method. For a built-in calendar this is always %Temporal.Calendar.prototype.fields%.
-    GC::Ptr<FunctionObject> fields; // [[Fields]]
-
-    // The calendar's mergeFields method. For a built-in calendar this is always %Temporal.Calendar.prototype.mergeFields%.
-    GC::Ptr<FunctionObject> merge_fields; // [[MergeFields]]
-
-    // The calendar's monthDayFromFields method. For a built-in calendar this is always %Temporal.Calendar.prototype.monthDayFromFields%.
-    GC::Ptr<FunctionObject> month_day_from_fields; // [[MonthDayFromFields]]
-
-    // The calendar's yearMonthFromFields method. For a built-in calendar this is always %Temporal.Calendar.prototype.yearMonthFromFields%.
-    GC::Ptr<FunctionObject> year_month_from_fields; // [[YearMonthFromFields]]
+// https://tc39.es/proposal-temporal/#table-temporal-calendar-fields-record-fields
+enum class CalendarField {
+    Era,
+    EraYear,
+    Year,
+    Month,
+    MonthCode,
+    Day,
+    Hour,
+    Minute,
+    Second,
+    Millisecond,
+    Microsecond,
+    Nanosecond,
+    Offset,
+    TimeZone,
 };
 
-#define JS_ENUMERATE_CALENDAR_METHODS                                             \
-    __JS_ENUMERATE(DateAdd, dateAdd, date_add)                                    \
-    __JS_ENUMERATE(DateFromFields, dateFromFields, date_from_fields)              \
-    __JS_ENUMERATE(DateUntil, dateUntil, date_until)                              \
-    __JS_ENUMERATE(Day, day, day)                                                 \
-    __JS_ENUMERATE(Fields, fields, fields)                                        \
-    __JS_ENUMERATE(MergeFields, mergeFields, merge_fields)                        \
-    __JS_ENUMERATE(MonthDayFromFields, monthDayFromFields, month_day_from_fields) \
-    __JS_ENUMERATE(YearMonthFromFields, yearMonthFromFields, year_month_from_fields)
+// https://tc39.es/proposal-temporal/#table-temporal-calendar-fields-record-fields
+struct CalendarFields {
+    static CalendarFields unset()
+    {
+        return {
+            .era = {},
+            .era_year = {},
+            .year = {},
+            .month = {},
+            .month_code = {},
+            .day = {},
+            .hour = {},
+            .minute = {},
+            .second = {},
+            .millisecond = {},
+            .microsecond = {},
+            .nanosecond = {},
+            .offset_string = {},
+            .time_zone = {},
+        };
+    }
 
-enum class CalendarMethod {
-#define __JS_ENUMERATE(PascalName, camelName, snake_name) \
-    PascalName,
-    JS_ENUMERATE_CALENDAR_METHODS
-#undef __JS_ENUMERATE
+    Optional<String> era;
+    Optional<i32> era_year;
+    Optional<i32> year;
+    Optional<u32> month;
+    Optional<String> month_code;
+    Optional<u32> day;
+    Optional<u8> hour { 0 };
+    Optional<u8> minute { 0 };
+    Optional<u8> second { 0 };
+    Optional<u16> millisecond { 0 };
+    Optional<u16> microsecond { 0 };
+    Optional<u16> nanosecond { 0 };
+    Optional<String> offset_string;
+    Optional<String> time_zone;
 };
 
-ThrowCompletionOr<void> calendar_methods_record_lookup(VM&, CalendarMethods&, CalendarMethod);
-ThrowCompletionOr<CalendarMethods> create_calendar_methods_record(VM&, Variant<String, GC::Ref<Object>> calendar, ReadonlySpan<CalendarMethod>);
-ThrowCompletionOr<Optional<CalendarMethods>> create_calendar_methods_record_from_relative_to(VM&, GC::Ptr<PlainDate>, GC::Ptr<ZonedDateTime>, ReadonlySpan<CalendarMethod>);
-bool calendar_methods_record_has_looked_up(CalendarMethods const&, CalendarMethod);
-bool calendar_methods_record_is_builtin(CalendarMethods const&);
-ThrowCompletionOr<Value> calendar_methods_record_call(VM&, CalendarMethods const&, CalendarMethod, ReadonlySpan<Value> arguments);
+struct Partial { };
+using CalendarFieldList = ReadonlySpan<CalendarField>;
+using CalendarFieldListOrPartial = Variant<Partial, CalendarFieldList>;
+
+ThrowCompletionOr<String> canonicalize_calendar(VM&, StringView id);
+Vector<String> const& available_calendars();
+ThrowCompletionOr<CalendarFields> prepare_calendar_fields(VM&, StringView calendar, Object const& fields, CalendarFieldList calendar_field_names, CalendarFieldList non_calendar_field_names, CalendarFieldListOrPartial required_field_names);
+ThrowCompletionOr<ISODate> calendar_date_from_fields(VM&, StringView calendar, CalendarFields&, Overflow);
+ThrowCompletionOr<ISODate> calendar_year_month_from_fields(VM&, StringView calendar, CalendarFields&, Overflow);
+ThrowCompletionOr<ISODate> calendar_month_day_from_fields(VM&, StringView calendar, CalendarFields&, Overflow);
+String format_calendar_annotation(StringView id, ShowCalendar);
+bool calendar_equals(StringView one, StringView two);
+u8 iso_days_in_month(double year, double month);
+YearWeek iso_week_of_year(ISODate);
+u16 iso_day_of_year(ISODate);
+u8 iso_day_of_week(ISODate);
+Vector<CalendarField> calendar_field_keys_present(CalendarFields const&);
+CalendarFields calendar_merge_fields(StringView calendar, CalendarFields const& fields, CalendarFields const& additional_fields);
+ThrowCompletionOr<ISODate> calendar_date_add(VM&, StringView calendar, ISODate, DateDuration const&, Overflow);
+DateDuration calendar_date_until(VM&, StringView calendar, ISODate, ISODate, Unit largest_unit);
+ThrowCompletionOr<String> to_temporal_calendar_identifier(VM&, Value temporal_calendar_like);
+ThrowCompletionOr<String> get_temporal_calendar_identifier_with_iso_default(VM&, Object const& item);
+ThrowCompletionOr<ISODate> calendar_date_to_iso(VM&, StringView calendar, CalendarFields const&, Overflow);
+ThrowCompletionOr<ISODate> calendar_month_day_to_iso_reference_date(VM&, StringView calendar, CalendarFields const&, Overflow);
+CalendarDate calendar_iso_to_date(StringView calendar, ISODate);
+Vector<CalendarField> calendar_extra_fields(StringView calendar, CalendarFieldList);
+Vector<CalendarField> calendar_field_keys_to_ignore(StringView calendar, ReadonlySpan<CalendarField>);
+ThrowCompletionOr<void> calendar_resolve_fields(VM&, StringView calendar, CalendarFields&, DateType);
 
 }

@@ -5,10 +5,10 @@
  */
 
 #include <AK/ByteReader.h>
-#include <AK/Endian.h>
 #include <AK/Random.h>
 #include <LibCrypto/Curves/Curve25519.h>
 #include <LibCrypto/Curves/X25519.h>
+#include <LibCrypto/SecureRandom.h>
 
 namespace Crypto::Curves {
 
@@ -30,7 +30,7 @@ static void conditional_swap(u32* first, u32* second, u32 condition)
 ErrorOr<ByteBuffer> X25519::generate_private_key()
 {
     auto buffer = TRY(ByteBuffer::create_uninitialized(BYTES));
-    fill_with_random(buffer);
+    fill_with_secure_random(buffer);
     return buffer;
 }
 

@@ -15,7 +15,6 @@
 #include <AK/String.h>
 #include <AK/Vector.h>
 #include <LibCore/Environment.h>
-#include <LibCore/SessionManagement.h>
 #include <LibCore/System.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -998,6 +997,11 @@ ErrorOr<void> set_resource_limits(int resource, rlim_t limit)
         return Error::from_syscall("setrlimit"sv, -errno);
 
     return {};
+}
+
+int getpid()
+{
+    return ::getpid();
 }
 
 }

@@ -5,8 +5,8 @@
  */
 
 #include <LibGfx/Bitmap.h>
-#include <LibGfx/ImmutableBitmap.h>
 #include <LibGfx/PaintingSurface.h>
+#include <LibGfx/SkiaUtils.h>
 
 #include <core/SkColorSpace.h>
 #include <core/SkSurface.h>
@@ -15,9 +15,7 @@
 #include <gpu/ganesh/SkSurfaceGanesh.h>
 
 #ifdef AK_OS_MACOS
-#    include <gpu/ganesh/mtl/GrMtlBackendContext.h>
 #    include <gpu/ganesh/mtl/GrMtlBackendSurface.h>
-#    include <gpu/ganesh/mtl/GrMtlDirectContext.h>
 #endif
 
 namespace Gfx {
@@ -29,26 +27,11 @@ struct PaintingSurface::Impl {
     RefPtr<SkiaBackendContext> context;
 };
 
-static SkColorType to_skia_color_type(Gfx::BitmapFormat format)
-{
-    switch (format) {
-    case Gfx::BitmapFormat::Invalid:
-        return kUnknown_SkColorType;
-    case Gfx::BitmapFormat::BGRA8888:
-    case Gfx::BitmapFormat::BGRx8888:
-        return kBGRA_8888_SkColorType;
-    case Gfx::BitmapFormat::RGBA8888:
-        return kRGBA_8888_SkColorType;
-    default:
-        return kUnknown_SkColorType;
-    }
-}
-
 NonnullRefPtr<PaintingSurface> PaintingSurface::create_with_size(RefPtr<SkiaBackendContext> context, Gfx::IntSize size, Gfx::BitmapFormat color_type, Gfx::AlphaType alpha_type)
 {
     auto sk_color_type = to_skia_color_type(color_type);
     auto sk_alpha_type = alpha_type == Gfx::AlphaType::Premultiplied ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
-    auto image_info = SkImageInfo::Make(size.width(), size.height(), sk_color_type, sk_alpha_type);
+    auto image_info = SkImageInfo::Make(size.width(), size.height(), sk_color_type, sk_alpha_type, SkColorSpace::MakeSRGB());
 
     if (!context) {
         auto bitmap = Gfx::Bitmap::create(color_type, alpha_type, size).value();
@@ -67,20 +50,32 @@ NonnullRefPtr<PaintingSurface> PaintingSurface::wrap_bitmap(Bitmap& bitmap)
     auto color_type = to_skia_color_type(bitmap.format());
     auto alpha_type = bitmap.alpha_type() == Gfx::AlphaType::Premultiplied ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
     auto size = bitmap.size();
-    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type);
+    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type, SkColorSpace::MakeSRGB());
     auto surface = SkSurfaces::WrapPixels(image_info, bitmap.begin(), bitmap.pitch());
     return adopt_ref(*new PaintingSurface(make<Impl>(size, surface, bitmap, nullptr)));
 }
 
 #ifdef AK_OS_MACOS
-NonnullRefPtr<PaintingSurface> PaintingSurface::wrap_metal_surface(Gfx::MetalTexture& metal_texture, RefPtr<SkiaBackendContext> context)
+NonnullRefPtr<PaintingSurface> PaintingSurface::wrap_iosurface(Core::IOSurfaceHandle const& iosurface_handle, RefPtr<SkiaBackendContext> context, Origin origin)
 {
-    IntSize const size { metal_texture.width(), metal_texture.height() };
-    auto image_info = SkImageInfo::Make(size.width(), size.height(), kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+    auto metal_texture = context->metal_context().create_texture_from_iosurface(iosurface_handle);
+    IntSize const size { metal_texture->width(), metal_texture->height() };
+    auto image_info = SkImageInfo::Make(size.width(), size.height(), kBGRA_8888_SkColorType, kPremul_SkAlphaType, SkColorSpace::MakeSRGB());
     GrMtlTextureInfo mtl_info;
-    mtl_info.fTexture = sk_ret_cfp(metal_texture.texture());
-    auto backend_render_target = GrBackendRenderTargets::MakeMtl(metal_texture.width(), metal_texture.height(), mtl_info);
-    auto surface = SkSurfaces::WrapBackendRenderTarget(context->sk_context(), backend_render_target, kTopLeft_GrSurfaceOrigin, kBGRA_8888_SkColorType, nullptr, nullptr);
+    mtl_info.fTexture = sk_ret_cfp(metal_texture->texture());
+    auto backend_render_target = GrBackendRenderTargets::MakeMtl(metal_texture->width(), metal_texture->height(), mtl_info);
+    GrSurfaceOrigin sk_origin;
+    switch (origin) {
+    case Origin::TopLeft:
+        sk_origin = kTopLeft_GrSurfaceOrigin;
+        break;
+    case Origin::BottomLeft:
+        sk_origin = kBottomLeft_GrSurfaceOrigin;
+        break;
+    default:
+        VERIFY_NOT_REACHED();
+    }
+    auto surface = SkSurfaces::WrapBackendRenderTarget(context->sk_context(), backend_render_target, sk_origin, kBGRA_8888_SkColorType, nullptr, nullptr);
     return adopt_ref(*new PaintingSurface(make<Impl>(size, surface, nullptr, context)));
 }
 #endif
@@ -96,16 +91,16 @@ void PaintingSurface::read_into_bitmap(Gfx::Bitmap& bitmap)
 {
     auto color_type = to_skia_color_type(bitmap.format());
     auto alpha_type = bitmap.alpha_type() == Gfx::AlphaType::Premultiplied ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
-    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type);
+    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type, SkColorSpace::MakeSRGB());
     SkPixmap const pixmap(image_info, bitmap.begin(), bitmap.pitch());
     m_impl->surface->readPixels(pixmap, 0, 0);
 }
 
-void PaintingSurface::write_from_bitmap(Gfx::Bitmap& bitmap)
+void PaintingSurface::write_from_bitmap(Gfx::Bitmap const& bitmap)
 {
     auto color_type = to_skia_color_type(bitmap.format());
     auto alpha_type = bitmap.alpha_type() == Gfx::AlphaType::Premultiplied ? kPremul_SkAlphaType : kUnpremul_SkAlphaType;
-    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type);
+    auto image_info = SkImageInfo::Make(bitmap.width(), bitmap.height(), color_type, alpha_type, SkColorSpace::MakeSRGB());
     SkPixmap const pixmap(image_info, bitmap.begin(), bitmap.pitch());
     m_impl->surface->writePixels(pixmap, 0, 0);
 }
@@ -128,6 +123,11 @@ SkCanvas& PaintingSurface::canvas() const
 SkSurface& PaintingSurface::sk_surface() const
 {
     return *m_impl->surface;
+}
+
+void PaintingSurface::notify_content_will_change()
+{
+    m_impl->surface->notifyContentWillChange(SkSurface::kDiscard_ContentChangeMode);
 }
 
 template<>

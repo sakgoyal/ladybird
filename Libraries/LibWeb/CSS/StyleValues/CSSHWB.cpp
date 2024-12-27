@@ -25,8 +25,8 @@ Color CSSHWB::to_color(Optional<Layout::NodeWithStyle const&>) const
         return Color(gray, gray, gray, to_byte(alpha_val));
     }
 
-    float value = 1 - b_val;
-    float saturation = 1 - (w_val / value);
+    auto value = 1 - b_val;
+    auto saturation = 1 - (w_val / value);
     return Color::from_hsv(h_val, saturation, value).with_opacity(alpha_val);
 }
 
@@ -42,7 +42,7 @@ bool CSSHWB::equals(CSSStyleValue const& other) const
 }
 
 // https://www.w3.org/TR/css-color-4/#serializing-sRGB-values
-String CSSHWB::to_string() const
+String CSSHWB::to_string(SerializationMode) const
 {
     // FIXME: Do this properly, taking unresolved calculated values into account.
     return serialize_a_srgb_value(to_color({}));

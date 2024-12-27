@@ -41,6 +41,8 @@ public:
             SliderRunnableTrack,
             SliderThumb,
             Backdrop,
+            FileSelectorButton,
+            DetailsContent,
 
             // Keep this last.
             KnownPseudoElementCount,
@@ -53,7 +55,7 @@ public:
         explicit PseudoElement(Type type)
             : m_type(type)
         {
-            VERIFY(type != Type::UnknownWebKit);
+            VERIFY(is_known_pseudo_element_type(type));
         }
 
         PseudoElement(Type type, String name)
@@ -65,6 +67,11 @@ public:
         bool operator==(PseudoElement const&) const = default;
 
         static Optional<PseudoElement> from_string(FlyString const&);
+
+        [[nodiscard]] static bool is_known_pseudo_element_type(Type type)
+        {
+            return to_underlying(type) < to_underlying(CSS::Selector::PseudoElement::Type::KnownPseudoElementCount);
+        }
 
         static StringView name(Selector::PseudoElement::Type pseudo_element);
 

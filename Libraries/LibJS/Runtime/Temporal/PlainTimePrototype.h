@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -22,7 +23,6 @@ public:
 private:
     explicit PlainTimePrototype(Realm&);
 
-    JS_DECLARE_NATIVE_FUNCTION(calendar_getter);
     JS_DECLARE_NATIVE_FUNCTION(hour_getter);
     JS_DECLARE_NATIVE_FUNCTION(minute_getter);
     JS_DECLARE_NATIVE_FUNCTION(second_getter);
@@ -36,9 +36,6 @@ private:
     JS_DECLARE_NATIVE_FUNCTION(since);
     JS_DECLARE_NATIVE_FUNCTION(round);
     JS_DECLARE_NATIVE_FUNCTION(equals);
-    JS_DECLARE_NATIVE_FUNCTION(to_plain_date_time);
-    JS_DECLARE_NATIVE_FUNCTION(to_zoned_date_time);
-    JS_DECLARE_NATIVE_FUNCTION(get_iso_fields);
     JS_DECLARE_NATIVE_FUNCTION(to_string);
     JS_DECLARE_NATIVE_FUNCTION(to_locale_string);
     JS_DECLARE_NATIVE_FUNCTION(to_json);

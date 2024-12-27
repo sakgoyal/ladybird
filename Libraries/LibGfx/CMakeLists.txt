@@ -3,15 +3,11 @@ include(vulkan)
 
 set(SOURCES
     AffineTransform.cpp
-    AntiAliasingPainter.cpp
     Bitmap.cpp
     BitmapSequence.cpp
     CMYKBitmap.cpp
     Color.cpp
-    DeltaE.cpp
-    DeprecatedPainter.cpp
-    DeprecatedPath.cpp
-    EdgeFlagPathRasterizer.cpp
+    ColorSpace.cpp
     FontCascadeList.cpp
     Font/Font.cpp
     Font/FontData.cpp
@@ -24,19 +20,12 @@ set(SOURCES
     Font/WOFF/Loader.cpp
     Font/WOFF2/Loader.cpp
     GradientPainting.cpp
-    ICC/BinaryWriter.cpp
-    ICC/Enums.cpp
-    ICC/Profile.cpp
-    ICC/Tags.cpp
-    ICC/TagTypes.cpp
-    ICC/WellKnownProfiles.cpp
     ImageFormats/AnimationWriter.cpp
     ImageFormats/BMPLoader.cpp
     ImageFormats/BMPWriter.cpp
     ImageFormats/BooleanDecoder.cpp
     ImageFormats/CCITTDecoder.cpp
     ImageFormats/GIFLoader.cpp
-    ImageFormats/GIFWriter.cpp
     ImageFormats/ICOLoader.cpp
     ImageFormats/ImageDecoder.cpp
     ImageFormats/JPEGLoader.cpp
@@ -52,7 +41,7 @@ set(SOURCES
     ImageFormats/WebPWriterLossless.cpp
     ImageFormats/AVIFLoader.cpp
     ImmutableBitmap.cpp
-    MedianCut.cpp
+    SkiaUtils.cpp
     PaintingSurface.cpp
     Palette.cpp
     Path.cpp
@@ -73,6 +62,7 @@ set(SOURCES
 set(SWIFT_EXCLUDE_HEADERS
     MetalContext.h
     VulkanContext.h
+    SkiaUtils.h
 )
 
 if (APPLE)

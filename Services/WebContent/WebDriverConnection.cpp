@@ -16,8 +16,8 @@
 #include <LibCore/File.h>
 #include <LibJS/Runtime/Value.h>
 #include <LibWeb/CSS/CSSStyleValue.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/PropertyID.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/Cookie/Cookie.h>
 #include <LibWeb/Cookie/ParsedCookie.h>
 #include <LibWeb/Crypto/Crypto.h>
@@ -1386,8 +1386,8 @@ Messages::WebDriverClient::GetElementCssValueResponse WebDriverConnection::get_e
 
             // computed value of parameter URL variables["property name"] from element's style declarations.
             if (auto property = Web::CSS::property_id_from_string(name); property.has_value()) {
-                if (auto computed_values = element->computed_css_values(); computed_values.has_value())
-                    computed_value = computed_values->property(property.value()).to_string();
+                if (auto computed_properties = element->computed_properties())
+                    computed_value = computed_properties->property(property.value()).to_string(Web::CSS::CSSStyleValue::SerializationMode::Normal);
             }
         }
         // -> Otherwise
@@ -2990,7 +2990,7 @@ ErrorOr<WebDriverConnection::ScriptArguments, Web::WebDriver::Error> WebDriverCo
     auto const& args = *TRY(Web::WebDriver::get_property<JsonArray const*>(payload, "args"sv));
 
     // 5. Let arguments be the result of calling the JSON deserialize algorithm with arguments args.
-    GC::MarkedVector<JS::Value> arguments { vm.heap() };
+    GC::RootVector<JS::Value> arguments { vm.heap() };
     auto& browsing_context = current_browsing_context();
 
     TRY(args.try_for_each([&](JsonValue const& arg) -> ErrorOr<void, Web::WebDriver::Error> {

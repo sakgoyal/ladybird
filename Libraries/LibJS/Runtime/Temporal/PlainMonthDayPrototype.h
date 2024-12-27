@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -22,7 +23,6 @@ public:
 private:
     explicit PlainMonthDayPrototype(Realm&);
 
-    JS_DECLARE_NATIVE_FUNCTION(calendar_getter);
     JS_DECLARE_NATIVE_FUNCTION(calendar_id_getter);
     JS_DECLARE_NATIVE_FUNCTION(month_code_getter);
     JS_DECLARE_NATIVE_FUNCTION(day_getter);
@@ -33,7 +33,6 @@ private:
     JS_DECLARE_NATIVE_FUNCTION(to_json);
     JS_DECLARE_NATIVE_FUNCTION(value_of);
     JS_DECLARE_NATIVE_FUNCTION(to_plain_date);
-    JS_DECLARE_NATIVE_FUNCTION(get_iso_fields);
 };
 
 }

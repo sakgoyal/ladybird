@@ -7,7 +7,6 @@
 #pragma once
 
 #include <AK/FlyString.h>
-#include <LibGfx/DeprecatedPath.h>
 #include <LibWeb/DOM/DocumentObserver.h>
 #include <LibWeb/SVG/SVGAnimatedLength.h>
 #include <LibWeb/SVG/SVGGraphicsElement.h>
@@ -49,7 +48,7 @@ private:
 
     virtual bool is_svg_use_element() const override { return true; }
 
-    virtual GC::Ptr<Layout::Node> create_layout_node(CSS::StyleProperties) override;
+    virtual GC::Ptr<Layout::Node> create_layout_node(GC::Ref<CSS::ComputedProperties>) override;
 
     void process_the_url(Optional<String> const& href);
 

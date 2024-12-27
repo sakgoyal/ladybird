@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include <AK/HashMap.h>
 #include <LibIPC/ConnectionToServer.h>
 #include <LibWeb/Worker/WebWorkerClientEndpoint.h>
 #include <LibWeb/Worker/WebWorkerServerEndpoint.h>
@@ -16,7 +15,7 @@ namespace Web::HTML {
 class WebWorkerClient final
     : public IPC::ConnectionToServer<WebWorkerClientEndpoint, WebWorkerServerEndpoint>
     , public WebWorkerClientEndpoint {
-    IPC_CLIENT_CONNECTION(WebWorkerClient, "/tmp/session/%sid/portal/webworker"sv);
+    C_OBJECT_ABSTRACT(WebWorkerClient);
 
 public:
     explicit WebWorkerClient(IPC::Transport);

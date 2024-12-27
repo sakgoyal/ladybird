@@ -29,12 +29,13 @@ public:
     virtual String item(size_t index) const = 0;
 
     virtual Optional<StyleProperty> property(PropertyID) const = 0;
+    virtual Optional<StyleProperty const&> custom_property(FlyString const& custom_property_name) const = 0;
 
-    virtual WebIDL::ExceptionOr<void> set_property(PropertyID, StringView css_text, StringView priority = ""sv) = 0;
-    virtual WebIDL::ExceptionOr<String> remove_property(PropertyID) = 0;
+    virtual WebIDL::ExceptionOr<void> set_property(PropertyID, StringView css_text, StringView priority = ""sv);
+    virtual WebIDL::ExceptionOr<String> remove_property(PropertyID);
 
-    virtual WebIDL::ExceptionOr<void> set_property(StringView property_name, StringView css_text, StringView priority);
-    virtual WebIDL::ExceptionOr<String> remove_property(StringView property_name);
+    virtual WebIDL::ExceptionOr<void> set_property(StringView property_name, StringView css_text, StringView priority) = 0;
+    virtual WebIDL::ExceptionOr<String> remove_property(StringView property_name) = 0;
 
     String get_property_value(StringView property) const;
     StringView get_property_priority(StringView property) const;
@@ -48,6 +49,9 @@ public:
     virtual String serialized() const = 0;
 
     virtual GC::Ptr<CSSRule> parent_rule() const;
+
+    // https://drafts.csswg.org/cssom/#cssstyledeclaration-computed-flag
+    [[nodiscard]] virtual bool computed_flag() const { return false; }
 
 protected:
     explicit CSSStyleDeclaration(JS::Realm&);
@@ -75,13 +79,13 @@ public:
     virtual String item(size_t index) const override;
 
     virtual Optional<StyleProperty> property(PropertyID) const override;
+    virtual Optional<StyleProperty const&> custom_property(FlyString const& custom_property_name) const override { return m_custom_properties.get(custom_property_name); }
 
-    virtual WebIDL::ExceptionOr<void> set_property(PropertyID, StringView css_text, StringView priority) override;
-    virtual WebIDL::ExceptionOr<String> remove_property(PropertyID) override;
-
+    virtual WebIDL::ExceptionOr<void> set_property(StringView property_name, StringView css_text, StringView priority) override;
+    virtual WebIDL::ExceptionOr<String> remove_property(StringView property_name) override;
     Vector<StyleProperty> const& properties() const { return m_properties; }
     HashMap<FlyString, StyleProperty> const& custom_properties() const { return m_custom_properties; }
-    Optional<StyleProperty> custom_property(FlyString const& custom_property_name) const { return m_custom_properties.get(custom_property_name); }
+
     size_t custom_property_count() const { return m_custom_properties.size(); }
 
     virtual String serialized() const final override;
@@ -121,6 +125,8 @@ public:
     const DOM::Element* element() const { return m_element.ptr(); }
 
     bool is_updating() const { return m_updating; }
+
+    void set_declarations_from_text(StringView);
 
     virtual WebIDL::ExceptionOr<void> set_css_text(StringView) override;
 

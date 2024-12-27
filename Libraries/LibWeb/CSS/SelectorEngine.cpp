@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/Keyword.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/SelectorEngine.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/DOM/Attr.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
@@ -201,7 +201,9 @@ static inline bool matches_indeterminate_pseudo_class(DOM::Element const& elemen
         auto const& input_element = static_cast<HTML::HTMLInputElement const&>(element);
         switch (input_element.type_state()) {
         case HTML::HTMLInputElement::TypeAttributeState::Checkbox:
-            return input_element.indeterminate();
+            // https://whatpr.org/html-attr-input-switch/9546/semantics-other.html#selector-indeterminate
+            // input elements whose type attribute is in the Checkbox state, whose switch attribute is not set
+            return input_element.indeterminate() && !element.has_attribute(HTML::AttributeNames::switch_);
         default:
             return false;
         }
@@ -213,14 +215,43 @@ static inline bool matches_indeterminate_pseudo_class(DOM::Element const& elemen
     return false;
 }
 
+static inline Web::DOM::Attr const* get_optionally_namespaced_attribute(CSS::Selector::SimpleSelector::Attribute const& attribute, Optional<CSS::CSSStyleSheet const&> style_sheet_for_rule, DOM::Element const& element)
+{
+    auto const& qualified_name = attribute.qualified_name;
+    auto const& attribute_name = qualified_name.name.name;
+    auto const& namespace_type = qualified_name.namespace_type;
+
+    if (element.namespace_uri() == Namespace::HTML) {
+        if (namespace_type == CSS::Selector::SimpleSelector::QualifiedName::NamespaceType::Named) {
+            return nullptr;
+        }
+        return element.attributes()->get_attribute(attribute_name);
+    }
+
+    switch (namespace_type) {
+    // "In keeping with the Namespaces in the XML recommendation, default namespaces do not apply to attributes,
+    //  therefore attribute selectors without a namespace component apply only to attributes that have no namespace (equivalent to "|attr")"
+    case CSS::Selector::SimpleSelector::QualifiedName::NamespaceType::Default:
+    case CSS::Selector::SimpleSelector::QualifiedName::NamespaceType::None:
+        return element.attributes()->get_attribute(attribute_name);
+    case CSS::Selector::SimpleSelector::QualifiedName::NamespaceType::Any:
+        return element.attributes()->get_attribute_namespace_agnostic(attribute_name);
+    case CSS::Selector::SimpleSelector::QualifiedName::NamespaceType::Named:
+        if (!style_sheet_for_rule.has_value())
+            return nullptr;
+        auto const& selector_namespace = style_sheet_for_rule->namespace_uri(qualified_name.namespace_);
+        if (!selector_namespace.has_value())
+            return nullptr;
+        return element.attributes()->get_attribute_ns(selector_namespace, attribute_name);
+    }
+    VERIFY_NOT_REACHED();
+}
+
 static inline bool matches_attribute(CSS::Selector::SimpleSelector::Attribute const& attribute, [[maybe_unused]] Optional<CSS::CSSStyleSheet const&> style_sheet_for_rule, DOM::Element const& element)
 {
-    // FIXME: Check the attribute's namespace, once we support that in DOM::Element!
-
     auto const& attribute_name = attribute.qualified_name.name.name;
 
-    auto const* attr = element.namespace_uri() == Namespace::HTML ? element.attributes()->get_attribute_with_lowercase_qualified_name(attribute_name)
-                                                                  : element.attributes()->get_attribute(attribute_name);
+    auto const* attr = get_optionally_namespaced_attribute(attribute, style_sheet_for_rule, element);
 
     if (attribute.match_type == CSS::Selector::SimpleSelector::Attribute::MatchType::HasAttribute) {
         // Early way out in case of an attribute existence selector.
@@ -334,6 +365,29 @@ static inline DOM::Element const* next_sibling_with_same_tag_name(DOM::Element c
     return nullptr;
 }
 
+/// Returns true if this selector should be blocked from matching against the shadow host from within a shadow tree.
+/// Only :host pseudo-class is allowed to match the shadow host from within shadow tree, all other selectors (including other pseudo-classes) are blocked.
+/// Compound selectors (:has(), :is(), :where()), nesting, and pseudo-elements are allowed as they may contain or be contained within :host.
+static inline bool should_block_shadow_host_matching(CSS::Selector::SimpleSelector const& component, GC::Ptr<DOM::Element const> shadow_host, DOM::Element const& element)
+{
+    if (!shadow_host || &element != shadow_host.ptr())
+        return false;
+
+    // From within shadow tree, only :host pseudo-class can match the host element
+    if (component.type == CSS::Selector::SimpleSelector::Type::PseudoClass) {
+        auto const& pseudo_class = component.pseudo_class();
+        return pseudo_class.type != CSS::PseudoClass::Host
+            && pseudo_class.type != CSS::PseudoClass::Has
+            && pseudo_class.type != CSS::PseudoClass::Is
+            && pseudo_class.type != CSS::PseudoClass::Where;
+    }
+
+    // Allow nesting and PseudoElement as it may contain :host class
+    if (component.type == CSS::Selector::SimpleSelector::Type::Nesting || component.type == CSS::Selector::SimpleSelector::Type::PseudoElement)
+        return false;
+
+    return true;
+}
 // https://html.spec.whatwg.org/multipage/semantics-other.html#selector-read-write
 static bool matches_read_write_pseudo_class(DOM::Element const& element)
 {
@@ -359,7 +413,7 @@ static bool matches_read_write_pseudo_class(DOM::Element const& element)
         return true;
     }
     // - elements that are editing hosts or editable and are neither input elements nor textarea elements
-    return element.is_editable();
+    return element.is_editable_or_editing_host();
 }
 
 // https://www.w3.org/TR/selectors-4/#open-state
@@ -412,7 +466,7 @@ static inline bool matches_pseudo_class(CSS::Selector::SimpleSelector::PseudoCla
         if (!matches_link_pseudo_class(element))
             return false;
         auto document_url = element.document().url();
-        URL::URL target_url = element.document().parse_url(element.attribute(HTML::AttributeNames::href).value_or({}));
+        URL::URL target_url = element.document().encoding_parse_url(element.attribute(HTML::AttributeNames::href).value_or({}));
         if (target_url.fragment().has_value())
             return document_url.equals(target_url, URL::ExcludeFragment::No);
         return document_url.equals(target_url, URL::ExcludeFragment::Yes);
@@ -676,7 +730,6 @@ static inline bool matches_pseudo_class(CSS::Selector::SimpleSelector::PseudoCla
         return false;
     }
     case CSS::PseudoClass::Open:
-    case CSS::PseudoClass::Closed:
         return matches_open_state_pseudo_class(element, pseudo_class.type == CSS::PseudoClass::Open);
     case CSS::PseudoClass::Modal: {
         // https://drafts.csswg.org/selectors/#modal-state
@@ -685,6 +738,16 @@ static inline bool matches_pseudo_class(CSS::Selector::SimpleSelector::PseudoCla
             return dialog_element.is_modal();
         }
         // FIXME: fullscreen elements are also modal.
+        return false;
+    }
+    case CSS::PseudoClass::PopoverOpen: {
+        // https://html.spec.whatwg.org/#selector-popover-open
+        // The :popover-open pseudo-class is defined to match any HTML element whose popover attribute is not in the no popover state and whose popover visibility state is showing.
+        if (is<HTML::HTMLElement>(element) && element.has_attribute(HTML::AttributeNames::popover)) {
+            auto& html_element = static_cast<HTML::HTMLElement const&>(element);
+            return html_element.popover_visibility_state() == HTML::HTMLElement::PopoverVisibilityState::Showing;
+        }
+
         return false;
     }
     }
@@ -726,6 +789,8 @@ static ALWAYS_INLINE bool matches_namespace(
 
 static inline bool matches(CSS::Selector::SimpleSelector const& component, Optional<CSS::CSSStyleSheet const&> style_sheet_for_rule, DOM::Element const& element, GC::Ptr<DOM::Element const> shadow_host, GC::Ptr<DOM::ParentNode const> scope, SelectorKind selector_kind, [[maybe_unused]] GC::Ptr<DOM::Element const> anchor)
 {
+    if (should_block_shadow_host_matching(component, shadow_host, element))
+        return false;
     switch (component.type) {
     case CSS::Selector::SimpleSelector::Type::Universal:
     case CSS::Selector::SimpleSelector::Type::TagName: {
@@ -734,7 +799,7 @@ static inline bool matches(CSS::Selector::SimpleSelector const& component, Optio
         // Reject if the tag name doesn't match
         if (component.type == CSS::Selector::SimpleSelector::Type::TagName) {
             // See https://html.spec.whatwg.org/multipage/semantics-other.html#case-sensitivity-of-selectors
-            if (element.document().document_type() == DOM::Document::Type::HTML) {
+            if (element.document().document_type() == DOM::Document::Type::HTML && element.namespace_uri() == Namespace::HTML) {
                 if (qualified_name.name.lowercase_name != element.local_name())
                     return false;
             } else if (!Infra::is_ascii_case_insensitive_match(qualified_name.name.name, element.local_name())) {
@@ -837,6 +902,9 @@ bool matches(CSS::Selector const& selector, Optional<CSS::CSSStyleSheet const&> 
 
 static bool fast_matches_simple_selector(CSS::Selector::SimpleSelector const& simple_selector, Optional<CSS::CSSStyleSheet const&> style_sheet_for_rule, DOM::Element const& element, GC::Ptr<DOM::Element const> shadow_host)
 {
+    if (should_block_shadow_host_matching(simple_selector, shadow_host, element))
+        return false;
+
     switch (simple_selector.type) {
     case CSS::Selector::SimpleSelector::Type::Universal:
         return matches_namespace(simple_selector.qualified_name(), element, style_sheet_for_rule);

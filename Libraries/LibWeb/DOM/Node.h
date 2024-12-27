@@ -71,6 +71,7 @@ enum class IsDescendant {
     X(ElementSetShadowRoot)                         \
     X(FocusedElementChange)                         \
     X(HTMLHyperlinkElementHrefChange)               \
+    X(HTMLIFrameElementGeometryChange)              \
     X(HTMLInputElementSetChecked)                   \
     X(HTMLObjectElementUpdateLayoutAndChildObjects) \
     X(HTMLSelectElementSetIsOpen)                   \
@@ -110,7 +111,8 @@ public:
 
     NodeType type() const { return m_type; }
     bool is_element() const { return type() == NodeType::ELEMENT_NODE; }
-    bool is_text() const { return type() == NodeType::TEXT_NODE; }
+    bool is_text() const { return type() == NodeType::TEXT_NODE || type() == NodeType::CDATA_SECTION_NODE; }
+    bool is_exclusive_text() const { return type() == NodeType::TEXT_NODE; }
     bool is_document() const { return type() == NodeType::DOCUMENT_NODE; }
     bool is_document_type() const { return type() == NodeType::DOCUMENT_TYPE_NODE; }
     bool is_comment() const { return type() == NodeType::COMMENT_NODE; }
@@ -136,7 +138,9 @@ public:
     // NOTE: This is intended for the JS bindings.
     u16 node_type() const { return (u16)m_type; }
 
-    virtual bool is_editable() const;
+    bool is_editable() const;
+    bool is_editing_host() const;
+    bool is_editable_or_editing_host() const { return is_editable() || is_editing_host(); }
 
     virtual bool is_dom_node() const final { return true; }
     virtual bool is_html_element() const { return false; }
@@ -247,6 +251,7 @@ public:
     Element const* parent_element() const;
 
     virtual void inserted();
+    virtual void post_connection();
     virtual void removed_from(Node*);
     virtual void children_changed() { }
     virtual void adopted_from(Document&) { }
@@ -270,6 +275,9 @@ public:
 
     bool needs_style_update() const { return m_needs_style_update; }
     void set_needs_style_update(bool);
+
+    bool needs_inherited_style_update() const { return m_needs_inherited_style_update; }
+    void set_needs_inherited_style_update(bool);
 
     bool child_needs_style_update() const { return m_child_needs_style_update; }
     void set_child_needs_style_update(bool b) { m_child_needs_style_update = b; }
@@ -383,39 +391,6 @@ public:
         for (auto* node = previous_sibling(); node; node = node->previous_sibling())
             ++index;
         return index;
-    }
-
-    Optional<size_t> index_of_child(Node const& search_child)
-    {
-        VERIFY(search_child.parent() == this);
-        size_t index = 0;
-        auto* child = first_child();
-        VERIFY(child);
-
-        do {
-            if (child == &search_child)
-                return index;
-            index++;
-        } while (child && (child = child->next_sibling()));
-        return {};
-    }
-
-    template<typename ChildType>
-    Optional<size_t> index_of_child(Node const& search_child)
-    {
-        VERIFY(search_child.parent() == this);
-        size_t index = 0;
-        auto* child = first_child();
-        VERIFY(child);
-
-        do {
-            if (!is<ChildType>(child))
-                continue;
-            if (child == &search_child)
-                return index;
-            index++;
-        } while (child && (child = child->next_sibling()));
-        return {};
     }
 
     bool is_ancestor_of(Node const&) const;
@@ -775,6 +750,7 @@ protected:
     GC::Ptr<Painting::Paintable> m_paintable;
     NodeType m_type { NodeType::INVALID };
     bool m_needs_style_update { false };
+    bool m_needs_inherited_style_update { false };
     bool m_child_needs_style_update { false };
 
     UniqueNodeID m_unique_id;

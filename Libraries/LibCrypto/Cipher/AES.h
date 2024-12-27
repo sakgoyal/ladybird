@@ -8,11 +8,11 @@
 #pragma once
 
 #include <AK/ByteString.h>
-#include <AK/Vector.h>
 #include <LibCrypto/Cipher/Cipher.h>
 #include <LibCrypto/Cipher/Mode/CBC.h>
 #include <LibCrypto/Cipher/Mode/CTR.h>
 #include <LibCrypto/Cipher/Mode/GCM.h>
+#include <LibCrypto/Cipher/Mode/KW.h>
 
 namespace Crypto::Cipher {
 
@@ -97,6 +97,7 @@ public:
     using CBCMode = CBC<AESCipher>;
     using CTRMode = CTR<AESCipher>;
     using GCMMode = GCM<AESCipher>;
+    using KWMode = KW<AESCipher>;
 
     constexpr static size_t BlockSizeInBits = BlockType::BlockSizeInBits;
 

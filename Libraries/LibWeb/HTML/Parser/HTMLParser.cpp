@@ -188,11 +188,9 @@ void HTMLParser::visit_edges(Cell::Visitor& visitor)
 
 void HTMLParser::run(HTMLTokenizer::StopAtInsertionPoint stop_at_insertion_point)
 {
-    for (;;) {
-        // FIXME: Find a better way to say that we come from Document::close() and want to process EOF.
-        if (!m_tokenizer.is_eof_inserted() && m_tokenizer.is_insertion_point_reached())
-            break;
+    m_stop_parsing = false;
 
+    for (;;) {
         auto optional_token = m_tokenizer.next_token(stop_at_insertion_point);
         if (!optional_token.has_value())
             break;
@@ -300,7 +298,7 @@ void HTMLParser::the_end(GC::Ref<DOM::Document> document, GC::Ptr<HTMLParser> pa
     while (!document->scripts_to_execute_when_parsing_has_finished().is_empty()) {
         // 1. Spin the event loop until the first script in the list of scripts that will execute when the document has finished parsing
         //    has its "ready to be parser-executed" flag set and the parser's Document has no style sheet that is blocking scripts.
-        main_thread_event_loop().spin_until(GC::create_function(heap, [&] {
+        main_thread_event_loop().spin_until(GC::create_function(heap, [document] {
             return document->scripts_to_execute_when_parsing_has_finished().first()->is_ready_to_be_parser_executed()
                 && !document->has_a_style_sheet_that_is_blocking_scripts();
         }));
@@ -313,7 +311,7 @@ void HTMLParser::the_end(GC::Ref<DOM::Document> document, GC::Ptr<HTMLParser> pa
     }
 
     // 6. Queue a global task on the DOM manipulation task source given the Document's relevant global object to run the following substeps:
-    queue_global_task(HTML::Task::Source::DOMManipulation, *document, GC::create_function(heap, [document = document] {
+    queue_global_task(HTML::Task::Source::DOMManipulation, *document, GC::create_function(heap, [document] {
         // 1. Set the Document's load timing info's DOM content loaded event start time to the current high resolution time given the Document's relevant global object.
         document->load_timing_info().dom_content_loaded_event_start_time = HighResolutionTime::current_high_resolution_time(relevant_global_object(*document));
 
@@ -331,17 +329,17 @@ void HTMLParser::the_end(GC::Ref<DOM::Document> document, GC::Ptr<HTMLParser> pa
     }));
 
     // 7. Spin the event loop until the set of scripts that will execute as soon as possible and the list of scripts that will execute in order as soon as possible are empty.
-    main_thread_event_loop().spin_until(GC::create_function(heap, [&] {
+    main_thread_event_loop().spin_until(GC::create_function(heap, [document] {
         return document->scripts_to_execute_as_soon_as_possible().is_empty();
     }));
 
     // 8. Spin the event loop until there is nothing that delays the load event in the Document.
-    main_thread_event_loop().spin_until(GC::create_function(heap, [&] {
+    main_thread_event_loop().spin_until(GC::create_function(heap, [document] {
         return !document->anything_is_delaying_the_load_event();
     }));
 
     // 9. Queue a global task on the DOM manipulation task source given the Document's relevant global object to run the following steps:
-    queue_global_task(HTML::Task::Source::DOMManipulation, *document, GC::create_function(document->heap(), [document = document] {
+    queue_global_task(HTML::Task::Source::DOMManipulation, *document, GC::create_function(document->heap(), [document] {
         // 1. Update the current document readiness to "complete".
         document->update_readiness(HTML::DocumentReadyState::Complete);
 
@@ -519,25 +517,51 @@ DOM::QuirksMode HTMLParser::which_quirks_mode(HTMLToken const& doctype_token) co
     return DOM::QuirksMode::No;
 }
 
+// https://html.spec.whatwg.org/multipage/parsing.html#the-initial-insertion-mode
 void HTMLParser::handle_initial(HTMLToken& token)
 {
+    // -> A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF),
+    //    U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
     if (token.is_character() && token.is_parser_whitespace()) {
         return;
     }
 
+    // -> A comment token
     if (token.is_comment()) {
+        // Insert a comment as the last child of the Document object.
         auto comment = realm().create<DOM::Comment>(document(), token.comment());
         MUST(document().append_child(*comment));
         return;
     }
 
+    // -> A DOCTYPE token
     if (token.is_doctype()) {
+        // If the DOCTYPE token's name is not "html", or the token's public identifier is not missing,
+        // or the token's system identifier is neither missing nor "about:legacy-compat", then there is a parse error.
+        if (token.doctype_data().name != "html" || !token.doctype_data().missing_public_identifier || (!token.doctype_data().missing_system_identifier && token.doctype_data().system_identifier != "about:legacy-compat")) {
+            log_parse_error();
+        }
+
+        // Append a DocumentType node to the Document node, with its name set to the name given in the DOCTYPE token,
+        // or the empty string if the name was missing; its public ID set to the public identifier given in the DOCTYPE token,
+        // or the empty string if the public identifier was missing; and its system ID set to the system identifier
+        // given in the DOCTYPE token, or the empty string if the system identifier was missing.
+
         auto doctype = realm().create<DOM::DocumentType>(document());
         doctype->set_name(token.doctype_data().name);
         doctype->set_public_id(token.doctype_data().public_identifier);
         doctype->set_system_id(token.doctype_data().system_identifier);
         MUST(document().append_child(*doctype));
+
+        // Then, if the document is not an iframe srcdoc document, and the parser cannot change the mode flag is false,
+        // and the DOCTYPE token matches one of the conditions in the following list, then set the Document to quirks mode:
+        // [...]
+        // Otherwise, if the document is not an iframe srcdoc document, and the parser cannot change the mode flag is false,
+        // and the DOCTYPE token matches one of the conditions in the following list, then set the Document to limited-quirks mode:
+        // [...]
         document().set_quirks_mode(which_quirks_mode(token));
+
+        // Then, switch the insertion mode to "before html".
         m_insertion_mode = InsertionMode::BeforeHTML;
         return;
     }
@@ -711,10 +735,10 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
     // 6. Let definition be the result of looking up a custom element definition given document, given namespace, local name, and is.
     auto definition = document->lookup_custom_element_definition(namespace_, local_name, is_value);
 
-    // 7. If definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm, then let will execute script be true. Otherwise, let it be false.
+    // 7. Let willExecuteScript be true if definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm; otherwise false.
     bool will_execute_script = definition && !m_parsing_fragment;
 
-    // 8. If will execute script is true, then:
+    // 8. If willExecuteScript is true:
     if (will_execute_script) {
         // 1. Increment document's throw-on-dynamic-markup-insertion counter.
         document->increment_throw_on_dynamic_markup_insertion_counter({});
@@ -729,8 +753,7 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         custom_data.custom_element_reactions_stack.element_queue_stack.append({});
     }
 
-    // 9. Let element be the result of creating an element given document, localName, given namespace, null, and is.
-    //    If will execute script is true, set the synchronous custom elements flag; otherwise, leave it unset.
+    // 9. Let element be the result of creating an element given document, localName, given namespace, null, is, and willExecuteScript.
     auto element = create_element(*document, local_name, namespace_, {}, is_value, will_execute_script).release_value_but_fixme_should_propagate_errors();
 
     // 10. Append each attribute in the given token to element.
@@ -741,7 +764,7 @@ GC::Ref<DOM::Element> HTMLParser::create_element_for(HTMLToken const& token, Opt
         return IterationDecision::Continue;
     });
 
-    // 11. If will execute script is true, then:
+    // 11. If willExecuteScript is true:
     if (will_execute_script) {
         // 1. Let queue be the result of popping from document's relevant agent's custom element reactions stack. (This will be the same element queue as was pushed above.)
         auto& vm = main_thread_event_loop().vm();
@@ -1031,7 +1054,7 @@ void HTMLParser::handle_in_head(HTMLToken& token)
                 //    If an exception is thrown, then catch it, report the exception, insert an element at the adjusted insertion location with template, and return.
                 auto result = declarative_shadow_host_element.attach_a_shadow_root(mode, clonable, serializable, delegates_focus, Bindings::SlotAssignmentMode::Named);
                 if (result.is_error()) {
-                    report_exception(Bindings::dom_exception_to_throw_completion(vm(), result.release_error()), realm());
+                    report_exception(Bindings::exception_to_throw_completion(vm(), result.release_error()), realm());
                     insert_an_element_at_the_adjusted_insertion_location(template_);
                     return;
                 }
@@ -1440,28 +1463,28 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
         return AdoptionAgencyAlgorithmOutcome::DoNothing;
     }
 
-    // 3. Let outer loop counter be 0.
+    // 3. Let outerLoopCounter be 0.
     size_t outer_loop_counter = 0;
 
     // 4. While true:
     while (true) {
-        // 1. If outer loop counter is greater than or equal to 8, then return.
+        // 1. If outerLoopCounter is greater than or equal to 8, then return.
         if (outer_loop_counter >= 8)
             return AdoptionAgencyAlgorithmOutcome::DoNothing;
 
-        // 2. Increment outer loop counter by 1.
+        // 2. Increment outerLoopCounter by 1.
         outer_loop_counter++;
 
-        // 3. Let formatting element be the last element in the list of active formatting elements that:
+        // 3. Let formattingElement be the last element in the list of active formatting elements that:
         //    - is between the end of the list and the last marker in the list, if any, or the start of the list otherwise, and
         //    - has the tag name subject.
         auto* formatting_element = m_list_of_active_formatting_elements.last_element_with_tag_name_before_marker(subject);
 
-        // If there is no such element, then return and instead act as described in the "any other end tag" entry above.
+        //    If there is no such element, then return and instead act as described in the "any other end tag" entry above.
         if (!formatting_element)
             return AdoptionAgencyAlgorithmOutcome::RunAnyOtherEndTagSteps;
 
-        // 4. If formatting element is not in the stack of open elements,
+        // 4. If formattingElement is not in the stack of open elements,
         if (!m_stack_of_open_elements.contains(*formatting_element)) {
             // then this is a parse error;
             log_parse_error();
@@ -1471,7 +1494,7 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
             return AdoptionAgencyAlgorithmOutcome::DoNothing;
         }
 
-        // 5. If formatting element is in the stack of open elements, but the element is not in scope,
+        // 5. If formattingElement is in the stack of open elements, but the element is not in scope,
         if (!m_stack_of_open_elements.has_in_scope(*formatting_element)) {
             // then this is a parse error;
             log_parse_error();
@@ -1479,50 +1502,50 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
             return AdoptionAgencyAlgorithmOutcome::DoNothing;
         }
 
-        // 6. If formatting element is not the current node,
+        // 6. If formattingElement is not the current node,
         if (formatting_element != current_node()) {
             // this is a parse error. (But do not return.)
             log_parse_error();
         }
 
-        // 7. Let furthest block be the topmost node in the stack of open elements that is lower in the stack than formatting element,
+        // 7. Let furthestBlock be the topmost node in the stack of open elements that is lower in the stack than formattingElement,
         //    and is an element in the special category. There might not be one.
         GC::Ptr<DOM::Element> furthest_block = m_stack_of_open_elements.topmost_special_node_below(*formatting_element);
 
-        // 8. If there is no furthest block
+        // 8. If there is no furthestBlock,
         if (!furthest_block) {
             // then the UA must first pop all the nodes from the bottom of the stack of open elements,
-            // from the current node up to and including formatting element,
+            // from the current node up to and including formattingElement,
             while (current_node() != formatting_element)
                 (void)m_stack_of_open_elements.pop();
             (void)m_stack_of_open_elements.pop();
 
-            // then remove formatting element from the list of active formatting elements,
+            // then remove formattingElement from the list of active formatting elements,
             m_list_of_active_formatting_elements.remove(*formatting_element);
             // and finally return.
             return AdoptionAgencyAlgorithmOutcome::DoNothing;
         }
 
-        // 9. Let common ancestor be the element immediately above formatting element in the stack of open elements.
+        // 9. Let commonAncestor be the element immediately above formattingElement in the stack of open elements.
         auto common_ancestor = m_stack_of_open_elements.element_immediately_above(*formatting_element);
 
-        // 10. Let a bookmark note the position of formatting element in the list of active formatting elements
+        // 10. Let a bookmark note the position of formattingElement in the list of active formatting elements
         //     relative to the elements on either side of it in the list.
         auto bookmark = m_list_of_active_formatting_elements.find_index(*formatting_element).value();
 
-        // 11. Let node and last node be furthest block.
+        // 11. Let node and lastNode be furthestBlock.
         auto node = furthest_block;
         auto last_node = furthest_block;
 
-        // Keep track of this for later
+        // NOTE: Keep track of this for later
         auto node_above_node = m_stack_of_open_elements.element_immediately_above(*node);
 
-        // 12. Let inner loop counter be 0.
+        // 12. Let innerLoopCounter be 0.
         size_t inner_loop_counter = 0;
 
         // 13. While true:
         while (true) {
-            // 1. Increment inner loop counter by 1.
+            // 1. Increment innerLoopCounter by 1.
             inner_loop_counter++;
 
             // 2. Let node be the element immediately above node in the stack of open elements,
@@ -1531,14 +1554,14 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
             node = node_above_node;
             VERIFY(node);
 
-            // Keep track of this for later
+            // NOTE: Keep track of this for later
             node_above_node = m_stack_of_open_elements.element_immediately_above(*node);
 
-            // 3. If node is formatting element, then break.
+            // 3. If node is formattingElement, then break.
             if (node.ptr() == formatting_element)
                 break;
 
-            // 4. If inner loop counter is greater than 3 and node is in the list of active formatting elements,
+            // 4. If innerLoopCounter is greater than 3 and node is in the list of active formatting elements,
             if (inner_loop_counter > 3 && m_list_of_active_formatting_elements.contains(*node)) {
                 auto node_index = m_list_of_active_formatting_elements.find_index(*node);
                 if (node_index.has_value() && node_index.value() < bookmark)
@@ -1547,7 +1570,7 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
                 m_list_of_active_formatting_elements.remove(*node);
             }
 
-            // 5. If node is not in the list of active formatting elements
+            // 5. If node is not in the list of active formatting elements,
             if (!m_list_of_active_formatting_elements.contains(*node)) {
                 // then remove node from the stack of open elements and continue.
                 m_stack_of_open_elements.remove(*node);
@@ -1555,47 +1578,47 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
             }
 
             // 6. Create an element for the token for which the element node was created,
-            //    in the HTML namespace, with common ancestor as the intended parent;
+            //    in the HTML namespace, with commonAncestor as the intended parent;
             // FIXME: hold onto the real token
             auto element = create_element_for(HTMLToken::make_start_tag(node->local_name()), Namespace::HTML, *common_ancestor);
-            // replace the entry for node in the list of active formatting elements with an entry for the new element,
+            //    replace the entry for node in the list of active formatting elements with an entry for the new element,
             m_list_of_active_formatting_elements.replace(*node, *element);
-            // replace the entry for node in the stack of open elements with an entry for the new element,
+            //    replace the entry for node in the stack of open elements with an entry for the new element,
             m_stack_of_open_elements.replace(*node, element);
-            // and let node be the new element.
+            //    and let node be the new element.
             node = element;
 
-            // 7. If last node is furthest block,
+            // 7. If lastNode is furthestBlock,
             if (last_node == furthest_block) {
                 // then move the aforementioned bookmark to be immediately after the new node in the list of active formatting elements.
                 bookmark = m_list_of_active_formatting_elements.find_index(*node).value() + 1;
             }
 
-            // 8. Append last node to node.
+            // 8. Append lastNode to node.
             MUST(node->append_child(*last_node));
 
-            // 9. Set last node to node.
+            // 9. Set lastNode to node.
             last_node = node;
         }
 
-        // 14. Insert whatever last node ended up being in the previous step at the appropriate place for inserting a node,
-        //     but using common ancestor as the override target.
+        // 14. Insert whatever lastNode ended up being in the previous step at the appropriate place for inserting a node,
+        //     but using commonAncestor as the override target.
         auto adjusted_insertion_location = find_appropriate_place_for_inserting_node(common_ancestor);
         adjusted_insertion_location.parent->insert_before(*last_node, adjusted_insertion_location.insert_before_sibling, false);
 
-        // 15. Create an element for the token for which formatting element was created,
-        //     in the HTML namespace, with furthest block as the intended parent.
+        // 15. Create an element for the token for which formattingElement was created,
+        //     in the HTML namespace, with furthestBlock as the intended parent.
         // FIXME: hold onto the real token
         auto element = create_element_for(HTMLToken::make_start_tag(formatting_element->local_name()), Namespace::HTML, *furthest_block);
 
-        // 16. Take all of the child nodes of furthest block and append them to the element created in the last step.
+        // 16. Take all of the child nodes of furthestBlock and append them to the element created in the last step.
         for (auto& child : furthest_block->children_as_vector())
             MUST(element->append_child(furthest_block->remove_child(*child).release_value()));
 
-        // 17. Append that new element to furthest block.
+        // 17. Append that new element to furthestBlock.
         MUST(furthest_block->append_child(*element));
 
-        // 18. Remove formatting element from the list of active formatting elements,
+        // 18. Remove formattingElement from the list of active formatting elements,
         //     and insert the new element into the list of active formatting elements at the position of the aforementioned bookmark.
         auto formatting_element_index = m_list_of_active_formatting_elements.find_index(*formatting_element);
         if (formatting_element_index.has_value() && formatting_element_index.value() < bookmark)
@@ -1603,8 +1626,8 @@ HTMLParser::AdoptionAgencyAlgorithmOutcome HTMLParser::run_the_adoption_agency_a
         m_list_of_active_formatting_elements.remove(*formatting_element);
         m_list_of_active_formatting_elements.insert_at(bookmark, *element);
 
-        // 19. Remove formatting element from the stack of open elements, and insert the new element
-        //     into the stack of open elements immediately below the position of furthest block in that stack.
+        // 19. Remove formattingElement from the stack of open elements, and insert the new element
+        //     into the stack of open elements immediately below the position of furthestBlock in that stack.
         m_stack_of_open_elements.remove(*formatting_element);
         m_stack_of_open_elements.insert_immediately_below(*element, *furthest_block);
     }
@@ -1678,6 +1701,7 @@ bool HTMLParser::is_special_tag(FlyString const& tag_name, Optional<FlyString> c
             HTML::TagNames::plaintext,
             HTML::TagNames::pre,
             HTML::TagNames::script,
+            HTML::TagNames::search,
             HTML::TagNames::section,
             HTML::TagNames::select,
             HTML::TagNames::source,
@@ -1932,7 +1956,7 @@ void HTMLParser::handle_in_body(HTMLToken& token)
     }
 
     // -> A start tag whose tag name is one of: "address", "article", "aside", "blockquote", "center", "details", "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol", "p", "search", "section", "summary", "ul"
-    if (token.is_start_tag() && token.tag_name().is_one_of(HTML::TagNames::address, HTML::TagNames::article, HTML::TagNames::aside, HTML::TagNames::blockquote, HTML::TagNames::center, HTML::TagNames::details, HTML::TagNames::dialog, HTML::TagNames::dir, HTML::TagNames::div, HTML::TagNames::dl, HTML::TagNames::fieldset, HTML::TagNames::figcaption, HTML::TagNames::figure, HTML::TagNames::footer, HTML::TagNames::header, HTML::TagNames::hgroup, HTML::TagNames::main, HTML::TagNames::menu, HTML::TagNames::nav, HTML::TagNames::ol, HTML::TagNames::p, HTML::TagNames::section, HTML::TagNames::summary, HTML::TagNames::ul)) {
+    if (token.is_start_tag() && token.tag_name().is_one_of(HTML::TagNames::address, HTML::TagNames::article, HTML::TagNames::aside, HTML::TagNames::blockquote, HTML::TagNames::center, HTML::TagNames::details, HTML::TagNames::dialog, HTML::TagNames::dir, HTML::TagNames::div, HTML::TagNames::dl, HTML::TagNames::fieldset, HTML::TagNames::figcaption, HTML::TagNames::figure, HTML::TagNames::footer, HTML::TagNames::header, HTML::TagNames::hgroup, HTML::TagNames::main, HTML::TagNames::menu, HTML::TagNames::nav, HTML::TagNames::ol, HTML::TagNames::p, HTML::TagNames::search, HTML::TagNames::section, HTML::TagNames::summary, HTML::TagNames::ul)) {
         // If the stack of open elements has a p element in button scope, then close a p element.
         if (m_stack_of_open_elements.has_in_button_scope(HTML::TagNames::p))
             close_a_p_element();
@@ -2139,7 +2163,7 @@ void HTMLParser::handle_in_body(HTMLToken& token)
     }
 
     // -> An end tag whose tag name is one of: "address", "article", "aside", "blockquote", "button", "center", "details", "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "listing", "main", "menu", "nav", "ol", "pre", "search", "section", "summary", "ul"
-    if (token.is_end_tag() && token.tag_name().is_one_of(HTML::TagNames::address, HTML::TagNames::article, HTML::TagNames::aside, HTML::TagNames::blockquote, HTML::TagNames::button, HTML::TagNames::center, HTML::TagNames::details, HTML::TagNames::dialog, HTML::TagNames::dir, HTML::TagNames::div, HTML::TagNames::dl, HTML::TagNames::fieldset, HTML::TagNames::figcaption, HTML::TagNames::figure, HTML::TagNames::footer, HTML::TagNames::header, HTML::TagNames::hgroup, HTML::TagNames::listing, HTML::TagNames::main, HTML::TagNames::menu, HTML::TagNames::nav, HTML::TagNames::ol, HTML::TagNames::pre, HTML::TagNames::section, HTML::TagNames::summary, HTML::TagNames::ul)) {
+    if (token.is_end_tag() && token.tag_name().is_one_of(HTML::TagNames::address, HTML::TagNames::article, HTML::TagNames::aside, HTML::TagNames::blockquote, HTML::TagNames::button, HTML::TagNames::center, HTML::TagNames::details, HTML::TagNames::dialog, HTML::TagNames::dir, HTML::TagNames::div, HTML::TagNames::dl, HTML::TagNames::fieldset, HTML::TagNames::figcaption, HTML::TagNames::figure, HTML::TagNames::footer, HTML::TagNames::header, HTML::TagNames::hgroup, HTML::TagNames::listing, HTML::TagNames::main, HTML::TagNames::menu, HTML::TagNames::nav, HTML::TagNames::ol, HTML::TagNames::pre, HTML::TagNames::search, HTML::TagNames::section, HTML::TagNames::summary, HTML::TagNames::ul)) {
         // If the stack of open elements does not have an element in scope that is an HTML element with the same tag name as that of the token, then this is a parse error; ignore the token.
         if (!m_stack_of_open_elements.has_in_scope(token.tag_name())) {
             log_parse_error();
@@ -2267,7 +2291,7 @@ void HTMLParser::handle_in_body(HTMLToken& token)
         return;
     }
 
-    // 3. An end tag whose tag name is one of: "h1", "h2", "h3", "h4", "h5", "h6"
+    // -> An end tag whose tag name is one of: "h1", "h2", "h3", "h4", "h5", "h6"
     if (token.is_end_tag() && token.tag_name().is_one_of(HTML::TagNames::h1, HTML::TagNames::h2, HTML::TagNames::h3, HTML::TagNames::h4, HTML::TagNames::h5, HTML::TagNames::h6)) {
         // If the stack of open elements does not have an element in scope that is an HTML element and whose tag name is one of "h1", "h2", "h3", "h4", "h5", or "h6", then this is a parse error; ignore the token.
         if (!m_stack_of_open_elements.has_in_scope(HTML::TagNames::h1)
@@ -2296,6 +2320,12 @@ void HTMLParser::handle_in_body(HTMLToken& token)
                 break;
         }
         return;
+    }
+
+    // -> An end tag whose tag name is "sarcasm"
+    if (token.is_end_tag() && token.tag_name().is_one_of("sarcasm"_fly_string)) {
+        // Take a deep breath, then act as described in the "any other end tag" entry below.
+        goto AnyOtherEndTag;
     }
 
     // -> A start tag whose tag name is "a"
@@ -2436,8 +2466,6 @@ void HTMLParser::handle_in_body(HTMLToken& token)
 
         // Insert an HTML element for the token. Immediately pop the current node off the stack of open elements.
         (void)insert_html_element(token);
-
-        // Acknowledge the token's self-closing flag, if it is set.
         (void)m_stack_of_open_elements.pop();
 
         // Acknowledge the token's self-closing flag, if it is set.

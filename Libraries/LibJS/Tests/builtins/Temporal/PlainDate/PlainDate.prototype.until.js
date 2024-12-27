@@ -122,20 +122,8 @@ describe("errors", () => {
     });
 
     test("cannot compare dates from different calendars", () => {
-        const calendarOne = {
-            toString() {
-                return "calendarOne";
-            },
-        };
-
-        const calendarTwo = {
-            toString() {
-                return "calendarTwo";
-            },
-        };
-
-        const dateOneWithCalendar = new Temporal.PlainDate(2021, 11, 14, calendarOne);
-        const dateTwoWithCalendar = new Temporal.PlainDate(2022, 12, 25, calendarTwo);
+        const dateOneWithCalendar = new Temporal.PlainDate(2021, 11, 14, "iso8601");
+        const dateTwoWithCalendar = new Temporal.PlainDate(2022, 12, 25, "gregory");
 
         expect(() => {
             dateOneWithCalendar.until(dateTwoWithCalendar);

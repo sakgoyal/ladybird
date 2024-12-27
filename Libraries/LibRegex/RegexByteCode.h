@@ -8,15 +8,11 @@
 
 #include "RegexBytecodeStreamOptimizer.h"
 #include "RegexMatch.h"
-#include "RegexOptions.h"
 
 #include <AK/Concepts.h>
 #include <AK/DisjointChunks.h>
 #include <AK/Forward.h>
-#include <AK/HashMap.h>
-#include <AK/NonnullOwnPtr.h>
 #include <AK/OwnPtr.h>
-#include <AK/Traits.h>
 #include <AK/TypeCasts.h>
 #include <AK/Types.h>
 #include <AK/Vector.h>
@@ -791,7 +787,13 @@ public:
     ByteString arguments_string() const override
     {
         auto reps = id() < state().repetition_marks.size() ? state().repetition_marks.at(id()) : 0;
-        return ByteString::formatted("offset={} count={} id={} rep={}, sp: {}", offset(), count() + 1, id(), reps + 1, state().string_position);
+        return ByteString::formatted("offset={} [&{}] count={} id={} rep={}, sp: {}",
+            static_cast<ssize_t>(offset()),
+            state().instruction_position - offset(),
+            count() + 1,
+            id(),
+            reps + 1,
+            state().string_position);
     }
 };
 

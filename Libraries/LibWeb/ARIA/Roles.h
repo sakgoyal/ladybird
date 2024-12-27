@@ -43,6 +43,7 @@ namespace Web::ARIA {
     __ENUMERATE_ARIA_ROLE(gridcell)         \
     __ENUMERATE_ARIA_ROLE(group)            \
     __ENUMERATE_ARIA_ROLE(heading)          \
+    __ENUMERATE_ARIA_ROLE(image)            \
     __ENUMERATE_ARIA_ROLE(img)              \
     __ENUMERATE_ARIA_ROLE(input)            \
     __ENUMERATE_ARIA_ROLE(insertion)        \
@@ -53,6 +54,7 @@ namespace Web::ARIA {
     __ENUMERATE_ARIA_ROLE(listitem)         \
     __ENUMERATE_ARIA_ROLE(log)              \
     __ENUMERATE_ARIA_ROLE(main)             \
+    __ENUMERATE_ARIA_ROLE(mark)             \
     __ENUMERATE_ARIA_ROLE(marquee)          \
     __ENUMERATE_ARIA_ROLE(math)             \
     __ENUMERATE_ARIA_ROLE(meter)            \
@@ -80,7 +82,9 @@ namespace Web::ARIA {
     __ENUMERATE_ARIA_ROLE(search)           \
     __ENUMERATE_ARIA_ROLE(searchbox)        \
     __ENUMERATE_ARIA_ROLE(section)          \
+    __ENUMERATE_ARIA_ROLE(sectionfooter)    \
     __ENUMERATE_ARIA_ROLE(sectionhead)      \
+    __ENUMERATE_ARIA_ROLE(sectionheader)    \
     __ENUMERATE_ARIA_ROLE(select)           \
     __ENUMERATE_ARIA_ROLE(separator)        \
     __ENUMERATE_ARIA_ROLE(slider)           \
@@ -89,6 +93,7 @@ namespace Web::ARIA {
     __ENUMERATE_ARIA_ROLE(strong)           \
     __ENUMERATE_ARIA_ROLE(structure)        \
     __ENUMERATE_ARIA_ROLE(subscript)        \
+    __ENUMERATE_ARIA_ROLE(suggestion)       \
     __ENUMERATE_ARIA_ROLE(superscript)      \
     __ENUMERATE_ARIA_ROLE(switch_)          \
     __ENUMERATE_ARIA_ROLE(tab)              \
@@ -123,7 +128,6 @@ bool is_landmark_role(Role);
 bool is_live_region_role(Role);
 bool is_windows_role(Role);
 
-bool is_non_abstract_role(Role);
 bool allows_name_from_content(Role);
 
 }

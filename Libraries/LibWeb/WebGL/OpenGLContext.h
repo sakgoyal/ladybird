@@ -6,41 +6,37 @@
 
 #pragma once
 
-#include <LibGfx/Bitmap.h>
-#include <LibWeb/WebGL/Types.h>
+#include <LibGfx/Forward.h>
+#include <LibGfx/Size.h>
 
 namespace Web::WebGL {
 
 class OpenGLContext {
 public:
-    static OwnPtr<OpenGLContext> create(Gfx::PaintingSurface&);
+    static OwnPtr<OpenGLContext> create(NonnullRefPtr<Gfx::SkiaBackendContext>);
 
-    virtual void present() = 0;
+    void notify_content_will_change();
     void clear_buffer_to_default_values();
+    void allocate_painting_surface_if_needed();
 
-    virtual GLenum gl_get_error() = 0;
-    virtual void gl_get_doublev(GLenum, GLdouble*) = 0;
-    virtual void gl_get_integerv(GLenum, GLint*) = 0;
-    virtual void gl_clear(GLbitfield) = 0;
-    virtual void gl_clear_color(GLfloat, GLfloat, GLfloat, GLfloat) = 0;
-    virtual void gl_clear_depth(GLdouble) = 0;
-    virtual void gl_clear_stencil(GLint) = 0;
-    virtual void gl_active_texture(GLenum) = 0;
-    virtual void gl_viewport(GLint, GLint, GLsizei, GLsizei) = 0;
-    virtual void gl_line_width(GLfloat) = 0;
-    virtual void gl_polygon_offset(GLfloat, GLfloat) = 0;
-    virtual void gl_scissor(GLint, GLint, GLsizei, GLsizei) = 0;
-    virtual void gl_depth_mask(GLboolean) = 0;
-    virtual void gl_depth_func(GLenum) = 0;
-    virtual void gl_depth_range(GLdouble, GLdouble) = 0;
-    virtual void gl_cull_face(GLenum) = 0;
-    virtual void gl_color_mask(GLboolean, GLboolean, GLboolean, GLboolean) = 0;
-    virtual void gl_front_face(GLenum) = 0;
-    virtual void gl_finish() = 0;
-    virtual void gl_flush() = 0;
-    virtual void gl_stencil_op_separate(GLenum, GLenum, GLenum, GLenum) = 0;
+    struct Impl;
+    OpenGLContext(NonnullRefPtr<Gfx::SkiaBackendContext>, Impl);
 
-    virtual ~OpenGLContext() { }
+    ~OpenGLContext();
+
+    void make_current();
+
+    void set_size(Gfx::IntSize const&);
+
+    RefPtr<Gfx::PaintingSurface> surface();
+
+    Vector<String> get_supported_extensions();
+
+private:
+    NonnullRefPtr<Gfx::SkiaBackendContext> m_skia_backend_context;
+    Gfx::IntSize m_size;
+    RefPtr<Gfx::PaintingSurface> m_painting_surface;
+    NonnullOwnPtr<Impl> m_impl;
 };
 
 }

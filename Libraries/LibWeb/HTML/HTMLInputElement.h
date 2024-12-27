@@ -58,8 +58,8 @@ class HTMLInputElement final
 public:
     virtual ~HTMLInputElement() override;
 
-    virtual GC::Ptr<Layout::Node> create_layout_node(CSS::StyleProperties) override;
-    virtual void adjust_computed_style(CSS::StyleProperties&) override;
+    virtual GC::Ptr<Layout::Node> create_layout_node(GC::Ref<CSS::ComputedProperties>) override;
+    virtual void adjust_computed_style(CSS::ComputedProperties&) override;
 
     enum class TypeAttributeState {
 #define __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(_, state) state,
@@ -100,8 +100,6 @@ public:
     bool indeterminate() const { return m_indeterminate; }
     void set_indeterminate(bool);
 
-    bool is_mutable() const { return m_is_mutable; }
-
     void did_pick_color(Optional<Color> picked_color, ColorPickerUpdateState state);
 
     enum class MultipleHandling {
@@ -125,8 +123,14 @@ public:
     WebIDL::Long min_length() const;
     WebIDL::ExceptionOr<void> set_min_length(WebIDL::Long);
 
-    unsigned size() const;
-    WebIDL::ExceptionOr<void> set_size(unsigned value);
+    WebIDL::UnsignedLong size() const;
+    WebIDL::ExceptionOr<void> set_size(WebIDL::UnsignedLong value);
+
+    WebIDL::UnsignedLong height() const;
+    WebIDL::ExceptionOr<void> set_height(WebIDL::UnsignedLong value);
+
+    WebIDL::UnsignedLong width() const;
+    WebIDL::ExceptionOr<void> set_width(WebIDL::UnsignedLong value);
 
     struct SelectedCoordinate {
         int x { 0 };
@@ -181,7 +185,7 @@ public:
 
     virtual void form_associated_element_was_inserted() override;
     virtual void form_associated_element_was_removed(DOM::Node*) override;
-    virtual void form_associated_element_attribute_changed(FlyString const&, Optional<String> const&) override;
+    virtual void form_associated_element_attribute_changed(FlyString const&, Optional<String> const&, Optional<FlyString> const&) override;
 
     virtual WebIDL::ExceptionOr<void> cloned(Node&, bool) override;
 
@@ -223,7 +227,8 @@ private:
 
     void type_attribute_changed(TypeAttributeState old_state, TypeAttributeState new_state);
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 
     // ^DOM::Node
     virtual bool is_html_input_element() const final { return true; }
@@ -237,7 +242,7 @@ private:
 
     // ^DOM::Element
     virtual i32 default_tab_index_value() const override;
-    virtual void computed_css_values_changed() override;
+    virtual void computed_properties_changed() override;
 
     // https://html.spec.whatwg.org/multipage/input.html#image-button-state-(type=image):dimension-attributes
     virtual bool supports_dimension_attributes() const override { return type_state() == TypeAttributeState::ImageButton; }
@@ -332,9 +337,6 @@ private:
 
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-dirty
     bool m_dirty_value { false };
-
-    // https://html.spec.whatwg.org/multipage/input.html#the-input-element:concept-fe-mutable
-    bool m_is_mutable { true };
 
     // https://html.spec.whatwg.org/multipage/input.html#the-input-element:legacy-pre-activation-behavior
     bool m_before_legacy_pre_activation_behavior_checked { false };

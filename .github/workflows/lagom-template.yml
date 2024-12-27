@@ -123,7 +123,7 @@ jobs:
         run: |
           set -e
 
-          cmake --preset=CI -S Meta/Lagom -B ${{ github.workspace }}/Build/tools-build \
+          cmake --preset=Distribution_CI -S Meta/Lagom -B ${{ github.workspace }}/Build/tools-build \
             -DLAGOM_TOOLS_ONLY=ON \
             -DINSTALL_LAGOM_TOOLS=ON \
             -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/Build/tools-install \
@@ -182,18 +182,33 @@ jobs:
       - name: Test
         if: ${{ inputs.fuzzer == 'NO_FUZZ' }}
         working-directory: ${{ github.workspace }}
-        run: ctest --preset Sanitizer --output-on-failure --test-dir Build
+        run: ctest --preset Sanitizer --output-on-failure --test-dir Build --timeout 1800
         env:
           TESTS_ONLY: 1
+          # NOTE: These are appended to the preset's options.
+          ASAN_OPTIONS: 'log_path=${{ github.workspace }}/asan.log'
+          UBSAN_OPTIONS: 'log_path=${{ github.workspace }}/ubsan.log'
 
       - name: Upload LibWeb Test Artifacts
         if: ${{ always() && inputs.fuzzer == 'NO_FUZZ' }}
         uses: actions/upload-artifact@v4
         with:
-          name: libweb-test-artifacts-${{ inputs.os_name }}
-          path: ${{ github.workspace }}/Build/UI/test-dumps
-          retention-days: 7
+          name: libweb-test-artifacts-${{ inputs.os_name }}-${{inputs.fuzzer}}-${{inputs.toolchain}}-${{inputs.clang-plugins}}
+          path: ${{ github.workspace }}/Build/UI/Headless/test-dumps
+          retention-days: 0
           if-no-files-found: ignore
+
+      - name: Sanitizer Output
+        if: ${{ !cancelled() && inputs.fuzzer == 'NO_FUZZ' }}
+        working-directory: ${{ github.workspace }}
+        run: |
+          log_output=$(find . -maxdepth 1 \( -name 'asan.log.*' -o -name 'ubsan.log.*' \) -exec cat {} \; )
+          if [ -z "$log_output" ]; then
+            echo "No sanitizer issues found."
+          else
+            echo "$log_output"
+            echo "Sanitizer errors happened while running tests; see the Test step above."
+          fi
 
       - name: Lints
         if: ${{ inputs.os_name == 'Linux' && inputs.fuzzer == 'NO_FUZZ' }}

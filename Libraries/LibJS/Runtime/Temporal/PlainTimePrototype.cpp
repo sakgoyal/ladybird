@@ -1,21 +1,15 @@
 /*
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2021, Luke Wilde <lukew@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <AK/TypeCasts.h>
-#include <LibJS/Runtime/GlobalObject.h>
-#include <LibJS/Runtime/Temporal/Calendar.h>
+#include <LibJS/Runtime/Intl/DateTimeFormat.h>
+#include <LibJS/Runtime/Intl/DateTimeFormatConstructor.h>
 #include <LibJS/Runtime/Temporal/Duration.h>
-#include <LibJS/Runtime/Temporal/Instant.h>
-#include <LibJS/Runtime/Temporal/PlainDate.h>
-#include <LibJS/Runtime/Temporal/PlainDateTime.h>
-#include <LibJS/Runtime/Temporal/PlainTime.h>
 #include <LibJS/Runtime/Temporal/PlainTimePrototype.h>
-#include <LibJS/Runtime/Temporal/TimeZone.h>
-#include <LibJS/Runtime/Temporal/ZonedDateTime.h>
 
 namespace JS::Temporal {
 
@@ -33,10 +27,9 @@ void PlainTimePrototype::initialize(Realm& realm)
 
     auto& vm = this->vm();
 
-    // 4.3.2 Temporal.PlainTime.prototype[ @@toStringTag ], https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype-@@tostringtag
+    // 4.3.2 Temporal.PlainTime.prototype[ %Symbol.toStringTag% ], https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype-%symbol.tostringtag%
     define_direct_property(vm.well_known_symbol_to_string_tag(), PrimitiveString::create(vm, "Temporal.PlainTime"_string), Attribute::Configurable);
 
-    define_native_accessor(realm, vm.names.calendar, calendar_getter, {}, Attribute::Configurable);
     define_native_accessor(realm, vm.names.hour, hour_getter, {}, Attribute::Configurable);
     define_native_accessor(realm, vm.names.minute, minute_getter, {}, Attribute::Configurable);
     define_native_accessor(realm, vm.names.second, second_getter, {}, Attribute::Configurable);
@@ -52,93 +45,40 @@ void PlainTimePrototype::initialize(Realm& realm)
     define_native_function(realm, vm.names.since, since, 1, attr);
     define_native_function(realm, vm.names.round, round, 1, attr);
     define_native_function(realm, vm.names.equals, equals, 1, attr);
-    define_native_function(realm, vm.names.toPlainDateTime, to_plain_date_time, 1, attr);
-    define_native_function(realm, vm.names.toZonedDateTime, to_zoned_date_time, 1, attr);
-    define_native_function(realm, vm.names.getISOFields, get_iso_fields, 0, attr);
     define_native_function(realm, vm.names.toString, to_string, 0, attr);
     define_native_function(realm, vm.names.toLocaleString, to_locale_string, 0, attr);
     define_native_function(realm, vm.names.toJSON, to_json, 0, attr);
     define_native_function(realm, vm.names.valueOf, value_of, 0, attr);
 }
 
-// 4.3.3 get Temporal.PlainTime.prototype.calendar, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.calendar
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::calendar_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
+// 4.3.3 get Temporal.PlainTime.prototype.hour, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.hour
+// 4.3.4 get Temporal.PlainTime.prototype.minute, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.minute
+// 4.3.5 get Temporal.PlainTime.prototype.second, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.second
+// 4.3.6 get Temporal.PlainTime.prototype.millisecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.millisecond
+// 4.3.7 get Temporal.PlainTime.prototype.microsecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.microsecond
+// 4.3.8 get Temporal.PlainTime.prototype.nanosecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.microsecond
+#define JS_ENUMERATE_PLAIN_TIME_FIELDS \
+    __JS_ENUMERATE(hour)               \
+    __JS_ENUMERATE(minute)             \
+    __JS_ENUMERATE(second)             \
+    __JS_ENUMERATE(millisecond)        \
+    __JS_ENUMERATE(microsecond)        \
+    __JS_ENUMERATE(nanosecond)
 
-    // 3. Return temporalTime.[[Calendar]].
-    return Value(&temporal_time->calendar());
-}
+#define __JS_ENUMERATE(field)                                                              \
+    JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::field##_getter)                          \
+    {                                                                                      \
+        /* 1. Let temporalTime be the this value. */                                       \
+        /* 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]). */ \
+        auto temporal_time = TRY(typed_this_object(vm));                                   \
+                                                                                           \
+        /* 3. Return 𝔽(temporalTime.[[Time]].[[<field>]]). */                           \
+        return temporal_time->time().field;                                                \
+    }
+JS_ENUMERATE_PLAIN_TIME_FIELDS
+#undef __JS_ENUMERATE
 
-// 4.3.4 get Temporal.PlainTime.prototype.hour, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.hour
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::hour_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISOHour]]).
-    return Value(temporal_time->iso_hour());
-}
-
-// 4.3.5 get Temporal.PlainTime.prototype.minute, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.minute
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::minute_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISOMinute]]).
-    return Value(temporal_time->iso_minute());
-}
-
-// 4.3.6 get Temporal.PlainTime.prototype.second, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.second
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::second_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISOSecond]]).
-    return Value(temporal_time->iso_second());
-}
-
-// 4.3.7 get Temporal.PlainTime.prototype.millisecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.millisecond
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::millisecond_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISOMillisecond]]).
-    return Value(temporal_time->iso_millisecond());
-}
-
-// 4.3.8 get Temporal.PlainTime.prototype.microsecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.microsecond
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::microsecond_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISOMicrosecond]]).
-    return Value(temporal_time->iso_microsecond());
-}
-
-// 4.3.9 get Temporal.PlainTime.prototype.nanosecond, https://tc39.es/proposal-temporal/#sec-get-temporal.plaintime.prototype.nanosecond
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::nanosecond_getter)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Return 𝔽(temporalTime.[[ISONanosecond]]).
-    return Value(temporal_time->iso_nanosecond());
-}
-
-// 4.3.10 Temporal.PlainTime.prototype.add ( temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.add
+// 4.3.9 Temporal.PlainTime.prototype.add ( temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.add
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::add)
 {
     auto temporal_duration_like = vm.argument(0);
@@ -147,11 +87,11 @@ JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::add)
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ? AddDurationToOrSubtractDurationFromPlainTime(add, temporalTime, temporalDurationLike).
-    return TRY(add_duration_to_or_subtract_duration_from_plain_time(vm, ArithmeticOperation::Add, temporal_time, temporal_duration_like));
+    // 3. Return ? AddDurationToTime(ADD, temporalTime, temporalDurationLike).
+    return TRY(add_duration_to_time(vm, ArithmeticOperation::Add, temporal_time, temporal_duration_like));
 }
 
-// 4.3.11 Temporal.PlainTime.prototype.subtract ( temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.subtract
+// 4.3.10 Temporal.PlainTime.prototype.subtract ( temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.subtract
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::subtract)
 {
     auto temporal_duration_like = vm.argument(0);
@@ -160,83 +100,77 @@ JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::subtract)
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ? AddDurationToOrSubtractDurationFromPlainTime(subtract, temporalTime, temporalDurationLike).
-    return TRY(add_duration_to_or_subtract_duration_from_plain_time(vm, ArithmeticOperation::Subtract, temporal_time, temporal_duration_like));
+    // 3. Return ? AddDurationToTime(SUBTRACT, temporalTime, temporalDurationLike).
+    return TRY(add_duration_to_time(vm, ArithmeticOperation::Subtract, temporal_time, temporal_duration_like));
 }
 
-// 4.3.12 Temporal.PlainTime.prototype.with ( temporalTimeLike [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.with
+// 4.3.11 Temporal.PlainTime.prototype.with ( temporalTimeLike [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.with
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::with)
 {
+    auto temporal_time_like = vm.argument(0);
+    auto options = vm.argument(1);
+
     // 1. Let temporalTime be the this value.
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    auto temporal_time_like_argument = vm.argument(0);
+    // 3. If ? IsPartialTemporalObject(temporalTimeLike) is false, throw a TypeError exception.
+    if (!TRY(is_partial_temporal_object(vm, temporal_time_like)))
+        return vm.throw_completion<TypeError>(ErrorType::TemporalObjectMustBePartialTemporalObject);
 
-    // 3. If Type(temporalTimeLike) is not Object, then
-    if (!temporal_time_like_argument.is_object()) {
-        // a. Throw a TypeError exception.
-        return vm.throw_completion<TypeError>(ErrorType::NotAnObject, temporal_time_like_argument.to_string_without_side_effects());
-    }
+    // 4. Let partialTime be ? ToTemporalTimeRecord(temporalTimeLike, PARTIAL).
+    auto partial_time = TRY(to_temporal_time_record(vm, temporal_time_like.as_object(), Completeness::Partial));
 
-    auto& temporal_time_like = temporal_time_like_argument.as_object();
+    // 5. If partialTime.[[Hour]] is not undefined, then
+    //     a. Let hour be partialTime.[[Hour]].
+    // 6. Else,
+    //     a. Let hour be temporalTime.[[Time]].[[Hour]].
+    auto hour = partial_time.hour.value_or(temporal_time->time().hour);
 
-    // 4. Perform ? RejectObjectWithCalendarOrTimeZone(temporalTimeLike).
-    TRY(reject_object_with_calendar_or_time_zone(vm, temporal_time_like));
+    // 7. If partialTime.[[Minute]] is not undefined, then
+    //     a. Let minute be partialTime.[[Minute]].
+    // 8. Else,
+    //     a. Let minute be temporalTime.[[Time]].[[Minute]].
+    auto minute = partial_time.minute.value_or(temporal_time->time().minute);
 
-    // 5. Let partialTime be ? ToTemporalTimeRecord(temporalTimeLike, partial).
-    auto partial_time = TRY(to_temporal_time_record(vm, temporal_time_like, ToTemporalTimeRecordCompleteness::Partial));
+    // 9. If partialTime.[[Second]] is not undefined, then
+    //     a. Let second be partialTime.[[Second]].
+    // 10. Else,
+    //     a. Let second be temporalTime.[[Time]].[[Second]].
+    auto second = partial_time.second.value_or(temporal_time->time().second);
 
-    // 6. Set options to ? GetOptionsObject(options).
-    auto* options = TRY(get_options_object(vm, vm.argument(1)));
+    // 11. If partialTime.[[Millisecond]] is not undefined, then
+    //     a. Let millisecond be partialTime.[[Millisecond]].
+    // 12. Else,
+    //     a. Let millisecond be temporalTime.[[Time]].[[Millisecond]].
+    auto millisecond = partial_time.millisecond.value_or(temporal_time->time().millisecond);
 
-    // 7. Let overflow be ? ToTemporalOverflow(options).
-    auto overflow = TRY(to_temporal_overflow(vm, options));
+    // 13. If partialTime.[[Microsecond]] is not undefined, then
+    //     a. Let microsecond be partialTime.[[Microsecond]].
+    // 14. Else,
+    //     a. Let microsecond be temporalTime.[[Time]].[[Microsecond]].
+    auto microsecond = partial_time.microsecond.value_or(temporal_time->time().microsecond);
 
-    // 8. If partialTime.[[Hour]] is not undefined, then
-    //      a. Let hour be partialTime.[[Hour]].
-    // 9. Else,
-    //      a. Let hour be temporalTime.[[ISOHour]].
-    auto hour = partial_time.hour.value_or(temporal_time->iso_hour());
+    // 15. If partialTime.[[Nanosecond]] is not undefined, then
+    //     a. Let nanosecond be partialTime.[[Nanosecond]].
+    // 16. Else,
+    //     a. Let nanosecond be temporalTime.[[Time]].[[Nanosecond]].
+    auto nanosecond = partial_time.nanosecond.value_or(temporal_time->time().nanosecond);
 
-    // 10. If partialTime.[[Minute]] is not undefined, then
-    //      a. Let minute be partialTime.[[Minute]].
-    // 11. Else,
-    //      a. Let minute be temporalTime.[[ISOMinute]].
-    auto minute = partial_time.minute.value_or(temporal_time->iso_minute());
+    // 17. Let resolvedOptions be ? GetOptionsObject(options).
+    auto resolved_options = TRY(get_options_object(vm, options));
 
-    // 12. If partialTime.[[Second]] is not undefined, then
-    //      a. Let second be partialTime.[[Second]].
-    // 13. Else,
-    //      a. Let second be temporalTime.[[ISOSecond]].
-    auto second = partial_time.second.value_or(temporal_time->iso_second());
+    // 18. Let overflow be ? GetTemporalOverflowOption(resolvedOptions).
+    auto overflow = TRY(get_temporal_overflow_option(vm, resolved_options));
 
-    // 14. If partialTime.[[Millisecond]] is not undefined, then
-    //      a. Let millisecond be partialTime.[[Millisecond]].
-    // 15. Else,
-    //      a. Let millisecond be temporalTime.[[ISOMillisecond]].
-    auto millisecond = partial_time.millisecond.value_or(temporal_time->iso_millisecond());
-
-    // 16. If partialTime.[[Microsecond]] is not undefined, then
-    //      a. Let microsecond be partialTime.[[Microsecond]].
-    // 17. Else,
-    //      a. Let microsecond be temporalTime.[[ISOMicrosecond]].
-    auto microsecond = partial_time.microsecond.value_or(temporal_time->iso_microsecond());
-
-    // 18. If partialTime.[[Nanosecond]] is not undefined, then
-    //      a. Let nanosecond be partialTime.[[Nanosecond]].
-    // 19. Else,
-    //      a. Let nanosecond be temporalTime.[[ISONanosecond]].
-    auto nanosecond = partial_time.nanosecond.value_or(temporal_time->iso_nanosecond());
-
-    // 20. Let result be ? RegulateTime(hour, minute, second, millisecond, microsecond, nanosecond, overflow).
+    // 19. Let result be ? RegulateTime(hour, minute, second, millisecond, microsecond, nanosecond, overflow).
     auto result = TRY(regulate_time(vm, hour, minute, second, millisecond, microsecond, nanosecond, overflow));
 
-    // 21. Return ! CreateTemporalTime(result.[[Hour]], result.[[Minute]], result.[[Second]], result.[[Millisecond]], result.[[Microsecond]], result.[[Nanosecond]]).
-    return MUST(create_temporal_time(vm, result.hour, result.minute, result.second, result.millisecond, result.microsecond, result.nanosecond));
+    // 20. Return ! CreateTemporalTime(result).
+    return MUST(create_temporal_time(vm, result));
 }
 
-// 4.3.13 Temporal.PlainTime.prototype.until ( other [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.until
+// 4.3.12 Temporal.PlainTime.prototype.until ( other [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.until
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::until)
 {
     auto other = vm.argument(0);
@@ -246,11 +180,11 @@ JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::until)
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ? DifferenceTemporalPlainTime(until, temporalTime, other, options).
-    return TRY(difference_temporal_plain_time(vm, DifferenceOperation::Until, temporal_time, other, options));
+    // 3. Return ? DifferenceTemporalPlainTime(UNTIL, temporalTime, other, options).
+    return TRY(difference_temporal_plain_time(vm, DurationOperation::Until, temporal_time, other, options));
 }
 
-// 4.3.14 Temporal.PlainTime.prototype.since ( other [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.since
+// 4.3.13 Temporal.PlainTime.prototype.since ( other [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.since
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::since)
 {
     auto other = vm.argument(0);
@@ -260,69 +194,76 @@ JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::since)
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ? DifferenceTemporalPlainTime(since, temporalTime, other, options).
-    return TRY(difference_temporal_plain_time(vm, DifferenceOperation::Since, temporal_time, other, options));
+    // 3. Return ? DifferenceTemporalPlainTime(SINCE, temporalTime, other, options).
+    return TRY(difference_temporal_plain_time(vm, DurationOperation::Since, temporal_time, other, options));
 }
 
-// 4.3.15 Temporal.PlainTime.prototype.round ( roundTo ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.round
+// 4.3.14 Temporal.PlainTime.prototype.round ( roundTo ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.round
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::round)
 {
     auto& realm = *vm.current_realm();
+
+    auto round_to_value = vm.argument(0);
 
     // 1. Let temporalTime be the this value.
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
     // 3. If roundTo is undefined, then
-    if (vm.argument(0).is_undefined()) {
+    if (round_to_value.is_undefined()) {
         // a. Throw a TypeError exception.
         return vm.throw_completion<TypeError>(ErrorType::TemporalMissingOptionsObject);
     }
 
-    Object* round_to;
+    GC::Ptr<Object> round_to;
 
-    // 4. If Type(roundTo) is String, then
-    if (vm.argument(0).is_string()) {
+    // 4. If roundTo is a String, then
+    if (round_to_value.is_string()) {
         // a. Let paramString be roundTo.
+        auto param_string = round_to_value;
 
         // b. Set roundTo to OrdinaryObjectCreate(null).
         round_to = Object::create(realm, nullptr);
 
         // c. Perform ! CreateDataPropertyOrThrow(roundTo, "smallestUnit", paramString).
-        MUST(round_to->create_data_property_or_throw(vm.names.smallestUnit, vm.argument(0)));
+        MUST(round_to->create_data_property_or_throw(vm.names.smallestUnit, param_string));
     }
     // 5. Else,
     else {
         // a. Set roundTo to ? GetOptionsObject(roundTo).
-        round_to = TRY(get_options_object(vm, vm.argument(0)));
+        round_to = TRY(get_options_object(vm, round_to_value));
     }
 
-    // 6. Let smallestUnit be ? GetTemporalUnit(roundTo, "smallestUnit", time, required).
-    auto smallest_unit = TRY(get_temporal_unit(vm, *round_to, vm.names.smallestUnit, UnitGroup::Time, TemporalUnitRequired {}));
+    // 6. NOTE: The following steps read options and perform independent validation in alphabetical order
+    //    (GetRoundingIncrementOption reads "roundingIncrement" and GetRoundingModeOption reads "roundingMode").
 
-    // 7. Let roundingMode be ? ToTemporalRoundingMode(roundTo, "halfExpand").
-    auto rounding_mode = TRY(to_temporal_rounding_mode(vm, *round_to, "halfExpand"sv));
+    // 7. Let roundingIncrement be ? GetRoundingIncrementOption(roundTo).
+    auto rounding_increment = TRY(get_rounding_increment_option(vm, *round_to));
 
-    // 8. Let maximum be ! MaximumTemporalDurationRoundingIncrement(smallestUnit).
-    auto maximum = maximum_temporal_duration_rounding_increment(*smallest_unit);
+    // 8. Let roundingMode be ? GetRoundingModeOption(roundTo, HALF-EXPAND).
+    auto rounding_mode = TRY(get_rounding_mode_option(vm, *round_to, RoundingMode::HalfExpand));
 
-    // 9. Assert maximum is not undefined.
-    VERIFY(maximum.has_value());
+    // 9. Let smallestUnit be ? GetTemporalUnitValuedOption(roundTo, "smallestUnit", TIME, REQUIRED).
+    auto smallest_unit = TRY(get_temporal_unit_valued_option(vm, *round_to, vm.names.smallestUnit, UnitGroup::Time, Required {}));
+    auto smallest_unit_value = smallest_unit.get<Unit>();
 
-    // 10. Let roundingIncrement be ? ToTemporalRoundingIncrement(roundTo).
-    auto rounding_increment = TRY(to_temporal_rounding_increment(vm, *round_to));
+    // 10. Let maximum be MaximumTemporalDurationRoundingIncrement(smallestUnit).
+    auto maximum = maximum_temporal_duration_rounding_increment(smallest_unit_value);
 
-    // 11. Perform ? ValidateTemporalRoundingIncrement(roundingIncrement, maximum, false).
-    TRY(validate_temporal_rounding_increment(vm, rounding_increment, *maximum, false));
+    // 11. Assert: maximum is not UNSET.
+    VERIFY(!maximum.has<Unset>());
 
-    // 12. Let result be ! RoundTime(temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], roundingIncrement, smallestUnit, roundingMode).
-    auto result = round_time(temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), rounding_increment, *smallest_unit, rounding_mode);
+    // 12. Perform ? ValidateTemporalRoundingIncrement(roundingIncrement, maximum, false).
+    TRY(validate_temporal_rounding_increment(vm, rounding_increment, maximum.get<u64>(), false));
 
-    // 13. Return ! CreateTemporalTime(result.[[Hour]], result.[[Minute]], result.[[Second]], result.[[Millisecond]], result.[[Microsecond]], result.[[Nanosecond]]).
-    return MUST(create_temporal_time(vm, result.hour, result.minute, result.second, result.millisecond, result.microsecond, result.nanosecond));
+    // 13. Let result be RoundTime(temporalTime.[[Time]], roundingIncrement, smallestUnit, roundingMode).
+    auto result = round_time(temporal_time->time(), rounding_increment, smallest_unit_value, rounding_mode);
+
+    // 14. Return ! CreateTemporalTime(result).
+    return MUST(create_temporal_time(vm, result));
 }
 
-// 4.3.16 Temporal.PlainTime.prototype.equals ( other ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.equals
+// 4.3.15 Temporal.PlainTime.prototype.equals ( other ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.equals
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::equals)
 {
     // 1. Let temporalTime be the this value.
@@ -330,185 +271,84 @@ JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::equals)
     auto temporal_time = TRY(typed_this_object(vm));
 
     // 3. Set other to ? ToTemporalTime(other).
-    auto* other = TRY(to_temporal_time(vm, vm.argument(0)));
+    auto other = TRY(to_temporal_time(vm, vm.argument(0)));
 
-    // 4. If temporalTime.[[ISOHour]] ≠ other.[[ISOHour]], return false.
-    if (temporal_time->iso_hour() != other->iso_hour())
-        return Value(false);
+    // 4. If CompareTimeRecord(temporalTime.[[Time]], other.[[Time]]) = 0, return true.
+    if (compare_time_record(temporal_time->time(), other->time()) == 0)
+        return true;
 
-    // 5. If temporalTime.[[ISOMinute]] ≠ other.[[ISOMinute]], return false.
-    if (temporal_time->iso_minute() != other->iso_minute())
-        return Value(false);
-
-    // 6. If temporalTime.[[ISOSecond]] ≠ other.[[ISOSecond]], return false.
-    if (temporal_time->iso_second() != other->iso_second())
-        return Value(false);
-
-    // 7. If temporalTime.[[ISOMillisecond]] ≠ other.[[ISOMillisecond]], return false.
-    if (temporal_time->iso_millisecond() != other->iso_millisecond())
-        return Value(false);
-
-    // 8. If temporalTime.[[ISOMicrosecond]] ≠ other.[[ISOMicrosecond]], return false.
-    if (temporal_time->iso_microsecond() != other->iso_microsecond())
-        return Value(false);
-
-    // 9. If temporalTime.[[ISONanosecond]] ≠ other.[[ISONanosecond]], return false.
-    if (temporal_time->iso_nanosecond() != other->iso_nanosecond())
-        return Value(false);
-
-    // 10. Return true.
-    return Value(true);
+    // 5. Return false.
+    return false;
 }
 
-// 4.3.17 Temporal.PlainTime.prototype.toPlainDateTime ( temporalDate ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.toplaindatetime
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::to_plain_date_time)
-{
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Set temporalDate to ? ToTemporalDate(temporalDate).
-    auto* temporal_date = TRY(to_temporal_date(vm, vm.argument(0)));
-
-    // 4. Return ? CreateTemporalDateTime(temporalDate.[[ISOYear]], temporalDate.[[ISOMonth]], temporalDate.[[ISODay]], temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], temporalDate.[[Calendar]]).
-    return TRY(create_temporal_date_time(vm, temporal_date->iso_year(), temporal_date->iso_month(), temporal_date->iso_day(), temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), temporal_date->calendar()));
-}
-
-// 4.3.18 Temporal.PlainTime.prototype.toZonedDateTime ( item ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tozoneddatetime
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::to_zoned_date_time)
-{
-    auto item = vm.argument(0);
-
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. If Type(item) is not Object, then
-    if (!item.is_object()) {
-        // a. Throw a TypeError exception.
-        return vm.throw_completion<TypeError>(ErrorType::NotAnObject, item);
-    }
-
-    // 4. Let temporalDateLike be ? Get(item, "plainDate").
-    auto temporal_date_like = TRY(item.as_object().get(vm.names.plainDate));
-
-    // 5. If temporalDateLike is undefined, then
-    if (temporal_date_like.is_undefined()) {
-        // a. Throw a TypeError exception.
-        return vm.throw_completion<TypeError>(ErrorType::MissingRequiredProperty, vm.names.plainDate.as_string());
-    }
-
-    // 6. Let temporalDate be ? ToTemporalDate(temporalDateLike).
-    auto* temporal_date = TRY(to_temporal_date(vm, temporal_date_like));
-
-    // 7. Let temporalTimeZoneLike be ? Get(item, "timeZone").
-    auto temporal_time_zone_like = TRY(item.as_object().get(vm.names.timeZone));
-
-    // 8. If temporalTimeZoneLike is undefined, then
-    if (temporal_time_zone_like.is_undefined()) {
-        // a. Throw a TypeError exception.
-        return vm.throw_completion<TypeError>(ErrorType::MissingRequiredProperty, vm.names.timeZone.as_string());
-    }
-
-    // 9. Let timeZone be ? ToTemporalTimeZone(temporalTimeZoneLike).
-    auto* time_zone = TRY(to_temporal_time_zone(vm, temporal_time_zone_like));
-
-    // 10. Let temporalDateTime be ? CreateTemporalDateTime(temporalDate.[[ISOYear]], temporalDate.[[ISOMonth]], temporalDate.[[ISODay]], temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], temporalDate.[[Calendar]]).
-    auto* temporal_date_time = TRY(create_temporal_date_time(vm, temporal_date->iso_year(), temporal_date->iso_month(), temporal_date->iso_day(), temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), temporal_date->calendar()));
-
-    // 11. Let instant be ? BuiltinTimeZoneGetInstantFor(timeZone, temporalDateTime, "compatible").
-    auto instant = TRY(builtin_time_zone_get_instant_for(vm, time_zone, *temporal_date_time, "compatible"sv));
-
-    // 12. Return ! CreateTemporalZonedDateTime(instant.[[Nanoseconds]], timeZone, temporalDate.[[Calendar]]).
-    return MUST(create_temporal_zoned_date_time(vm, instant->nanoseconds(), *time_zone, temporal_date->calendar()));
-}
-
-// 4.3.19 Temporal.PlainTime.prototype.getISOFields ( ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.getisofields
-JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::get_iso_fields)
-{
-    auto& realm = *vm.current_realm();
-
-    // 1. Let temporalTime be the this value.
-    // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
-    auto temporal_time = TRY(typed_this_object(vm));
-
-    // 3. Let fields be OrdinaryObjectCreate(%Object.prototype%).
-    auto fields = Object::create(realm, realm.intrinsics().object_prototype());
-
-    // 4. Perform ! CreateDataPropertyOrThrow(fields, "calendar", temporalTime.[[Calendar]]).
-    MUST(fields->create_data_property_or_throw(vm.names.calendar, Value(&temporal_time->calendar())));
-
-    // 5. Perform ! CreateDataPropertyOrThrow(fields, "isoHour", 𝔽(temporalTime.[[ISOHour]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoHour, Value(temporal_time->iso_hour())));
-
-    // 6. Perform ! CreateDataPropertyOrThrow(fields, "isoMicrosecond", 𝔽(temporalTime.[[ISOMicrosecond]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoMicrosecond, Value(temporal_time->iso_microsecond())));
-
-    // 7. Perform ! CreateDataPropertyOrThrow(fields, "isoMillisecond", 𝔽(temporalTime.[[ISOMillisecond]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoMillisecond, Value(temporal_time->iso_millisecond())));
-
-    // 8. Perform ! CreateDataPropertyOrThrow(fields, "isoMinute", 𝔽(temporalTime.[[ISOMinute]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoMinute, Value(temporal_time->iso_minute())));
-
-    // 9. Perform ! CreateDataPropertyOrThrow(fields, "isoNanosecond", 𝔽(temporalTime.[[ISONanosecond]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoNanosecond, Value(temporal_time->iso_nanosecond())));
-
-    // 10. Perform ! CreateDataPropertyOrThrow(fields, "isoSecond", 𝔽(temporalTime.[[ISOSecond]])).
-    MUST(fields->create_data_property_or_throw(vm.names.isoSecond, Value(temporal_time->iso_second())));
-
-    // 11. Return fields.
-    return fields;
-}
-
-// 4.3.20 Temporal.PlainTime.prototype.toString ( [ options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tostring
+// 4.3.16 Temporal.PlainTime.prototype.toString ( [ options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tostring
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::to_string)
 {
     // 1. Let temporalTime be the this value.
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Set options to ? GetOptionsObject(options).
-    auto* options = TRY(get_options_object(vm, vm.argument(0)));
+    // 3. Let resolvedOptions be ? GetOptionsObject(options).
+    auto resolved_options = TRY(get_options_object(vm, vm.argument(0)));
 
-    // 4. Let precision be ? ToSecondsStringPrecisionRecord(options).
-    auto precision = TRY(to_seconds_string_precision_record(vm, *options));
+    // 4. NOTE: The following steps read options and perform independent validation in alphabetical order
+    //    (GetTemporalFractionalSecondDigitsOption reads "fractionalSecondDigits" and GetRoundingModeOption reads "roundingMode").
 
-    // 5. Let roundingMode be ? ToTemporalRoundingMode(options, "trunc").
-    auto rounding_mode = TRY(to_temporal_rounding_mode(vm, *options, "trunc"sv));
+    // 5. Let digits be ? GetTemporalFractionalSecondDigitsOption(resolvedOptions).
+    auto digits = TRY(get_temporal_fractional_second_digits_option(vm, resolved_options));
 
-    // 6. Let roundResult be ! RoundTime(temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], precision.[[Increment]], precision.[[Unit]], roundingMode).
-    auto round_result = round_time(temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), precision.increment, precision.unit, rounding_mode);
+    // 6. Let roundingMode be ? GetRoundingModeOption(resolvedOptions, TRUNC).
+    auto rounding_mode = TRY(get_rounding_mode_option(vm, resolved_options, RoundingMode::Trunc));
 
-    // 7. Return ! TemporalTimeToString(roundResult.[[Hour]], roundResult.[[Minute]], roundResult.[[Second]], roundResult.[[Millisecond]], roundResult.[[Microsecond]], roundResult.[[Nanosecond]], precision.[[Precision]]).
-    auto string = MUST_OR_THROW_OOM(temporal_time_to_string(vm, round_result.hour, round_result.minute, round_result.second, round_result.millisecond, round_result.microsecond, round_result.nanosecond, precision.precision));
-    return PrimitiveString::create(vm, move(string));
+    // 7. Let smallestUnit be ? GetTemporalUnitValuedOption(resolvedOptions, "smallestUnit", TIME, UNSET).
+    auto smallest_unit = TRY(get_temporal_unit_valued_option(vm, resolved_options, vm.names.smallestUnit, UnitGroup::Time, Unset {}));
+
+    // 8. If smallestUnit is HOUR, throw a RangeError exception.
+    if (auto const* unit = smallest_unit.get_pointer<Unit>(); unit && *unit == Unit::Hour)
+        return vm.throw_completion<RangeError>(ErrorType::OptionIsNotValidValue, temporal_unit_to_string(*unit), vm.names.smallestUnit);
+
+    // 9. Let precision be ToSecondsStringPrecisionRecord(smallestUnit, digits).
+    auto precision = to_seconds_string_precision_record(smallest_unit, digits);
+
+    // 10. Let roundResult be RoundTime(temporalTime.[[Time]], precision.[[Increment]], precision.[[Unit]], roundingMode).
+    auto round_result = round_time(temporal_time->time(), precision.increment, precision.unit, rounding_mode);
+
+    // 11. Return TimeRecordToString(roundResult, precision.[[Precision]]).
+    return PrimitiveString::create(vm, time_record_to_string(round_result, precision.precision));
 }
 
-// 4.3.21 Temporal.PlainTime.prototype.toLocaleString ( [ locales [ , options ] ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tolocalestring
+// 4.3.17 Temporal.PlainTime.prototype.toLocaleString ( [ locales [ , options ] ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tolocalestring
+// 15.12.6.1 Temporal.PlainTime.prototype.toLocaleString ( [ locales [ , options ] ] ), https://tc39.es/proposal-temporal/#sup-temporal.plaintime.prototype.tolocalestring
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::to_locale_string)
 {
+    auto& realm = *vm.current_realm();
+
+    auto locales = vm.argument(0);
+    auto options = vm.argument(1);
+
     // 1. Let temporalTime be the this value.
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ! TemporalTimeToString(temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], "auto").
-    auto string = MUST_OR_THROW_OOM(temporal_time_to_string(vm, temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), "auto"sv));
-    return PrimitiveString::create(vm, move(string));
+    // 3. Let dateFormat be ? CreateDateTimeFormat(%Intl.DateTimeFormat%, locales, options, TIME, TIME).
+    auto date_format = TRY(Intl::create_date_time_format(vm, realm.intrinsics().intl_date_time_format_constructor(), locales, options, Intl::OptionRequired::Time, Intl::OptionDefaults::Time));
+
+    // 4. Return ? FormatDateTime(dateFormat, temporalTime).
+    return PrimitiveString::create(vm, TRY(Intl::format_date_time(vm, date_format, temporal_time)));
 }
 
-// 4.3.22 Temporal.PlainTime.prototype.toJSON ( ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tojson
+// 4.3.18 Temporal.PlainTime.prototype.toJSON ( ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.tojson
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::to_json)
 {
     // 1. Let temporalTime be the this value.
     // 2. Perform ? RequireInternalSlot(temporalTime, [[InitializedTemporalTime]]).
     auto temporal_time = TRY(typed_this_object(vm));
 
-    // 3. Return ! TemporalTimeToString(temporalTime.[[ISOHour]], temporalTime.[[ISOMinute]], temporalTime.[[ISOSecond]], temporalTime.[[ISOMillisecond]], temporalTime.[[ISOMicrosecond]], temporalTime.[[ISONanosecond]], "auto").
-    auto string = MUST_OR_THROW_OOM(temporal_time_to_string(vm, temporal_time->iso_hour(), temporal_time->iso_minute(), temporal_time->iso_second(), temporal_time->iso_millisecond(), temporal_time->iso_microsecond(), temporal_time->iso_nanosecond(), "auto"sv));
-    return PrimitiveString::create(vm, move(string));
+    // 3. Return TimeRecordToString(temporalTime.[[Time]], AUTO).
+    return PrimitiveString::create(vm, time_record_to_string(temporal_time->time(), Auto {}));
 }
 
-// 4.3.23 Temporal.PlainTime.prototype.valueOf ( ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.valueof
+// 4.3.19 Temporal.PlainTime.prototype.valueOf ( ), https://tc39.es/proposal-temporal/#sec-temporal.plaintime.prototype.valueof
 JS_DEFINE_NATIVE_FUNCTION(PlainTimePrototype::value_of)
 {
     // 1. Throw a TypeError exception.

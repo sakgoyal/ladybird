@@ -25,6 +25,7 @@ void Database::visit_edges(Visitor& visitor)
 {
     Base::visit_edges(visitor);
     visitor.visit(m_associated_connections);
+    visitor.visit(m_upgrade_transaction);
 }
 
 ConnectionQueue& ConnectionQueueHandler::for_key_and_name(StorageAPI::StorageKey& key, String& name)
@@ -37,7 +38,7 @@ ConnectionQueue& ConnectionQueueHandler::for_key_and_name(StorageAPI::StorageKey
         });
 }
 
-Optional<GC::Root<Database>> Database::for_key_and_name(StorageAPI::StorageKey& key, String& name)
+Optional<GC::Root<Database> const&> Database::for_key_and_name(StorageAPI::StorageKey& key, String& name)
 {
     return m_databases.ensure(key, [] {
                           return HashMap<String, GC::Root<Database>>();
@@ -51,9 +52,12 @@ ErrorOr<GC::Root<Database>> Database::create_for_key_and_name(JS::Realm& realm, 
         return HashMap<String, GC::Root<Database>>();
     }));
 
-    return database_mapping.try_ensure(name, [&] {
-        return Database::create(realm, name);
-    });
+    auto value = Database::create(realm, name);
+
+    database_mapping.set(name, value);
+    m_databases.set(key, database_mapping);
+
+    return value;
 }
 
 ErrorOr<void> Database::delete_for_key_and_name(StorageAPI::StorageKey& key, String& name)
@@ -71,6 +75,8 @@ ErrorOr<void> Database::delete_for_key_and_name(StorageAPI::StorageKey& key, Str
     auto did_remove = database_mapping.remove(name);
     if (!did_remove)
         return {};
+
+    m_databases.set(key, database_mapping);
 
     return {};
 }

@@ -561,7 +561,7 @@ GC::Ref<HTML::DragEvent> DragAndDropEventHandler::fire_a_drag_and_drop_event(
 
     if (target) {
         auto& window = static_cast<HTML::Window&>(HTML::relevant_global_object(*target));
-        event_init.view = window;
+        event_init.view = window.window();
     }
 
     //     If e is not dragleave or dragend, then initialize event's cancelable attribute to true.
@@ -611,7 +611,7 @@ bool DragAndDropEventHandler::allow_text_drop(GC::Ref<DOM::Node> node) const
     if (!m_drag_data_store->has_text_item())
         return false;
 
-    if (node->is_editable())
+    if (node->is_editable_or_editing_host())
         return true;
 
     if (is<HTML::HTMLTextAreaElement>(*node))

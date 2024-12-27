@@ -147,7 +147,7 @@ public:
     void update_base_element(Badge<HTML::HTMLBaseElement>);
     GC::Ptr<HTML::HTMLBaseElement const> first_base_element_with_href_in_tree_order() const;
 
-    String url_string() const { return MUST(m_url.to_string()); }
+    String url_string() const { return m_url.to_string(); }
     String document_uri() const { return url_string(); }
 
     URL::Origin origin() const;
@@ -157,6 +157,8 @@ public:
     void set_opener_policy(HTML::OpenerPolicy policy) { m_opener_policy = move(policy); }
 
     URL::URL parse_url(StringView) const;
+    URL::URL encoding_parse_url(StringView) const;
+    Optional<String> encoding_parse_and_serialize_url(StringView) const;
 
     CSS::StyleComputer& style_computer() { return *m_style_computer; }
     const CSS::StyleComputer& style_computer() const { return *m_style_computer; }
@@ -335,7 +337,6 @@ public:
     String const& compat_mode() const;
 
     void set_editable(bool editable) { m_editable = editable; }
-    virtual bool is_editable() const final;
 
     Element* focused_element() { return m_focused_element.ptr(); }
     Element const* focused_element() const { return m_focused_element.ptr(); }
@@ -526,6 +527,7 @@ public:
 
     // https://html.spec.whatwg.org/multipage/origin.html#active-sandboxing-flag-set
     HTML::SandboxingFlagSet active_sandboxing_flag_set() const;
+    void set_active_sandboxing_flag_set(HTML::SandboxingFlagSet);
 
     // https://html.spec.whatwg.org/multipage/dom.html#concept-document-policy-container
     HTML::PolicyContainer policy_container() const;
@@ -568,12 +570,12 @@ public:
     void set_previous_document_unload_timing(DocumentUnloadTimingInfo const& previous_document_unload_timing) { m_previous_document_unload_timing = previous_document_unload_timing; }
 
     // https://w3c.github.io/editing/docs/execCommand/
-    bool exec_command(String const& command, bool show_ui, String const& value);
-    bool query_command_enabled(String const& command);
-    bool query_command_indeterm(String const& command);
-    bool query_command_state(String const& command);
-    bool query_command_supported(String const& command);
-    String query_command_value(String const& command);
+    bool exec_command(FlyString const& command, bool show_ui, String const& value);
+    bool query_command_enabled(FlyString const& command);
+    bool query_command_indeterm(FlyString const& command);
+    bool query_command_state(FlyString const& command);
+    bool query_command_supported(FlyString const& command);
+    String query_command_value(FlyString const& command);
 
     // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
     bool has_scheduled_selectionchange_event() const { return m_has_scheduled_selectionchange_event; }
@@ -660,7 +662,7 @@ public:
     WebIDL::ExceptionOr<void> set_design_mode(String const&);
 
     Element const* element_from_point(double x, double y);
-    GC::MarkedVector<GC::Ref<Element>> elements_from_point(double x, double y);
+    GC::RootVector<GC::Ref<Element>> elements_from_point(double x, double y);
     GC::Ptr<Element const> scrolling_element() const;
 
     void set_needs_to_resolve_paint_only_properties() { m_needs_to_resolve_paint_only_properties = true; }
@@ -748,6 +750,16 @@ public:
 
     GC::Ref<EditingHostManager> editing_host_manager() const { return *m_editing_host_manager; }
 
+    // // https://w3c.github.io/editing/docs/execCommand/#default-single-line-container-name
+    FlyString const& default_single_line_container_name() const { return m_default_single_line_container_name; }
+    void set_default_single_line_container_name(FlyString const& name) { m_default_single_line_container_name = name; }
+
+    // https://w3c.github.io/editing/docs/execCommand/#css-styling-flag
+    bool css_styling_flag() const { return m_css_styling_flag; }
+    void set_css_styling_flag(bool flag) { m_css_styling_flag = flag; }
+
+    GC::Ptr<DOM::Document> container_document() const;
+
 protected:
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;
@@ -773,7 +785,23 @@ private:
 
     Element* find_a_potential_indicated_element(FlyString const& fragment) const;
 
+    void dispatch_events_for_transition(GC::Ref<CSS::CSSTransition>);
     void dispatch_events_for_animation_if_necessary(GC::Ref<Animations::Animation>);
+
+    template<typename GetNotifier, typename... Args>
+    void notify_each_document_observer(GetNotifier&& get_notifier, Args&&... args)
+    {
+        ScopeGuard guard { [&]() { m_document_observers_being_notified.clear_with_capacity(); } };
+        m_document_observers_being_notified.ensure_capacity(m_document_observers.size());
+
+        for (auto observer : m_document_observers)
+            m_document_observers_being_notified.unchecked_append(observer);
+
+        for (auto document_observer : m_document_observers_being_notified) {
+            if (auto notifier = get_notifier(*document_observer))
+                notifier->function()(forward<Args>(args)...);
+        }
+    }
 
     GC::Ref<Page> m_page;
     OwnPtr<CSS::StyleComputer> m_style_computer;
@@ -823,7 +851,13 @@ private:
     GC::Ptr<Document> m_associated_inert_template_document;
     GC::Ptr<Document> m_appropriate_template_contents_owner_document;
 
-    HTML::DocumentReadyState m_readiness { HTML::DocumentReadyState::Loading };
+    // https://html.spec.whatwg.org/multipage/dom.html#current-document-readiness
+    // Each Document has a current document readiness, a string, initially "complete".
+    // Spec Note: For Document objects created via the create and initialize a Document object algorithm, this will be
+    //            immediately reset to "loading" before any script can observe the value of document.readyState.
+    //            This default applies to other cases such as initial about:blank Documents or Documents without a
+    //            browsing context.
+    HTML::DocumentReadyState m_readiness { HTML::DocumentReadyState::Complete };
     String m_content_type { "application/xml"_string };
     Optional<String> m_pragma_set_default_language;
     Optional<String> m_encoding;
@@ -879,6 +913,7 @@ private:
     HashTable<GC::Ptr<NodeIterator>> m_node_iterators;
 
     HashTable<GC::Ref<DocumentObserver>> m_document_observers;
+    Vector<GC::Ref<DocumentObserver>> m_document_observers_being_notified;
 
     // https://html.spec.whatwg.org/multipage/dom.html#is-initial-about:blank
     bool m_is_initial_about_blank { false };
@@ -1032,6 +1067,12 @@ private:
     mutable OwnPtr<Unicode::Segmenter> m_word_segmenter;
 
     GC::Ref<EditingHostManager> m_editing_host_manager;
+
+    // https://w3c.github.io/editing/docs/execCommand/#default-single-line-container-name
+    FlyString m_default_single_line_container_name { HTML::TagNames::div };
+
+    // https://w3c.github.io/editing/docs/execCommand/#css-styling-flag
+    bool m_css_styling_flag { false };
 };
 
 template<>

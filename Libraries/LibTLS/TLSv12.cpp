@@ -13,18 +13,15 @@
 #include <LibCore/StandardPaths.h>
 #include <LibCore/Timer.h>
 #include <LibCrypto/ASN1/ASN1.h>
+#include <LibCrypto/ASN1/Constants.h>
 #include <LibCrypto/ASN1/PEM.h>
+#include <LibCrypto/Certificate/Certificate.h>
 #include <LibCrypto/Curves/Ed25519.h>
 #include <LibCrypto/Curves/SECPxxxr1.h>
 #include <LibCrypto/PK/Code/EMSA_PKCS1_V1_5.h>
 #include <LibFileSystem/FileSystem.h>
-#include <LibTLS/Certificate.h>
 #include <LibTLS/TLSv12.h>
 #include <errno.h>
-
-#ifndef SOCK_NONBLOCK
-#    include <sys/ioctl.h>
-#endif
 
 namespace TLS {
 
@@ -99,40 +96,6 @@ void TLSv12::consume(ReadonlyBytes record)
         // FIXME: Propagate errors.
         m_context.message_buffer = MUST(m_context.message_buffer.slice(index, m_context.message_buffer.size() - index));
     }
-}
-
-bool Certificate::is_valid() const
-{
-    auto now = UnixDateTime::now();
-
-    if (now < validity.not_before) {
-        dbgln("certificate expired (not yet valid, signed for {})", Core::DateTime::from_timestamp(validity.not_before.seconds_since_epoch()));
-        return false;
-    }
-
-    if (validity.not_after < now) {
-        dbgln("certificate expired (expiry date {})", Core::DateTime::from_timestamp(validity.not_after.seconds_since_epoch()));
-        return false;
-    }
-
-    return true;
-}
-
-// https://www.ietf.org/rfc/rfc5280.html#page-12
-bool Certificate::is_self_signed()
-{
-    if (m_is_self_signed.has_value())
-        return *m_is_self_signed;
-
-    // Self-signed certificates are self-issued certificates where the digital
-    // signature may be verified by the public key bound into the certificate.
-    if (!this->is_self_issued)
-        m_is_self_signed.emplace(false);
-
-    // FIXME: Actually check if we sign ourself
-
-    m_is_self_signed.emplace(true);
-    return *m_is_self_signed;
 }
 
 void TLSv12::try_disambiguate_error() const
@@ -350,25 +313,25 @@ bool Context::verify_certificate_pair(Certificate const& subject, Certificate co
 
     bool is_rsa = true;
 
-    if (identifier == rsa_encryption_oid) {
+    if (identifier == Crypto::ASN1::rsa_encryption_oid) {
         kind = Crypto::Hash::HashKind::None;
-    } else if (identifier == rsa_md5_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::rsa_md5_encryption_oid) {
         kind = Crypto::Hash::HashKind::MD5;
-    } else if (identifier == rsa_sha1_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::rsa_sha1_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA1;
-    } else if (identifier == rsa_sha256_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::rsa_sha256_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA256;
-    } else if (identifier == rsa_sha384_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::rsa_sha384_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA384;
-    } else if (identifier == rsa_sha512_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::rsa_sha512_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA512;
-    } else if (identifier == ecdsa_with_sha256_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::ecdsa_with_sha256_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA256;
         is_rsa = false;
-    } else if (identifier == ecdsa_with_sha384_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::ecdsa_with_sha384_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA384;
         is_rsa = false;
-    } else if (identifier == ecdsa_with_sha512_encryption_oid) {
+    } else if (identifier == Crypto::ASN1::ecdsa_with_sha512_encryption_oid) {
         kind = Crypto::Hash::HashKind::SHA512;
         is_rsa = false;
     }
@@ -398,14 +361,30 @@ bool Context::verify_certificate_pair(Certificate const& subject, Certificate co
     }
 
     // ECDSA hash verification: hash, then check signature against the specific curve
-    switch (issuer.public_key.algorithm.ec_parameters) {
+    auto ec_curve = oid_to_curve(issuer.public_key.algorithm.ec_parameters.value_or({}));
+    if (ec_curve.is_error()) {
+        dbgln("verify_certificate_pair: Unknown curve for ECDSA signature verification");
+        return false;
+    }
+
+    auto public_point = issuer.public_key.ec.to_secpxxxr1_point();
+
+    auto maybe_signature = Crypto::Curves::SECPxxxr1Signature::from_asn(subject.signature_value, {});
+    if (maybe_signature.is_error()) {
+        dbgln("verify_certificate_pair: Signature is not ASN.1 DER encoded");
+        return false;
+    }
+
+    auto signature = maybe_signature.release_value();
+
+    switch (ec_curve.release_value()) {
     case SupportedGroup::SECP256R1: {
         Crypto::Hash::Manager hasher(kind);
         hasher.update(subject.tbs_asn1.bytes());
         auto hash = hasher.digest();
 
         Crypto::Curves::SECP256r1 curve;
-        auto result = curve.verify(hash.bytes(), issuer.public_key.raw_key, subject.signature_value);
+        auto result = curve.verify_point(hash.bytes(), public_point, signature);
         if (result.is_error()) {
             dbgln("verify_certificate_pair: Failed to check SECP256r1 signature {}", result.release_error());
             return false;
@@ -418,7 +397,7 @@ bool Context::verify_certificate_pair(Certificate const& subject, Certificate co
         auto hash = hasher.digest();
 
         Crypto::Curves::SECP384r1 curve;
-        auto result = curve.verify(hash.bytes(), issuer.public_key.raw_key, subject.signature_value);
+        auto result = curve.verify_point(hash.bytes(), public_point, signature);
         if (result.is_error()) {
             dbgln("verify_certificate_pair: Failed to check SECP384r1 signature {}", result.release_error());
             return false;
@@ -435,7 +414,7 @@ bool Context::verify_certificate_pair(Certificate const& subject, Certificate co
         return result;
     }
     default:
-        dbgln("verify_certificate_pair: Don't know how to verify signature for curve {}", to_underlying(issuer.public_key.algorithm.ec_parameters));
+        dbgln("verify_certificate_pair: Don't know how to verify signature for curve {}", to_underlying(ec_curve.release_value()));
         return false;
     }
 }
@@ -458,15 +437,14 @@ static void hmac_pseudorandom_function(Bytes output, ReadonlyBytes secret, u8 co
     HMACType hmac(secret);
     append_label_seed(hmac);
 
-    constexpr auto digest_size = hmac.digest_size();
-    u8 digest[digest_size];
-    auto digest_0 = Bytes { digest, digest_size };
+    auto digest_size = hmac.digest_size();
+    auto digest_0 = MUST(ByteBuffer::create_uninitialized(digest_size));
 
     digest_0.overwrite(0, hmac.digest().immutable_data(), digest_size);
 
     size_t index = 0;
     while (index < output.size()) {
-        hmac.update(digest_0);
+        hmac.update(digest_0.bytes());
         append_label_seed(hmac);
         auto digest_1 = hmac.digest();
 
@@ -475,7 +453,7 @@ static void hmac_pseudorandom_function(Bytes output, ReadonlyBytes secret, u8 co
         output.overwrite(index, digest_1.immutable_data(), copy_size);
         index += copy_size;
 
-        digest_0.overwrite(0, hmac.process(digest_0).immutable_data(), digest_size);
+        digest_0.overwrite(0, hmac.process(digest_0.bytes()).immutable_data(), digest_size);
     }
 }
 
@@ -528,12 +506,12 @@ Vector<Certificate> TLSv12::parse_pem_certificate(ReadonlyBytes certificate_pem_
     }
 
     auto decoded_certificate = Crypto::decode_pem(certificate_pem_buffer);
-    if (decoded_certificate.is_empty()) {
+    if (decoded_certificate.type != Crypto::PEMType::Certificate) {
         dbgln("Certificate not PEM");
         return {};
     }
 
-    auto maybe_certificate = Certificate::parse_certificate(decoded_certificate);
+    auto maybe_certificate = Certificate::parse_certificate(decoded_certificate.data);
     if (!maybe_certificate.is_error()) {
         dbgln("Invalid certificate");
         return {};
@@ -603,7 +581,7 @@ ErrorOr<Vector<Certificate>> DefaultRootCACertificates::parse_pem_root_certifica
     auto certs = TRY(Crypto::decode_pems(data));
 
     for (auto& cert : certs) {
-        auto certificate_result = Certificate::parse_certificate(cert.bytes());
+        auto certificate_result = Certificate::parse_certificate(cert.data);
         if (certificate_result.is_error()) {
             // FIXME: It would be nice to have more informations about the certificate we failed to parse.
             //        Like: Issuer, Algorithm, CN, etc
@@ -622,4 +600,15 @@ ErrorOr<Vector<Certificate>> DefaultRootCACertificates::parse_pem_root_certifica
 
     return certificates;
 }
+
+ErrorOr<SupportedGroup> oid_to_curve(Vector<int> curve)
+{
+    if (curve == Crypto::ASN1::secp384r1_oid)
+        return SupportedGroup::SECP384R1;
+    if (curve == Crypto::ASN1::secp256r1_oid)
+        return SupportedGroup::SECP256R1;
+
+    return AK::Error::from_string_literal("Unknown curve oid");
+}
+
 }

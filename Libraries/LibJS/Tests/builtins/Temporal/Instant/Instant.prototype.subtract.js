@@ -42,18 +42,15 @@ describe("errors", () => {
     test("disallowed fields", () => {
         const instant = new Temporal.Instant(1625614921000000000n);
         for (const [args, property] of [
-            [[123, 0, 0, 0], "years"],
-            [[0, 123, 0, 0], "months"],
-            [[0, 0, 123, 0], "weeks"],
-            [[0, 0, 0, 123], "days"],
+            [[123, 0, 0, 0], "year"],
+            [[0, 123, 0, 0], "month"],
+            [[0, 0, 123, 0], "week"],
+            [[0, 0, 0, 123], "day"],
         ]) {
             const duration = new Temporal.Duration(...args);
             expect(() => {
                 instant.subtract(duration);
-            }).toThrowWithMessage(
-                RangeError,
-                `Invalid value for duration property '${property}': must be zero, got 123`
-            );
+            }).toThrowWithMessage(RangeError, `Largest unit must not be ${property}`);
         }
     });
 });

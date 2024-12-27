@@ -11,7 +11,6 @@
 
 #include <AK/ByteString.h>
 #include <AK/Forward.h>
-#include <AK/Span.h>
 #include <LibCore/File.h>
 
 namespace Core {
@@ -29,7 +28,10 @@ struct CloseFile {
     int fd { -1 };
 };
 
-// FIXME: Implement other file actions
+struct DupFd {
+    int write_fd { -1 };
+    int fd { -1 };
+};
 
 }
 
@@ -40,7 +42,7 @@ struct ProcessSpawnOptions {
     Vector<ByteString> const& arguments {};
     Optional<ByteString> working_directory {};
 
-    using FileActionType = Variant<FileAction::OpenFile, FileAction::CloseFile>;
+    using FileActionType = Variant<FileAction::OpenFile, FileAction::CloseFile, FileAction::DupFd>;
     Vector<FileActionType> file_actions {};
 };
 
@@ -53,33 +55,15 @@ public:
         No
     };
 
-    Process(Process&& other)
-        : m_pid(exchange(other.m_pid, 0))
-        , m_should_disown(exchange(other.m_should_disown, false))
-    {
-    }
-
-    Process& operator=(Process&& other)
-    {
-        m_pid = exchange(other.m_pid, 0);
-        m_should_disown = exchange(other.m_should_disown, false);
-        return *this;
-    }
-
-    ~Process()
-    {
-        (void)disown();
-    }
+    Process(Process&& other);
+    Process& operator=(Process&& other);
+    ~Process();
 
     static ErrorOr<Process> spawn(ProcessSpawnOptions const& options);
     static Process current();
 
-    // FIXME: Make the following 2 functions return Process instance or delete them.
-    static ErrorOr<pid_t> spawn(StringView path, ReadonlySpan<ByteString> arguments, ByteString working_directory = {}, KeepAsChild keep_as_child = KeepAsChild::No);
-    static ErrorOr<pid_t> spawn(StringView path, ReadonlySpan<StringView> arguments, ByteString working_directory = {}, KeepAsChild keep_as_child = KeepAsChild::No);
-
-    // FIXME: Remove this. char const* should not exist on this level of abstraction.
-    static ErrorOr<pid_t> spawn(StringView path, ReadonlySpan<char const*> arguments = {}, ByteString working_directory = {}, KeepAsChild keep_as_child = KeepAsChild::No);
+    static ErrorOr<Process> spawn(StringView path, ReadonlySpan<ByteString> arguments, ByteString working_directory = {}, KeepAsChild keep_as_child = KeepAsChild::No);
+    static ErrorOr<Process> spawn(StringView path, ReadonlySpan<StringView> arguments, ByteString working_directory = {}, KeepAsChild keep_as_child = KeepAsChild::No);
 
     static ErrorOr<String> get_name();
     enum class SetThreadName {
@@ -91,15 +75,17 @@ public:
     static void wait_for_debugger_and_break();
     static ErrorOr<bool> is_being_debugged();
 
-    pid_t pid() const { return m_pid; }
+    pid_t pid() const;
 
+#ifndef AK_OS_WINDOWS
     ErrorOr<void> disown();
+#endif
 
-    // FIXME: Make it return an exit code.
-    ErrorOr<bool> wait_for_termination();
+    ErrorOr<int> wait_for_termination();
 
 private:
-    Process(pid_t pid)
+#ifndef AK_OS_WINDOWS
+    Process(pid_t pid = -1)
         : m_pid(pid)
         , m_should_disown(true)
     {
@@ -107,6 +93,14 @@ private:
 
     pid_t m_pid;
     bool m_should_disown;
+#else
+    Process(void* handle = 0)
+        : m_handle(handle)
+    {
+    }
+
+    void* m_handle;
+#endif
 };
 
 }

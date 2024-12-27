@@ -54,8 +54,8 @@ class Navigable : public JS::Cell {
 public:
     virtual ~Navigable() override;
 
-    using NullWithError = StringView;
-    using NavigationParamsVariant = Variant<Empty, NullWithError, GC::Ref<NavigationParams>, GC::Ref<NonFetchSchemeNavigationParams>>;
+    using NullOrError = Optional<StringView>;
+    using NavigationParamsVariant = Variant<NullOrError, GC::Ref<NavigationParams>, GC::Ref<NonFetchSchemeNavigationParams>>;
 
     ErrorOr<void> initialize_navigable(GC::Ref<DocumentState> document_state, GC::Ptr<Navigable> parent);
 
@@ -73,6 +73,8 @@ public:
     bool is_closing() const { return m_closing; }
     void set_closing(bool value) { m_closing = value; }
     bool is_script_closable();
+
+    void stop_loading();
 
     void set_delaying_load_events(bool value);
     bool is_delaying_load_events() const { return m_delaying_the_load_event.has_value(); }
@@ -132,7 +134,7 @@ public:
         SourceSnapshotParams const& source_snapshot_params,
         TargetSnapshotParams const& target_snapshot_params,
         Optional<String> navigation_id = {},
-        NavigationParamsVariant navigation_params = Empty {},
+        NavigationParamsVariant navigation_params = Navigable::NullOrError {},
         CSPNavigationType csp_navigation_type = CSPNavigationType::Other,
         bool allow_POST = false,
         GC::Ptr<GC::Function<void()>> completion_steps = {});
@@ -154,8 +156,8 @@ public:
 
     WebIDL::ExceptionOr<void> navigate_to_a_fragment(URL::URL const&, HistoryHandlingBehavior, UserNavigationInvolvement, Optional<SerializationRecord> navigation_api_state, String navigation_id);
 
-    WebIDL::ExceptionOr<GC::Ptr<DOM::Document>> evaluate_javascript_url(URL::URL const&, URL::Origin const& new_document_origin, String navigation_id);
-    WebIDL::ExceptionOr<void> navigate_to_a_javascript_url(URL::URL const&, HistoryHandlingBehavior, URL::Origin const& initiator_origin, CSPNavigationType csp_navigation_type, String navigation_id);
+    GC::Ptr<DOM::Document> evaluate_javascript_url(URL::URL const&, URL::Origin const& new_document_origin, String navigation_id);
+    void navigate_to_a_javascript_url(URL::URL const&, HistoryHandlingBehavior, URL::Origin const& initiator_origin, CSPNavigationType csp_navigation_type, String navigation_id);
 
     bool allowed_by_sandboxing_to_navigate(Navigable const& target, SourceSnapshotParams const&);
 
@@ -176,8 +178,6 @@ public:
     void perform_scroll_of_viewport(CSSPixelPoint position);
 
     void set_needs_display(InvalidateDisplayList = InvalidateDisplayList::Yes);
-
-    void set_is_popup(TokenizedFeature::Popup is_popup) { m_is_popup = is_popup; }
 
     // https://html.spec.whatwg.org/#rendering-opportunity
     [[nodiscard]] bool has_a_rendering_opportunity() const;
@@ -201,9 +201,6 @@ protected:
 
     // https://html.spec.whatwg.org/multipage/browsing-the-web.html#ongoing-navigation
     Variant<Empty, Traversal, String> m_ongoing_navigation;
-
-    // https://html.spec.whatwg.org/multipage/browsers.html#is-popup
-    TokenizedFeature::Popup m_is_popup { TokenizedFeature::Popup::No };
 
 private:
     void reset_cursor_blink_cycle();

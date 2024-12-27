@@ -1,6 +1,6 @@
 describe("correct behavior", () => {
     test("basic functionality", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = new Temporal.ZonedDateTime(123n, timeZone);
         expect(zonedDateTime.nanosecond).toBe(123);
     });

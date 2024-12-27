@@ -12,6 +12,8 @@
 #define ENUMERATE_GLOBAL_EVENT_HANDLERS(E)                                    \
     E(onabort, HTML::EventNames::abort)                                       \
     E(onauxclick, UIEvents::EventNames::auxclick)                             \
+    E(onbeforeinput, HTML::EventNames::beforeinput)                           \
+    E(onbeforetoggle, HTML::EventNames::beforetoggle)                         \
     E(onblur, HTML::EventNames::blur)                                         \
     E(oncancel, HTML::EventNames::cancel)                                     \
     E(oncanplay, HTML::EventNames::canplay)                                   \
@@ -20,7 +22,9 @@
     E(onclick, UIEvents::EventNames::click)                                   \
     E(onclose, HTML::EventNames::close)                                       \
     E(oncontextmenu, HTML::EventNames::contextmenu)                           \
+    E(oncopy, HTML::EventNames::copy)                                         \
     E(oncuechange, HTML::EventNames::cuechange)                               \
+    E(oncut, HTML::EventNames::cut)                                           \
     E(ondblclick, UIEvents::EventNames::dblclick)                             \
     E(ondrag, HTML::EventNames::drag)                                         \
     E(ondragend, HTML::EventNames::dragend)                                   \
@@ -37,6 +41,7 @@
     E(onfocusin, HTML::EventNames::focusin)                                   \
     E(onfocusout, HTML::EventNames::focusout)                                 \
     E(onformdata, HTML::EventNames::formdata)                                 \
+    E(ongotpointercapture, UIEvents::EventNames::gotpointercapture)           \
     E(oninput, HTML::EventNames::input)                                       \
     E(oninvalid, HTML::EventNames::invalid)                                   \
     E(onkeydown, UIEvents::EventNames::keydown)                               \
@@ -46,6 +51,7 @@
     E(onloadeddata, HTML::EventNames::loadeddata)                             \
     E(onloadedmetadata, HTML::EventNames::loadedmetadata)                     \
     E(onloadstart, HTML::EventNames::loadstart)                               \
+    E(onlostpointercapture, UIEvents::EventNames::lostpointercapture)         \
     E(onmousedown, UIEvents::EventNames::mousedown)                           \
     E(onmouseenter, UIEvents::EventNames::mouseenter)                         \
     E(onmouseleave, UIEvents::EventNames::mouseleave)                         \
@@ -53,14 +59,25 @@
     E(onmouseout, UIEvents::EventNames::mouseout)                             \
     E(onmouseover, UIEvents::EventNames::mouseover)                           \
     E(onmouseup, UIEvents::EventNames::mouseup)                               \
+    E(onpaste, HTML::EventNames::paste)                                       \
     E(onpause, HTML::EventNames::pause)                                       \
     E(onplay, HTML::EventNames::play)                                         \
     E(onplaying, HTML::EventNames::playing)                                   \
+    E(onpointercancel, UIEvents::EventNames::pointercancel)                   \
+    E(onpointerdown, UIEvents::EventNames::pointerdown)                       \
+    E(onpointerenter, UIEvents::EventNames::pointerenter)                     \
+    E(onpointerleave, UIEvents::EventNames::pointerleave)                     \
+    E(onpointermove, UIEvents::EventNames::pointermove)                       \
+    E(onpointerout, UIEvents::EventNames::pointerout)                         \
+    E(onpointerover, UIEvents::EventNames::pointerover)                       \
+    E(onpointerrawupdate, UIEvents::EventNames::pointerrawupdate)             \
+    E(onpointerup, UIEvents::EventNames::pointerup)                           \
     E(onprogress, HTML::EventNames::progress)                                 \
     E(onratechange, HTML::EventNames::ratechange)                             \
     E(onreset, HTML::EventNames::reset)                                       \
     E(onresize, HTML::EventNames::resize)                                     \
     E(onscroll, HTML::EventNames::scroll)                                     \
+    E(onscrollend, HTML::EventNames::scrollend)                               \
     E(onsecuritypolicyviolation, HTML::EventNames::securitypolicyviolation)   \
     E(onseeked, HTML::EventNames::seeked)                                     \
     E(onseeking, HTML::EventNames::seeking)                                   \

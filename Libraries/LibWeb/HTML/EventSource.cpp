@@ -43,7 +43,7 @@ WebIDL::ExceptionOr<GC::Ref<EventSource>> EventSource::construct_impl(JS::Realm&
     auto& settings = relevant_settings_object(event_source);
 
     // 3. Let urlRecord be the result of encoding-parsing a URL given url, relative to settings.
-    auto url_record = settings.parse_url(url);
+    auto url_record = settings.encoding_parse_url(url);
 
     // 4. If urlRecord is failure, then throw a "SyntaxError" DOMException.
     if (!url_record.is_valid())
@@ -280,7 +280,7 @@ void EventSource::announce_the_connection()
 // https://html.spec.whatwg.org/multipage/server-sent-events.html#reestablish-the-connection
 void EventSource::reestablish_the_connection()
 {
-    bool initial_task_has_run { false };
+    IGNORE_USE_IN_ESCAPING_LAMBDA bool initial_task_has_run { false };
 
     // 1. Queue a task to run the following steps:
     HTML::queue_a_task(HTML::Task::Source::RemoteEvent, nullptr, nullptr, GC::create_function(heap(), [&]() {
@@ -449,7 +449,7 @@ void EventSource::dispatch_the_event()
     //    the value of the event type buffer.
     MessageEventInit init {};
     init.data = JS::PrimitiveString::create(vm(), data_buffer);
-    init.origin = MUST(String::from_byte_string(m_url.origin().serialize()));
+    init.origin = m_url.origin().serialize();
     init.last_event_id = last_event_id;
 
     auto type = m_event_type.is_empty() ? HTML::EventNames::message : m_event_type;

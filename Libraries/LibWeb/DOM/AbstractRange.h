@@ -13,6 +13,12 @@
 
 namespace Web::DOM {
 
+// https://dom.spec.whatwg.org/#concept-range-bp
+struct BoundaryPoint {
+    GC::Ref<Node> node;
+    WebIDL::UnsignedLong offset;
+};
+
 // https://dom.spec.whatwg.org/#abstractrange
 class AbstractRange : public Bindings::PlatformObject {
     WEB_PLATFORM_OBJECT(AbstractRange, Bindings::PlatformObject);
@@ -20,12 +26,12 @@ class AbstractRange : public Bindings::PlatformObject {
 public:
     virtual ~AbstractRange() override;
 
-    Node* start_container() { return m_start_container.ptr(); }
-    Node const* start_container() const { return m_start_container.ptr(); }
+    BoundaryPoint start() const { return { m_start_container, m_start_offset }; }
+    GC::Ref<Node> start_container() const { return m_start_container; }
     WebIDL::UnsignedLong start_offset() const { return m_start_offset; }
 
-    Node* end_container() { return m_end_container.ptr(); }
-    Node const* end_container() const { return m_end_container.ptr(); }
+    BoundaryPoint end() const { return { m_end_container, m_end_offset }; }
+    GC::Ref<Node> end_container() const { return m_end_container; }
     WebIDL::UnsignedLong end_offset() const { return m_end_offset; }
 
     // https://dom.spec.whatwg.org/#range-collapsed
@@ -36,7 +42,7 @@ public:
     }
 
 protected:
-    AbstractRange(Node& start_container, WebIDL::UnsignedLong start_offset, Node& end_container, WebIDL::UnsignedLong end_offset);
+    AbstractRange(GC::Ref<Node> start_container, WebIDL::UnsignedLong start_offset, GC::Ref<Node> end_container, WebIDL::UnsignedLong end_offset);
 
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;

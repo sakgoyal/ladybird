@@ -16,9 +16,9 @@ ValueComparingNonnullRefPtr<RectStyleValue> RectStyleValue::create(EdgeRect rect
     return adopt_ref(*new (nothrow) RectStyleValue(move(rect)));
 }
 
-String RectStyleValue::to_string() const
+String RectStyleValue::to_string(SerializationMode) const
 {
-    return MUST(String::formatted("rect({} {} {} {})", m_rect.top_edge, m_rect.right_edge, m_rect.bottom_edge, m_rect.left_edge));
+    return MUST(String::formatted("rect({}, {}, {}, {})", m_rect.top_edge, m_rect.right_edge, m_rect.bottom_edge, m_rect.left_edge));
 }
 
 }

@@ -433,7 +433,7 @@ WebIDL::ExceptionOr<void> XMLHttpRequest::set_request_header(String const& name_
     // 4. If name is not a header name or value is not a header value, then throw a "SyntaxError" DOMException.
     if (!Fetch::Infrastructure::is_header_name(name))
         return WebIDL::SyntaxError::create(realm, "Header name contains invalid characters."_string);
-    if (!Fetch::Infrastructure::is_header_value(value))
+    if (!Fetch::Infrastructure::is_header_value(normalized_value))
         return WebIDL::SyntaxError::create(realm, "Header value contains invalid characters."_string);
 
     auto header = Fetch::Infrastructure::Header {
@@ -494,7 +494,7 @@ WebIDL::ExceptionOr<void> XMLHttpRequest::open(String const& method_string, Stri
     // NOTE: This is handled in the overload lacking the async argument.
 
     // 8. If parsedURL’s host is non-null, then:
-    if (!parsed_url.host().has<Empty>()) {
+    if (parsed_url.host().has_value()) {
         // 1. If the username argument is not null, set the username given parsedURL and username.
         if (username.has_value())
             parsed_url.set_username(username.value());
@@ -574,15 +574,15 @@ WebIDL::ExceptionOr<void> XMLHttpRequest::send(Optional<DocumentOrXMLHttpRequest
         // 2. If body is a Document, then set this’s request body to body, serialized, converted, and UTF-8 encoded.
         if (body->has<GC::Root<DOM::Document>>()) {
             auto string_serialized_document = TRY(body->get<GC::Root<DOM::Document>>().cell()->serialize_fragment(DOMParsing::RequireWellFormed::No));
-            m_request_body = TRY(Fetch::Infrastructure::byte_sequence_as_body(realm, string_serialized_document.bytes()));
+            m_request_body = Fetch::Infrastructure::byte_sequence_as_body(realm, string_serialized_document.bytes());
         }
         // 3. Otherwise:
         else {
             // 1. Let bodyWithType be the result of safely extracting body.
-            auto body_with_type = TRY(Fetch::safely_extract_body(realm, body->downcast<Fetch::BodyInitOrReadableBytes>()));
+            auto body_with_type = Fetch::safely_extract_body(realm, body->downcast<Fetch::BodyInitOrReadableBytes>());
 
             // 2. Set this’s request body to bodyWithType’s body.
-            m_request_body = move(body_with_type.body);
+            m_request_body = body_with_type.body;
 
             // 3. Set extractedContentType to bodyWithType’s type.
             extracted_content_type = move(body_with_type.type);
@@ -892,7 +892,7 @@ WebIDL::ExceptionOr<void> XMLHttpRequest::send(Optional<DocumentOrXMLHttpRequest
         }
     } else {
         // 1. Let processedResponse be false.
-        bool processed_response = false;
+        IGNORE_USE_IN_ESCAPING_LAMBDA bool processed_response = false;
 
         // 2. Let processResponseConsumeBody, given a response and nullOrFailureOrBytes, be these steps:
         auto process_response_consume_body = [this, &processed_response](GC::Ref<Fetch::Infrastructure::Response> response, Variant<Empty, Fetch::Infrastructure::FetchAlgorithms::ConsumeBodyFailureTag, ByteBuffer> null_or_failure_or_bytes) {
@@ -927,7 +927,7 @@ WebIDL::ExceptionOr<void> XMLHttpRequest::send(Optional<DocumentOrXMLHttpRequest
 
         // 4. Let now be the present time.
         // 5. Pause until either processedResponse is true or this’s timeout is not 0 and this’s timeout milliseconds have passed since now.
-        bool did_time_out = false;
+        IGNORE_USE_IN_ESCAPING_LAMBDA bool did_time_out = false;
 
         if (m_timeout != 0) {
             auto timer = Platform::Timer::create_single_shot(heap(), m_timeout, nullptr);

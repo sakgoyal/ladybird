@@ -7,14 +7,11 @@
 #pragma once
 
 #include <AK/NonnullRefPtr.h>
-#include <AK/TypeCasts.h>
 #include <AK/Vector.h>
-#include <LibGC/Root.h>
-#include <LibGfx/Rect.h>
 #include <LibJS/Heap/Cell.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/ComputedValues.h>
 #include <LibWeb/CSS/StyleComputer.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/CSS/StyleValues/ImageStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/Forward.h>
@@ -115,6 +112,8 @@ public:
     virtual bool is_replaced_box() const { return false; }
     virtual bool is_list_item_box() const { return false; }
     virtual bool is_list_item_marker_box() const { return false; }
+    virtual bool is_fieldset_box() const { return false; }
+    virtual bool is_legend_box() const { return false; }
     virtual bool is_table_wrapper() const { return false; }
     virtual bool is_node_with_style_and_box_model_metrics() const { return false; }
 
@@ -176,7 +175,18 @@ public:
     // https://www.w3.org/TR/CSS22/visuren.html#positioning-scheme
     bool is_in_flow() const { return !is_out_of_flow(); }
 
-    bool has_css_transform() const { return computed_values().transformations().size() > 0; }
+    [[nodiscard]] bool has_css_transform() const
+    {
+        if (!computed_values().transformations().is_empty())
+            return true;
+        if (computed_values().rotate().has_value())
+            return true;
+        if (computed_values().translate().has_value())
+            return true;
+        if (computed_values().scale().has_value())
+            return true;
+        return false;
+    }
 
 protected:
     Node(DOM::Document&, DOM::Node*);
@@ -212,7 +222,7 @@ public:
     CSS::ImmutableComputedValues const& computed_values() const { return static_cast<CSS::ImmutableComputedValues const&>(*m_computed_values); }
     CSS::MutableComputedValues& mutable_computed_values() { return static_cast<CSS::MutableComputedValues&>(*m_computed_values); }
 
-    void apply_style(const CSS::StyleProperties&);
+    void apply_style(const CSS::ComputedProperties&);
 
     Gfx::Font const& first_available_font() const;
     Vector<CSS::BackgroundLayerData> const& background_layers() const { return computed_values().background_layers(); }
@@ -228,7 +238,7 @@ public:
     virtual void visit_edges(Cell::Visitor& visitor) override;
 
 protected:
-    NodeWithStyle(DOM::Document&, DOM::Node*, CSS::StyleProperties);
+    NodeWithStyle(DOM::Document&, DOM::Node*, GC::Ref<CSS::ComputedProperties>);
     NodeWithStyle(DOM::Document&, DOM::Node*, NonnullOwnPtr<CSS::ComputedValues>);
 
 private:
@@ -247,8 +257,8 @@ public:
     BoxModelMetrics const& box_model() const { return m_box_model; }
 
 protected:
-    NodeWithStyleAndBoxModelMetrics(DOM::Document& document, DOM::Node* node, CSS::StyleProperties style)
-        : NodeWithStyle(document, node, move(style))
+    NodeWithStyleAndBoxModelMetrics(DOM::Document& document, DOM::Node* node, GC::Ref<CSS::ComputedProperties> style)
+        : NodeWithStyle(document, node, style)
     {
     }
 

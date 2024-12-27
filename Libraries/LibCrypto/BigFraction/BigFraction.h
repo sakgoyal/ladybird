@@ -44,6 +44,7 @@ public:
     BigFraction invert() const;
     BigFraction sqrt() const;
 
+    bool is_zero() const;
     void set_to_0();
 
     // Return a BigFraction in "scientific notation", as an example with:
@@ -55,7 +56,7 @@ public:
     //      - m_denominator = 10000
     BigFraction rounded(unsigned rounding_threshold) const;
 
-    ByteString to_byte_string(unsigned rounding_threshold) const;
+    String to_string(unsigned rounding_threshold) const;
     double to_double() const;
 
     Crypto::SignedBigInteger const& numerator() const& { return m_numerator; }

@@ -8,6 +8,7 @@
  */
 
 #include "GridTemplateAreaStyleValue.h"
+#include <LibWeb/CSS/Serialize.h>
 
 namespace Web::CSS {
 
@@ -16,20 +17,22 @@ ValueComparingNonnullRefPtr<GridTemplateAreaStyleValue> GridTemplateAreaStyleVal
     return adopt_ref(*new (nothrow) GridTemplateAreaStyleValue(grid_template_area));
 }
 
-String GridTemplateAreaStyleValue::to_string() const
+String GridTemplateAreaStyleValue::to_string(SerializationMode) const
 {
     if (m_grid_template_area.is_empty())
         return "none"_string;
 
     StringBuilder builder;
     for (size_t y = 0; y < m_grid_template_area.size(); ++y) {
+        if (y != 0)
+            builder.append(' ');
+        StringBuilder row_builder;
         for (size_t x = 0; x < m_grid_template_area[y].size(); ++x) {
-            builder.appendff("{}", m_grid_template_area[y][x]);
-            if (x < m_grid_template_area[y].size() - 1)
-                builder.append(" "sv);
+            if (x != 0)
+                row_builder.append(' ');
+            row_builder.appendff("{}", m_grid_template_area[y][x]);
         }
-        if (y < m_grid_template_area.size() - 1)
-            builder.append(", "sv);
+        serialize_a_string(builder, row_builder.string_view());
     }
     return MUST(builder.to_string());
 }

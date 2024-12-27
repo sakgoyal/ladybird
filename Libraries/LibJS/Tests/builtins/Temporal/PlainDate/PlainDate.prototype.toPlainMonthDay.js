@@ -6,10 +6,12 @@ describe("correct behavior", () => {
     test("basic functionality", () => {
         const plainDate = new Temporal.PlainDate(2021, 7, 6);
         const plainMonthDay = plainDate.toPlainMonthDay();
-        expect(plainMonthDay.calendar).toBe(plainDate.calendar);
+        expect(plainMonthDay.calendarId).toBe(plainDate.calendarId);
         expect(plainMonthDay.monthCode).toBe("M07");
         expect(plainMonthDay.day).toBe(6);
-        const fields = plainMonthDay.getISOFields();
-        expect(fields.isoYear).toBe(1972);
+
+        const fields = plainMonthDay.toString({ calendarName: "always" });
+        const year = fields.split("-")[0];
+        expect(year).toBe("1972");
     });
 });

@@ -1,6 +1,6 @@
 describe("correct behavior", () => {
     test("basic functionality", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = new Temporal.ZonedDateTime(1672531200000000000n, timeZone);
         expect(zonedDateTime.yearOfWeek).toBe(2022);
     });

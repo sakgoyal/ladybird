@@ -78,36 +78,17 @@ void HTMLLinkElement::inserted()
     if (m_relationship & Relationship::Preload) {
         // FIXME: Respect the "as" attribute.
         LoadRequest request;
-        request.set_url(document().parse_url(get_attribute_value(HTML::AttributeNames::href)));
+        request.set_url(document().encoding_parse_url(get_attribute_value(HTML::AttributeNames::href)));
         set_resource(ResourceLoader::the().load_resource(Resource::Type::Generic, request));
     } else if (m_relationship & Relationship::DNSPrefetch) {
-        ResourceLoader::the().prefetch_dns(document().parse_url(get_attribute_value(HTML::AttributeNames::href)));
+        ResourceLoader::the().prefetch_dns(document().encoding_parse_url(get_attribute_value(HTML::AttributeNames::href)));
     } else if (m_relationship & Relationship::Preconnect) {
-        ResourceLoader::the().preconnect(document().parse_url(get_attribute_value(HTML::AttributeNames::href)));
+        ResourceLoader::the().preconnect(document().encoding_parse_url(get_attribute_value(HTML::AttributeNames::href)));
     } else if (m_relationship & Relationship::Icon) {
-        auto favicon_url = document().parse_url(href());
+        auto favicon_url = document().encoding_parse_url(href());
         auto favicon_request = LoadRequest::create_for_url_on_page(favicon_url, &document().page());
         set_resource(ResourceLoader::the().load_resource(Resource::Type::Generic, favicon_request));
     }
-}
-
-// https://html.spec.whatwg.org/multipage/semantics.html#dom-link-as
-String HTMLLinkElement::as() const
-{
-    String attribute_value = get_attribute_value(HTML::AttributeNames::as);
-
-    if (attribute_value.equals_ignoring_ascii_case("fetch"sv)
-        || attribute_value.equals_ignoring_ascii_case("image"sv)
-        || attribute_value.equals_ignoring_ascii_case("script"sv)
-        || attribute_value.equals_ignoring_ascii_case("style"sv)
-        || attribute_value.equals_ignoring_ascii_case("video"sv)
-        || attribute_value.equals_ignoring_ascii_case("audio"sv)
-        || attribute_value.equals_ignoring_ascii_case("track"sv)
-        || attribute_value.equals_ignoring_ascii_case("font"sv)) {
-        return attribute_value.to_lowercase().release_value();
-    }
-
-    return String {};
 }
 
 WebIDL::ExceptionOr<void> HTMLLinkElement::set_as(String const& value)
@@ -122,6 +103,15 @@ GC::Ref<DOM::DOMTokenList> HTMLLinkElement::rel_list()
     if (!m_rel_list)
         m_rel_list = DOM::DOMTokenList::create(*this, HTML::AttributeNames::rel);
     return *m_rel_list;
+}
+
+// https://html.spec.whatwg.org/multipage/semantics.html#dom-link-sizes
+GC::Ref<DOM::DOMTokenList> HTMLLinkElement::sizes()
+{
+    // The size IDL attribute must reflect the size content attribute.
+    if (!m_sizes)
+        m_sizes = DOM::DOMTokenList::create(*this, HTML::AttributeNames::sizes);
+    return *m_sizes;
 }
 
 bool HTMLLinkElement::has_loaded_icon() const
@@ -271,6 +261,8 @@ GC::Ptr<Fetch::Infrastructure::Request> HTMLLinkElement::create_link_request(HTM
     // FIXME: 2. If options's destination is null, then return null.
 
     // 3. Let url be the result of encoding-parsing a URL given options's href, relative to options's base URL.
+    // FIXME: Spec issue: We should be parsing this URL relative to a document or environment settings object.
+    //        https://github.com/whatwg/html/issues/9715
     auto url = options.base_url.complete_url(options.href);
 
     // 4. If url is failure, then return null.
@@ -443,7 +435,7 @@ void HTMLLinkElement::process_stylesheet_resource(bool success, Fetch::Infrastru
                 if (m_loaded_style_sheet) {
                     Optional<String> location;
                     if (!response.url_list().is_empty())
-                        location = MUST(response.url_list().first().to_string());
+                        location = response.url_list().first().to_string();
 
                     document().style_sheets().create_a_css_style_sheet(
                         "text/css"_string,
@@ -616,6 +608,7 @@ void HTMLLinkElement::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_fetch_controller);
     visitor.visit(m_loaded_style_sheet);
     visitor.visit(m_rel_list);
+    visitor.visit(m_sizes);
 }
 
 }

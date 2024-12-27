@@ -143,37 +143,47 @@ struct NamedPropertyID {
     StringView name;
 };
 
-void SVGGraphicsElement::apply_presentational_hints(CSS::StyleProperties& style) const
-{
-    static Array const attribute_style_properties {
-        // FIXME: The `fill` attribute and CSS `fill` property are not the same! But our support is limited enough that they are equivalent for now.
-        NamedPropertyID(CSS::PropertyID::Fill),
-        // FIXME: The `stroke` attribute and CSS `stroke` property are not the same! But our support is limited enough that they are equivalent for now.
-        NamedPropertyID(CSS::PropertyID::Stroke),
-        NamedPropertyID(CSS::PropertyID::StrokeLinecap),
-        NamedPropertyID(CSS::PropertyID::StrokeLinejoin),
-        NamedPropertyID(CSS::PropertyID::StrokeMiterlimit),
-        NamedPropertyID(CSS::PropertyID::StrokeWidth),
-        NamedPropertyID(CSS::PropertyID::FillRule),
-        NamedPropertyID(CSS::PropertyID::FillOpacity),
-        NamedPropertyID(CSS::PropertyID::StrokeOpacity),
-        NamedPropertyID(CSS::PropertyID::Opacity),
-        NamedPropertyID(CSS::PropertyID::TextAnchor),
-        NamedPropertyID(CSS::PropertyID::FontSize),
-        NamedPropertyID(CSS::PropertyID::Mask),
-        NamedPropertyID(CSS::PropertyID::MaskType),
-        NamedPropertyID(CSS::PropertyID::ClipPath),
-        NamedPropertyID(CSS::PropertyID::ClipRule),
-        NamedPropertyID(CSS::PropertyID::Display),
-    };
+static Array const attribute_style_properties {
+    // FIXME: The `fill` attribute and CSS `fill` property are not the same! But our support is limited enough that they are equivalent for now.
+    NamedPropertyID(CSS::PropertyID::Fill),
+    // FIXME: The `stroke` attribute and CSS `stroke` property are not the same! But our support is limited enough that they are equivalent for now.
+    NamedPropertyID(CSS::PropertyID::Stroke),
+    NamedPropertyID(CSS::PropertyID::StrokeDasharray),
+    NamedPropertyID(CSS::PropertyID::StrokeDashoffset),
+    NamedPropertyID(CSS::PropertyID::StrokeLinecap),
+    NamedPropertyID(CSS::PropertyID::StrokeLinejoin),
+    NamedPropertyID(CSS::PropertyID::StrokeMiterlimit),
+    NamedPropertyID(CSS::PropertyID::StrokeWidth),
+    NamedPropertyID(CSS::PropertyID::FillRule),
+    NamedPropertyID(CSS::PropertyID::FillOpacity),
+    NamedPropertyID(CSS::PropertyID::StrokeOpacity),
+    NamedPropertyID(CSS::PropertyID::Opacity),
+    NamedPropertyID(CSS::PropertyID::TextAnchor),
+    NamedPropertyID(CSS::PropertyID::FontSize),
+    NamedPropertyID(CSS::PropertyID::Mask),
+    NamedPropertyID(CSS::PropertyID::MaskType),
+    NamedPropertyID(CSS::PropertyID::ClipPath),
+    NamedPropertyID(CSS::PropertyID::ClipRule),
+    NamedPropertyID(CSS::PropertyID::Display),
+};
 
+bool SVGGraphicsElement::is_presentational_hint(FlyString const& name) const
+{
+    if (Base::is_presentational_hint(name))
+        return true;
+
+    return any_of(attribute_style_properties, [&](auto& property) { return name.equals_ignoring_ascii_case(property.name); });
+}
+
+void SVGGraphicsElement::apply_presentational_hints(GC::Ref<CSS::CascadedProperties> cascaded_properties) const
+{
     CSS::Parser::ParsingContext parsing_context { document(), CSS::Parser::ParsingContext::Mode::SVGPresentationAttribute };
     for_each_attribute([&](auto& name, auto& value) {
         for (auto property : attribute_style_properties) {
             if (!name.equals_ignoring_ascii_case(property.name))
                 continue;
             if (auto style_value = parse_css_value(parsing_context, value, property.id))
-                style.set_property(property.id, style_value.release_nonnull());
+                cascaded_properties->set_property_from_presentational_hint(property.id, style_value.release_nonnull());
             break;
         }
     });
@@ -266,13 +276,10 @@ Optional<float> SVGGraphicsElement::stroke_opacity() const
     return layout_node()->computed_values().stroke_opacity();
 }
 
-Optional<float> SVGGraphicsElement::stroke_width() const
+float SVGGraphicsElement::resolve_relative_to_viewport_size(CSS::LengthPercentage const& length_percentage) const
 {
-    if (!layout_node())
-        return {};
     // FIXME: Converting to pixels isn't really correct - values should be in "user units"
     //        https://svgwg.org/svg2-draft/coords.html#TermUserUnits
-    auto width = layout_node()->computed_values().stroke_width();
     // Resolved relative to the "Scaled viewport size": https://www.w3.org/TR/2017/WD-fill-stroke-3-20170413/#scaled-viewport-size
     // FIXME: This isn't right, but it's something.
     CSSPixels viewport_width = 0;
@@ -284,7 +291,56 @@ Optional<float> SVGGraphicsElement::stroke_width() const
         }
     }
     auto scaled_viewport_size = (viewport_width + viewport_height) * CSSPixels(0.5);
-    return width.to_px(*layout_node(), scaled_viewport_size).to_double();
+    return length_percentage.to_px(*layout_node(), scaled_viewport_size).to_double();
+}
+
+Vector<float> SVGGraphicsElement::stroke_dasharray() const
+{
+    if (!layout_node())
+        return {};
+
+    Vector<float> dasharray;
+    for (auto const& value : layout_node()->computed_values().stroke_dasharray()) {
+        value.visit(
+            [&](CSS::LengthPercentage const& length_percentage) {
+                dasharray.append(resolve_relative_to_viewport_size(length_percentage));
+            },
+            [&](CSS::NumberOrCalculated const& number_or_calculated) {
+                dasharray.append(number_or_calculated.resolved(*layout_node()));
+            });
+    }
+
+    // https://svgwg.org/svg2-draft/painting.html#StrokeDashing
+    // If the list has an odd number of values, then it is repeated to yield an even number of values.
+    if (dasharray.size() % 2 == 1)
+        dasharray.extend(dasharray);
+
+    // If any value in the list is negative, the <dasharray> value is invalid. If all of the values in the list are zero, then the stroke is rendered as a solid line without any dashing.
+    bool all_zero = true;
+    for (auto& value : dasharray) {
+        if (value < 0)
+            return {};
+        if (value != 0)
+            all_zero = false;
+    }
+    if (all_zero)
+        return {};
+
+    return dasharray;
+}
+
+Optional<float> SVGGraphicsElement::stroke_dashoffset() const
+{
+    if (!layout_node())
+        return {};
+    return resolve_relative_to_viewport_size(layout_node()->computed_values().stroke_dashoffset());
+}
+
+Optional<float> SVGGraphicsElement::stroke_width() const
+{
+    if (!layout_node())
+        return {};
+    return resolve_relative_to_viewport_size(layout_node()->computed_values().stroke_width());
 }
 
 // https://svgwg.org/svg2-draft/types.html#__svg__SVGGraphicsElement__getBBox

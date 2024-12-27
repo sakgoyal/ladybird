@@ -6,8 +6,10 @@
 
 #include <LibGfx/ImmutableBitmap.h>
 #include <LibGfx/PaintingSurface.h>
+#include <LibGfx/SkiaUtils.h>
 
 #include <core/SkBitmap.h>
+#include <core/SkColorSpace.h>
 #include <core/SkImage.h>
 
 namespace Gfx {
@@ -16,6 +18,7 @@ struct ImmutableBitmapImpl {
     sk_sp<SkImage> sk_image;
     SkBitmap sk_bitmap;
     Variant<NonnullRefPtr<Gfx::Bitmap>, NonnullRefPtr<Gfx::PaintingSurface>, Empty> source;
+    ColorSpace color_space;
 };
 
 int ImmutableBitmap::width() const
@@ -60,23 +63,6 @@ Color ImmutableBitmap::get_pixel(int x, int y) const
     return m_impl->source.get<NonnullRefPtr<Gfx::Bitmap>>()->get_pixel(x, y);
 }
 
-static SkColorType to_skia_color_type(Gfx::BitmapFormat format)
-{
-    switch (format) {
-    case Gfx::BitmapFormat::Invalid:
-        return kUnknown_SkColorType;
-    case Gfx::BitmapFormat::BGRA8888:
-    case Gfx::BitmapFormat::BGRx8888:
-        return kBGRA_8888_SkColorType;
-    case Gfx::BitmapFormat::RGBA8888:
-        return kRGBA_8888_SkColorType;
-    case Gfx::BitmapFormat::RGBx8888:
-        return kRGB_888x_SkColorType;
-    default:
-        return kUnknown_SkColorType;
-    }
-}
-
 static SkAlphaType to_skia_alpha_type(Gfx::AlphaType alpha_type)
 {
     switch (alpha_type) {
@@ -89,14 +75,15 @@ static SkAlphaType to_skia_alpha_type(Gfx::AlphaType alpha_type)
     }
 }
 
-NonnullRefPtr<ImmutableBitmap> ImmutableBitmap::create(NonnullRefPtr<Bitmap> bitmap)
+NonnullRefPtr<ImmutableBitmap> ImmutableBitmap::create(NonnullRefPtr<Bitmap> bitmap, ColorSpace color_space)
 {
     ImmutableBitmapImpl impl;
-    auto info = SkImageInfo::Make(bitmap->width(), bitmap->height(), to_skia_color_type(bitmap->format()), to_skia_alpha_type(bitmap->alpha_type()));
+    auto info = SkImageInfo::Make(bitmap->width(), bitmap->height(), to_skia_color_type(bitmap->format()), to_skia_alpha_type(bitmap->alpha_type()), color_space.color_space<sk_sp<SkColorSpace>>());
     impl.sk_bitmap.installPixels(info, const_cast<void*>(static_cast<void const*>(bitmap->scanline(0))), bitmap->pitch());
     impl.sk_bitmap.setImmutable();
     impl.sk_image = impl.sk_bitmap.asImage();
     impl.source = bitmap;
+    impl.color_space = move(color_space);
     return adopt_ref(*new ImmutableBitmap(make<ImmutableBitmapImpl>(impl)));
 }
 

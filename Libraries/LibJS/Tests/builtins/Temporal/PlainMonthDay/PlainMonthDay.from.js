@@ -3,28 +3,6 @@ describe("correct behavior", () => {
         expect(Temporal.PlainMonthDay.from).toHaveLength(1);
     });
 
-    test("PlainDate instance argument", () => {
-        const plainDate = new Temporal.PlainDate(2021, 7, 6);
-        const plainMonthDay = Temporal.PlainMonthDay.from(plainDate);
-        expect(plainMonthDay.monthCode).toBe("M07");
-        expect(plainMonthDay.day).toBe(6);
-    });
-
-    test("PlainMonthDay instance argument", () => {
-        const plainMonthDay_ = new Temporal.PlainMonthDay(7, 6);
-        const plainMonthDay = Temporal.PlainMonthDay.from(plainMonthDay_);
-        expect(plainMonthDay.monthCode).toBe("M07");
-        expect(plainMonthDay.day).toBe(6);
-    });
-
-    test("ZonedDateTime instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, timeZone);
-        const plainMonthDay = Temporal.PlainMonthDay.from(zonedDateTime);
-        expect(plainMonthDay.monthCode).toBe("M07");
-        expect(plainMonthDay.day).toBe(6);
-    });
-
     test("fields object argument", () => {
         const object = {
             month: 7,
@@ -86,53 +64,41 @@ describe("errors", () => {
     test("invalid month day string", () => {
         expect(() => {
             Temporal.PlainMonthDay.from("foo");
-        }).toThrowWithMessage(RangeError, "Invalid month day string 'foo'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     test("string must not contain a UTC designator", () => {
         expect(() => {
             Temporal.PlainMonthDay.from("2021-07-06T23:42:01Z");
-        }).toThrowWithMessage(
-            RangeError,
-            "Invalid month day string '2021-07-06T23:42:01Z': must not contain a UTC designator"
-        );
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     test("extended year must not be negative zero", () => {
         expect(() => {
             Temporal.PlainMonthDay.from("-000000-01-01");
-        }).toThrowWithMessage(RangeError, "Invalid month day string '-000000-01-01'");
-        expect(() => {
-            Temporal.PlainMonthDay.from("−000000-01-01"); // U+2212
-        }).toThrowWithMessage(RangeError, "Invalid month day string '−000000-01-01'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     test("can only use iso8601 calendar with month day strings", () => {
         expect(() => {
             Temporal.PlainMonthDay.from("02-10[u-ca=iso8602]");
-        }).toThrowWithMessage(
-            RangeError,
-            "MM-DD string format can only be used with the iso8601 calendar"
-        );
+        }).toThrowWithMessage(RangeError, "Invalid calendar identifier 'iso8602'");
 
         expect(() => {
-            Temporal.PlainMonthDay.from("02-10[u-ca=SerenityOS]");
-        }).toThrowWithMessage(
-            RangeError,
-            "MM-DD string format can only be used with the iso8601 calendar"
-        );
+            Temporal.PlainMonthDay.from("02-10[u-ca=ladybird]");
+        }).toThrowWithMessage(RangeError, "Invalid calendar identifier 'ladybird'");
     });
 
     test("doesn't throw non-iso8601 calendar error when using a superset format string such as DateTime", () => {
-        // NOTE: This will still throw, but only because "serenity" is not a recognised calendar, not because of the string format restriction.
+        // NOTE: This will still throw, but only because "ladybird" is not a recognised calendar, not because of the string format restriction.
         try {
-            Temporal.PlainMonthDay.from("2023-02-10T22:56[u-ca=serenity]");
+            Temporal.PlainMonthDay.from("2023-02-10T22:56[u-ca=ladybird]");
         } catch (e) {
             expect(e).toBeInstanceOf(RangeError);
             expect(e.message).not.toBe(
                 "MM-DD string format can only be used with the iso8601 calendar"
             );
-            expect(e.message).toBe("Invalid calendar identifier 'serenity'");
+            expect(e.message).toBe("Invalid calendar identifier 'ladybird'");
         }
     });
 });

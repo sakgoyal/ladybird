@@ -1,13 +1,10 @@
 /*
  * Copyright (c) 2021, Idan Horowitz <idan.horowitz@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <AK/Checked.h>
-#include <AK/TypeCasts.h>
-#include <LibJS/Runtime/GlobalObject.h>
-#include <LibJS/Runtime/Temporal/AbstractOperations.h>
 #include <LibJS/Runtime/Temporal/Calendar.h>
 #include <LibJS/Runtime/Temporal/PlainDate.h>
 #include <LibJS/Runtime/Temporal/PlainDateConstructor.h>
@@ -38,7 +35,7 @@ void PlainDateConstructor::initialize(Realm& realm)
     define_direct_property(vm.names.length, Value(3), Attribute::Configurable);
 }
 
-// 3.1.1 Temporal.PlainDate ( isoYear, isoMonth, isoDay [ , calendarLike ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate
+// 3.1.1 Temporal.PlainDate ( isoYear, isoMonth, isoDay [ , calendar ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate
 ThrowCompletionOr<Value> PlainDateConstructor::call()
 {
     auto& vm = this->vm();
@@ -47,65 +44,65 @@ ThrowCompletionOr<Value> PlainDateConstructor::call()
     return vm.throw_completion<TypeError>(ErrorType::ConstructorWithoutNew, "Temporal.PlainDate");
 }
 
-// 3.1.1 Temporal.PlainDate ( isoYear, isoMonth, isoDay [ , calendarLike ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate
+// 3.1.1 Temporal.PlainDate ( isoYear, isoMonth, isoDay [ , calendar ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate
 ThrowCompletionOr<GC::Ref<Object>> PlainDateConstructor::construct(FunctionObject& new_target)
 {
     auto& vm = this->vm();
 
+    auto iso_year = vm.argument(0);
+    auto iso_month = vm.argument(1);
+    auto iso_day = vm.argument(2);
+    auto calendar_value = vm.argument(3);
+
     // 2. Let y be ? ToIntegerWithTruncation(isoYear).
-    auto y = TRY(to_integer_with_truncation(vm, vm.argument(0), ErrorType::TemporalInvalidPlainDate));
+    auto year = TRY(to_integer_with_truncation(vm, iso_year, ErrorType::TemporalInvalidPlainDate));
 
     // 3. Let m be ? ToIntegerWithTruncation(isoMonth).
-    auto m = TRY(to_integer_with_truncation(vm, vm.argument(1), ErrorType::TemporalInvalidPlainDate));
+    auto month = TRY(to_integer_with_truncation(vm, iso_month, ErrorType::TemporalInvalidPlainDate));
 
     // 4. Let d be ? ToIntegerWithTruncation(isoDay).
-    auto d = TRY(to_integer_with_truncation(vm, vm.argument(2), ErrorType::TemporalInvalidPlainDate));
+    auto day = TRY(to_integer_with_truncation(vm, iso_day, ErrorType::TemporalInvalidPlainDate));
 
-    // 5. Let calendar be ? ToTemporalCalendarWithISODefault(calendarLike).
-    auto* calendar = TRY(to_temporal_calendar_with_iso_default(vm, vm.argument(3)));
+    // 5. If calendar is undefined, set calendar to "iso8601".
+    if (calendar_value.is_undefined())
+        calendar_value = PrimitiveString::create(vm, "iso8601"_string);
 
-    // IMPLEMENTATION DEFINED: This is an optimization that allows us to treat these doubles as normal integers from this point onwards.
-    // This does not change the exposed behavior as the call to CreateTemporalDate will immediately check that these values are valid
-    // ISO values (for years: -273975 - 273975, for months: 1 - 12, for days: 1 - 31) all of which are subsets of this check.
-    if (!AK::is_within_range<i32>(y) || !AK::is_within_range<u8>(m) || !AK::is_within_range<u8>(d))
+    // 6. If calendar is not a String, throw a TypeError exception.
+    if (!calendar_value.is_string())
+        return vm.throw_completion<TypeError>(ErrorType::NotAString, "calendar"sv);
+
+    // 7. Set calendar to ? CanonicalizeCalendar(calendar).
+    auto calendar = TRY(canonicalize_calendar(vm, calendar_value.as_string().utf8_string_view()));
+
+    // 8. If IsValidISODate(y, m, d) is false, throw a RangeError exception.
+    if (!is_valid_iso_date(year, month, day))
         return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidPlainDate);
 
-    // 6. Return ? CreateTemporalDate(y, m, d, calendar, NewTarget).
-    return *TRY(create_temporal_date(vm, y, m, d, *calendar, &new_target));
+    // 9. Let isoDate be CreateISODateRecord(y, m, d).
+    auto iso_date = create_iso_date_record(year, month, day);
+
+    // 10. Return ? CreateTemporalDate(isoDate, calendar, NewTarget).
+    return TRY(create_temporal_date(vm, iso_date, move(calendar), &new_target));
 }
 
-// 3.2.2 Temporal.PlainDate.from ( item [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate.from
+// 3.2.2 3.2.2 Temporal.PlainDate.from ( item [ , options ] ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate.from
 JS_DEFINE_NATIVE_FUNCTION(PlainDateConstructor::from)
 {
-    // 1. Set options to ? GetOptionsObject(options).
-    auto const* options = TRY(get_options_object(vm, vm.argument(1)));
-
-    auto item = vm.argument(0);
-    // 2. If Type(item) is Object and item has an [[InitializedTemporalDate]] internal slot, then
-    if (item.is_object() && is<PlainDate>(item.as_object())) {
-        auto& plain_date_item = static_cast<PlainDate&>(item.as_object());
-        // a. Perform ? ToTemporalOverflow(options).
-        (void)TRY(to_temporal_overflow(vm, options));
-
-        // b. Return ! CreateTemporalDate(item.[[ISOYear]], item.[[ISOMonth]], item.[[ISODay]], item.[[Calendar]]).
-        return MUST(create_temporal_date(vm, plain_date_item.iso_year(), plain_date_item.iso_month(), plain_date_item.iso_day(), plain_date_item.calendar()));
-    }
-
-    // 3. Return ? ToTemporalDate(item, options).
-    return TRY(to_temporal_date(vm, item, options));
+    // 1. Return ? ToTemporalDate(item, options).
+    return TRY(to_temporal_date(vm, vm.argument(0), vm.argument(1)));
 }
 
 // 3.2.3 Temporal.PlainDate.compare ( one, two ), https://tc39.es/proposal-temporal/#sec-temporal.plaindate.compare
 JS_DEFINE_NATIVE_FUNCTION(PlainDateConstructor::compare)
 {
     // 1. Set one to ? ToTemporalDate(one).
-    auto* one = TRY(to_temporal_date(vm, vm.argument(0)));
+    auto one = TRY(to_temporal_date(vm, vm.argument(0)));
 
     // 2. Set two to ? ToTemporalDate(two).
-    auto* two = TRY(to_temporal_date(vm, vm.argument(1)));
+    auto two = TRY(to_temporal_date(vm, vm.argument(1)));
 
-    // 3. Return 𝔽(! CompareISODate(one.[[ISOYear]], one.[[ISOMonth]], one.[[ISODay]], two.[[ISOYear]], two.[[ISOMonth]], two.[[ISODay]])).
-    return Value(compare_iso_date(one->iso_year(), one->iso_month(), one->iso_day(), two->iso_year(), two->iso_month(), two->iso_day()));
+    // 3. Return 𝔽(CompareISODate(one.[[ISODate]], two.[[ISODate]])).
+    return compare_iso_date(one->iso_date(), two->iso_date());
 }
 
 }

@@ -155,7 +155,7 @@ WebIDL::ExceptionOr<void> AnimationEffect::update_timing(OptionalEffectTiming ti
     //    [CSS-EASING-1], throw a TypeError and abort this procedure.
     RefPtr<CSS::CSSStyleValue const> easing_value;
     if (timing.easing.has_value()) {
-        easing_value = parse_easing_string(realm(), timing.easing.value());
+        easing_value = parse_easing_string(timing.easing.value());
         if (!easing_value)
             return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, "Invalid easing function"sv };
         VERIFY(easing_value->is_easing());
@@ -424,15 +424,25 @@ AnimationEffect::Phase AnimationEffect::phase() const
 {
     // This is a convenience method that returns the phase of the animation effect, to avoid having to call all of the
     // phase functions separately.
-    // FIXME: There is a lot of duplicated condition checking here which can probably be inlined into this function
+    auto local_time = this->local_time();
+    if (!local_time.has_value())
+        return Phase::Idle;
 
-    if (is_in_the_before_phase())
+    auto before_active_boundary_time = this->before_active_boundary_time();
+    // - the local time is less than the before-active boundary time, or
+    // - the animation direction is "backwards" and the local time is equal to the before-active boundary time.
+    if (local_time.value() < before_active_boundary_time || (animation_direction() == AnimationDirection::Backwards && local_time.value() == before_active_boundary_time))
         return Phase::Before;
-    if (is_in_the_active_phase())
-        return Phase::Active;
-    if (is_in_the_after_phase())
+
+    auto after_active_boundary_time = this->after_active_boundary_time();
+    // - the local time is greater than the active-after boundary time, or
+    // - the animation direction is "forwards" and the local time is equal to the active-after boundary time.
+    if (local_time.value() > after_active_boundary_time || (animation_direction() == AnimationDirection::Forwards && local_time.value() == after_active_boundary_time))
         return Phase::After;
-    return Phase::Idle;
+
+    // - An animation effect is in the active phase if the animation effect’s local time is not unresolved and it is not
+    // - in either the before phase nor the after phase.
+    return Phase::Active;
 }
 
 // https://www.w3.org/TR/web-animations-1/#overall-progress
@@ -589,11 +599,9 @@ Optional<double> AnimationEffect::transformed_progress() const
     return m_timing_function.evaluate_at(directed_progress.value(), before_flag);
 }
 
-RefPtr<CSS::CSSStyleValue const> AnimationEffect::parse_easing_string(JS::Realm& realm, StringView value)
+RefPtr<CSS::CSSStyleValue const> AnimationEffect::parse_easing_string(StringView value)
 {
-    auto parser = CSS::Parser::Parser::create(CSS::Parser::ParsingContext(realm), value);
-
-    if (auto style_value = parser.parse_as_css_value(CSS::PropertyID::AnimationTimingFunction)) {
+    if (auto style_value = parse_css_value(CSS::Parser::ParsingContext(), value, CSS::PropertyID::AnimationTimingFunction)) {
         if (style_value->is_easing())
             return style_value;
     }

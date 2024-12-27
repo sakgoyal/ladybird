@@ -48,7 +48,7 @@ input::placeholder, textarea::placeholder {
     line-height: initial;
 }
 
-button, input[type=submit], input[type=button], input[type=reset], select {
+button, input[type=submit], input[type=button], input[type=reset], select, ::file-selector-button {
     padding: 1px 4px;
     background-color: ButtonFace;
     border: 1px solid ButtonBorder;
@@ -405,7 +405,7 @@ nobr wbr {
 
 address, blockquote, center, div, figure, figcaption, footer, form, header, hr,
 legend, listing, main, p, plaintext, pre, summary, xmp, article, aside, h1, h2,
-h3, h4, h5, h6, hgroup, nav, section, table, caption, colgroup, col, thead,
+h3, h4, h5, h6, hgroup, nav, search, section, table, caption, colgroup, col, thead,
 tbody, tfoot, tr, td, th, dir, dd, dl, dt, menu, ol, ul, li, bdi, output,
 [dir=ltr i], [dir=rtl i], [dir=auto i] {
     unicode-bidi: isolate;
@@ -856,4 +856,39 @@ progress {
     video {
         filter: invert(100%);
     }
+}
+
+/* https://github.com/whatwg/html/pull/9546
+ */
+input[type=checkbox][switch] {
+	appearance: none;
+	height: 1em;
+	width: 1.8em;
+	vertical-align: middle;
+	border-radius: 1em;
+	position: relative;
+	overflow: hidden;
+	border-color: transparent;
+	background-color: ButtonFace;
+}
+
+input[type=checkbox][switch]::before {
+	content: '';
+	position: absolute;
+	height: 0;
+	width: 0;
+	border: .46em solid Field;
+	border-radius: 100%;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	margin: auto;
+}
+
+input[type=checkbox][switch]:checked::before {
+	left: calc(100% - .87em);
+}
+
+input[type=checkbox][switch]:checked {
+	background-color: AccentColor;
 }

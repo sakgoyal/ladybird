@@ -4,10 +4,10 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const calendar = { hello: "friends" };
+        const calendar = "gregory";
         const firstPlainDate = new Temporal.PlainDate(1, 1, 1);
-        expect(firstPlainDate.calendar).not.toBe(calendar);
+        expect(firstPlainDate.calendarId).not.toBe(calendar);
         const secondPlainDate = firstPlainDate.withCalendar(calendar);
-        expect(secondPlainDate.calendar).toBe(calendar);
+        expect(secondPlainDate.calendarId).toBe(calendar);
     });
 });

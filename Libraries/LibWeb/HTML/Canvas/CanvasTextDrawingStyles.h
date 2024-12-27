@@ -33,7 +33,11 @@ public:
         auto font_weight = font_style_value.longhand(CSS::PropertyID::FontWeight);
         auto font_size = font_style_value.longhand(CSS::PropertyID::FontSize);
         auto font_family = font_style_value.longhand(CSS::PropertyID::FontFamily);
-        return ByteString::formatted("{} {} {} {}", font_style->to_string(), font_weight->to_string(), font_size->to_string(), font_family->to_string());
+        return ByteString::formatted("{} {} {} {}",
+            font_style->to_string(CSS::CSSStyleValue::SerializationMode::Normal),
+            font_weight->to_string(CSS::CSSStyleValue::SerializationMode::Normal),
+            font_size->to_string(CSS::CSSStyleValue::SerializationMode::Normal),
+            font_family->to_string(CSS::CSSStyleValue::SerializationMode::Normal));
     }
 
     void set_font(StringView font)
@@ -43,8 +47,7 @@ public:
         // and with system fonts being computed to explicit values.
         // FIXME: with the 'line-height' component forced to 'normal'
         // FIXME: with the 'font-size' component converted to CSS pixels
-        auto parsing_context = CSS::Parser::ParsingContext { reinterpret_cast<IncludingClass&>(*this).realm() };
-        auto font_style_value_result = parse_css_value(parsing_context, font, CSS::PropertyID::Font);
+        auto font_style_value_result = parse_css_value(CSS::Parser::ParsingContext {}, font, CSS::PropertyID::Font);
 
         // If the new value is syntactically incorrect (including using property-independent style sheet syntax like 'inherit' or 'initial'), then it must be ignored, without assigning a new font value.
         // NOTE: ShorthandStyleValue should be the only valid option here. We implicitly VERIFY this below.

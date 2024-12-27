@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023, Michiel Visser <opensource@webmichiel.nl>
+ * Copyright (c) 2024, Altomani Gianluca <altomanigianluca@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -8,6 +9,7 @@
 
 #include <AK/ByteBuffer.h>
 #include <AK/Endian.h>
+#include <AK/Error.h>
 #include <AK/MemoryStream.h>
 #include <AK/Random.h>
 #include <AK/StdLibExtras.h>
@@ -16,6 +18,12 @@
 #include <AK/UFixedBigIntDivision.h>
 #include <LibCrypto/ASN1/DER.h>
 #include <LibCrypto/Curves/EllipticCurve.h>
+#include <LibCrypto/SecureRandom.h>
+
+namespace {
+// Used by ASN1 macros
+static String s_error_string;
+}
 
 namespace Crypto::Curves {
 
@@ -25,6 +33,88 @@ struct SECPxxxr1CurveParameters {
     StringView b;
     StringView order;
     StringView generator_point;
+};
+
+struct SECPxxxr1Point {
+    UnsignedBigInteger x;
+    UnsignedBigInteger y;
+    size_t size;
+
+    static ErrorOr<ByteBuffer> scalar_to_bytes(UnsignedBigInteger const& a, size_t size)
+    {
+        auto a_bytes = TRY(ByteBuffer::create_uninitialized(a.byte_length()));
+        auto a_size = a.export_data(a_bytes.span());
+        VERIFY(a_size >= size);
+
+        for (size_t i = 0; i < a_size - size; i++) {
+            if (a_bytes[i] != 0) {
+                return Error::from_string_literal("Scalar is too large for the given size");
+            }
+        }
+
+        return a_bytes.slice(a_size - size, size);
+    }
+
+    static ErrorOr<SECPxxxr1Point> from_uncompressed(ReadonlyBytes data)
+    {
+        if (data.size() < 1 || data[0] != 0x04)
+            return Error::from_string_literal("Invalid length or not an uncompressed SECPxxxr1 point");
+
+        auto half_size = (data.size() - 1) / 2;
+        return SECPxxxr1Point {
+            UnsignedBigInteger::import_data(data.slice(1, half_size)),
+            UnsignedBigInteger::import_data(data.slice(1 + half_size, half_size)),
+            half_size,
+        };
+    }
+
+    ErrorOr<ByteBuffer> x_bytes() const
+    {
+        return scalar_to_bytes(x, size);
+    }
+
+    ErrorOr<ByteBuffer> y_bytes() const
+    {
+        return scalar_to_bytes(y, size);
+    }
+
+    ErrorOr<ByteBuffer> to_uncompressed() const
+    {
+        auto x = TRY(x_bytes());
+        auto y = TRY(y_bytes());
+
+        auto bytes = TRY(ByteBuffer::create_uninitialized(1 + (size * 2)));
+        bytes[0] = 0x04; // uncompressed
+        bytes.overwrite(1, x.data(), size);
+        bytes.overwrite(1 + size, y.data(), size);
+        return bytes;
+    }
+};
+
+struct SECPxxxr1Signature {
+    UnsignedBigInteger r;
+    UnsignedBigInteger s;
+
+    static ErrorOr<SECPxxxr1Signature> from_asn(ReadonlyBytes signature, Vector<StringView> current_scope)
+    {
+        ASN1::Decoder decoder(signature);
+        ENTER_TYPED_SCOPE(Sequence, "SECPxxxr1Signature");
+        READ_OBJECT(Integer, UnsignedBigInteger, r_big_int);
+        READ_OBJECT(Integer, UnsignedBigInteger, s_big_int);
+        return SECPxxxr1Signature { r_big_int, s_big_int };
+    }
+
+    ErrorOr<ByteBuffer> to_asn()
+    {
+        ASN1::Encoder encoder;
+        TRY(encoder.write_constructed(ASN1::Class::Universal, ASN1::Kind::Sequence, [&]() -> ErrorOr<void> {
+            TRY(encoder.write(r));
+            TRY(encoder.write(s));
+            return {};
+        }));
+
+        return encoder.finish();
+    }
 };
 
 template<size_t bit_size, SECPxxxr1CurveParameters const& CURVE_PARAMETERS>
@@ -41,7 +131,7 @@ private:
 
     // Curve parameters
     static constexpr size_t KEY_BIT_SIZE = bit_size;
-    static constexpr size_t KEY_BYTE_SIZE = KEY_BIT_SIZE / 8;
+    static constexpr size_t KEY_BYTE_SIZE = ceil_div(KEY_BIT_SIZE, 8ull);
     static constexpr size_t POINT_BYTE_SIZE = 1 + 2 * KEY_BYTE_SIZE;
 
     static constexpr StorageType make_unsigned_fixed_big_int_from_string(StringView str)
@@ -141,13 +231,30 @@ public:
     ErrorOr<ByteBuffer> generate_private_key() override
     {
         auto buffer = TRY(ByteBuffer::create_uninitialized(KEY_BYTE_SIZE));
-        fill_with_random(buffer);
+        fill_with_secure_random(buffer);
         return buffer;
+    }
+
+    ErrorOr<UnsignedBigInteger> generate_private_key_scalar()
+    {
+        auto buffer = TRY(generate_private_key());
+        return UnsignedBigInteger::import_data(buffer.data(), buffer.size());
     }
 
     ErrorOr<ByteBuffer> generate_public_key(ReadonlyBytes a) override
     {
         return compute_coordinate(a, GENERATOR_POINT);
+    }
+
+    ErrorOr<SECPxxxr1Point> generate_public_key_point(UnsignedBigInteger scalar)
+    {
+        VERIFY(scalar.byte_length() >= KEY_BYTE_SIZE);
+
+        return compute_coordinate_point(scalar, SECPxxxr1Point {
+                                                    UnsignedBigInteger::import_data(GENERATOR_POINT.data() + 1, KEY_BYTE_SIZE),
+                                                    UnsignedBigInteger::import_data(GENERATOR_POINT.data() + 1 + KEY_BYTE_SIZE, KEY_BYTE_SIZE),
+                                                    KEY_BYTE_SIZE,
+                                                });
     }
 
     ErrorOr<ByteBuffer> compute_coordinate(ReadonlyBytes scalar_bytes, ReadonlyBytes point_bytes) override
@@ -168,47 +275,51 @@ public:
         return buf;
     }
 
-    ErrorOr<ByteBuffer> derive_premaster_key(ReadonlyBytes shared_point) override
+    ErrorOr<SECPxxxr1Point> compute_coordinate_point(UnsignedBigInteger scalar, SECPxxxr1Point point)
     {
-        VERIFY(shared_point.size() == POINT_BYTE_SIZE);
-        VERIFY(shared_point[0] == 0x04);
+        auto scalar_int = unsigned_big_integer_to_storage_type(scalar);
+        auto point_x_int = unsigned_big_integer_to_storage_type(point.x);
+        auto point_y_int = unsigned_big_integer_to_storage_type(point.y);
 
-        ByteBuffer premaster_key = TRY(ByteBuffer::create_uninitialized(KEY_BYTE_SIZE));
-        premaster_key.overwrite(0, shared_point.data() + 1, KEY_BYTE_SIZE);
-        return premaster_key;
+        auto result_point = TRY(compute_coordinate_internal(scalar_int, JacobianPoint { point_x_int, point_y_int, 1u }));
+
+        return SECPxxxr1Point {
+            storage_type_to_unsigned_big_integer(result_point.x),
+            storage_type_to_unsigned_big_integer(result_point.y),
+            KEY_BYTE_SIZE,
+        };
     }
 
-    ErrorOr<bool> verify(ReadonlyBytes hash, ReadonlyBytes pubkey, ReadonlyBytes signature)
+    ErrorOr<ByteBuffer> derive_premaster_key(ReadonlyBytes shared_point_bytes) override
     {
-        Crypto::ASN1::Decoder asn1_decoder(signature);
-        TRY(asn1_decoder.enter());
+        auto shared_point = TRY(SECPxxxr1Point::from_uncompressed(shared_point_bytes));
+        auto premaster_key_point = TRY(derive_premaster_key_point(shared_point));
+        return premaster_key_point.to_uncompressed();
+    }
 
-        auto r_bigint = TRY(asn1_decoder.read<Crypto::UnsignedBigInteger>(Crypto::ASN1::Class::Universal, Crypto::ASN1::Kind::Integer));
-        auto s_bigint = TRY(asn1_decoder.read<Crypto::UnsignedBigInteger>(Crypto::ASN1::Class::Universal, Crypto::ASN1::Kind::Integer));
+    ErrorOr<SECPxxxr1Point> derive_premaster_key_point(SECPxxxr1Point shared_point)
+    {
+        return shared_point;
+    }
 
-        size_t expected_word_count = KEY_BIT_SIZE / 32;
-        if (r_bigint.length() < expected_word_count || s_bigint.length() < expected_word_count) {
+    ErrorOr<bool> verify_point(ReadonlyBytes hash, SECPxxxr1Point pubkey, SECPxxxr1Signature signature)
+    {
+        static constexpr size_t expected_word_count = KEY_BIT_SIZE / 32;
+        if (signature.r.length() < expected_word_count || signature.s.length() < expected_word_count) {
             return false;
         }
 
-        StorageType r = 0u;
-        StorageType s = 0u;
-        for (size_t i = 0; i < (KEY_BIT_SIZE / 32); i++) {
-            StorageType rr = r_bigint.words()[i];
-            StorageType ss = s_bigint.words()[i];
-            r |= (rr << (i * 32));
-            s |= (ss << (i * 32));
-        }
+        auto r = unsigned_big_integer_to_storage_type(signature.r);
+        auto s = unsigned_big_integer_to_storage_type(signature.s);
+        if (r.is_zero_constant_time() || s.is_zero_constant_time())
+            return false;
 
         // z is the hash
         StorageType z = 0u;
-        for (uint8_t byte : hash) {
+        for (size_t i = 0; i < KEY_BYTE_SIZE && i < hash.size(); i++) {
             z <<= 8;
-            z |= byte;
+            z |= hash[i];
         }
-
-        AK::FixedMemoryStream pubkey_stream { pubkey };
-        JacobianPoint pubkey_point = TRY(read_uncompressed_point(pubkey_stream));
 
         StorageType r_mo = to_montgomery_order(r);
         StorageType s_mo = to_montgomery_order(s);
@@ -223,7 +334,11 @@ public:
         u2 = from_montgomery_order(u2);
 
         JacobianPoint point1 = TRY(generate_public_key_internal(u1));
-        JacobianPoint point2 = TRY(compute_coordinate_internal(u2, pubkey_point));
+        JacobianPoint point2 = TRY(compute_coordinate_internal(u2, JacobianPoint {
+                                                                       unsigned_big_integer_to_storage_type(pubkey.x),
+                                                                       unsigned_big_integer_to_storage_type(pubkey.y),
+                                                                       1u,
+                                                                   }));
 
         // Convert the input point into Montgomery form
         point1.x = to_montgomery(point1.x);
@@ -257,7 +372,91 @@ public:
         return r.is_equal_to_constant_time(result.x);
     }
 
+    ErrorOr<bool> verify(ReadonlyBytes hash, ReadonlyBytes pubkey, SECPxxxr1Signature signature)
+    {
+        auto pubkey_point = TRY(SECPxxxr1Point::from_uncompressed(pubkey));
+        return verify_point(hash, pubkey_point, signature);
+    }
+
+    ErrorOr<SECPxxxr1Signature> sign_scalar(ReadonlyBytes hash, UnsignedBigInteger private_key)
+    {
+        auto d = unsigned_big_integer_to_storage_type(private_key);
+
+        auto k_int = TRY(generate_private_key_scalar());
+        auto k = unsigned_big_integer_to_storage_type(k_int);
+        auto k_mo = to_montgomery_order(k);
+
+        auto kG = TRY(generate_public_key_internal(k));
+        auto r = kG.x;
+
+        if (r.is_zero_constant_time()) {
+            // Retry with a new k
+            return sign_scalar(hash, private_key);
+        }
+
+        // Compute z from the hash
+        StorageType z = 0u;
+        for (size_t i = 0; i < KEY_BYTE_SIZE && i < hash.size(); i++) {
+            z <<= 8;
+            z |= hash[i];
+        }
+
+        // s = k^-1 * (z + r * d) mod n
+        auto r_mo = to_montgomery_order(r);
+        auto z_mo = to_montgomery_order(z);
+        auto d_mo = to_montgomery_order(d);
+
+        // r * d mod n
+        auto rd_mo = modular_multiply_order(r_mo, d_mo);
+
+        // z + (r * d) mod n
+        auto z_plus_rd_mo = modular_add_order(z_mo, rd_mo);
+
+        // k^-1 mod n
+        auto k_inv_mo = modular_inverse_order(k_mo);
+
+        // s = k^-1 * (z + r * d) mod n
+        auto s_mo = modular_multiply_order(z_plus_rd_mo, k_inv_mo);
+        auto s = from_montgomery_order(s_mo);
+
+        if (s.is_zero_constant_time()) {
+            // Retry with a new k
+            return sign_scalar(hash, private_key);
+        }
+
+        return SECPxxxr1Signature { storage_type_to_unsigned_big_integer(r), storage_type_to_unsigned_big_integer(s) };
+    }
+
+    ErrorOr<SECPxxxr1Signature> sign(ReadonlyBytes hash, ReadonlyBytes private_key_bytes)
+    {
+        auto signature = TRY(sign_scalar(hash, UnsignedBigInteger::import_data(private_key_bytes.data(), private_key_bytes.size())));
+        return signature;
+    }
+
 private:
+    StorageType unsigned_big_integer_to_storage_type(UnsignedBigInteger big)
+    {
+        constexpr size_t word_count = (KEY_BYTE_SIZE + 4 - 1) / 4;
+        VERIFY(big.length() >= word_count);
+
+        StorageType val = 0u;
+        for (size_t i = 0; i < word_count; i++) {
+            StorageType rr = big.words()[i];
+            val |= (rr << (i * 32));
+        }
+        return val;
+    }
+
+    UnsignedBigInteger storage_type_to_unsigned_big_integer(StorageType val)
+    {
+        constexpr size_t word_count = (KEY_BYTE_SIZE + 4 - 1) / 4;
+        Vector<UnsignedBigInteger::Word, word_count> words;
+        for (size_t i = 0; i < word_count; i++) {
+            words.append(static_cast<UnsignedBigInteger::Word>((val >> (i * 32)) & 0xFFFFFFFF));
+        }
+        return UnsignedBigInteger(move(words));
+    }
+
     ErrorOr<JacobianPoint> generate_public_key_internal(StorageType a)
     {
         AK::FixedMemoryStream generator_point_stream { GENERATOR_POINT };
@@ -690,5 +889,15 @@ static constexpr SECPxxxr1CurveParameters SECP384r1_CURVE_PARAMETERS {
     .generator_point = "04_AA87CA22_BE8B0537_8EB1C71E_F320AD74_6E1D3B62_8BA79B98_59F741E0_82542A38_5502F25D_BF55296C_3A545E38_72760AB7_3617DE4A_96262C6F_5D9E98BF_9292DC29_F8F41DBD_289A147C_E9DA3113_B5F0B8C0_0A60B1CE_1D7E819D_7A431D7C_90EA0E5F"sv,
 };
 using SECP384r1 = SECPxxxr1<384, SECP384r1_CURVE_PARAMETERS>;
+
+// SECP521r1 curve
+static constexpr SECPxxxr1CurveParameters SECP521r1_CURVE_PARAMETERS {
+    .prime = "01FF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF"sv,
+    .a = "01FF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFC"sv,
+    .b = "0051_953EB961_8E1C9A1F_929A21A0_B68540EE_A2DA725B_99B315F3_B8B48991_8EF109E1_56193951_EC7E937B_1652C0BD_3BB1BF07_3573DF88_3D2C34F1_EF451FD4_6B503F00"sv,
+    .order = "01FF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFF_FFFFFFFA_51868783_BF2F966B_7FCC0148_F709A5D0_3BB5C9B8_899C47AE_BB6FB71E_91386409"sv,
+    .generator_point = "04_00C6_858E06B7_0404E9CD_9E3ECB66_2395B442_9C648139_053FB521_F828AF60_6B4D3DBA_A14B5E77_EFE75928_FE1DC127_A2FFA8DE_3348B3C1_856A429B_F97E7E31_C2E5BD66_0118_39296A78_9A3BC004_5C8A5FB4_2C7D1BD9_98F54449_579B4468_17AFBD17_273E662C_97EE7299_5EF42640_C550B901_3FAD0761_353C7086_A272C240_88BE9476_9FD16650"sv,
+};
+using SECP521r1 = SECPxxxr1<521, SECP521r1_CURVE_PARAMETERS>;
 
 }

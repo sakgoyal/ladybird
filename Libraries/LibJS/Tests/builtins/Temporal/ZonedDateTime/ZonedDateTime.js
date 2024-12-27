@@ -30,7 +30,7 @@ describe("normal behavior", () => {
     });
 
     test("basic functionality", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = new Temporal.ZonedDateTime(0n, timeZone);
         expect(typeof zonedDateTime).toBe("object");
         expect(zonedDateTime).toBeInstanceOf(Temporal.ZonedDateTime);

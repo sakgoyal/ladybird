@@ -1,12 +1,17 @@
 /*
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #pragma once
 
+#include <AK/String.h>
+#include <LibJS/Runtime/Completion.h>
 #include <LibJS/Runtime/Object.h>
+#include <LibJS/Runtime/Temporal/AbstractOperations.h>
+#include <LibJS/Runtime/Temporal/PlainDate.h>
 
 namespace JS::Temporal {
 
@@ -17,32 +22,18 @@ class PlainMonthDay final : public Object {
 public:
     virtual ~PlainMonthDay() override = default;
 
-    [[nodiscard]] i32 iso_year() const { return m_iso_year; }
-    [[nodiscard]] u8 iso_month() const { return m_iso_month; }
-    [[nodiscard]] u8 iso_day() const { return m_iso_day; }
-    [[nodiscard]] Object const& calendar() const { return m_calendar; }
-    [[nodiscard]] Object& calendar() { return m_calendar; }
+    [[nodiscard]] ISODate iso_date() const { return m_iso_date; }
+    [[nodiscard]] String const& calendar() const { return m_calendar; }
 
 private:
-    PlainMonthDay(u8 iso_month, u8 iso_day, i32 iso_year, Object& calendar, Object& prototype);
+    PlainMonthDay(ISODate, String calendar, Object& prototype);
 
-    virtual void visit_edges(Visitor&) override;
-
-    // 10.4 Properties of Temporal.PlainMonthDay Instances, https://tc39.es/proposal-temporal/#sec-properties-of-temporal-plainmonthday-instances
-    i32 m_iso_year { 0 };       // [[ISOYear]]
-    u8 m_iso_month { 0 };       // [[ISOMonth]]
-    u8 m_iso_day { 0 };         // [[ISODay]]
-    GC::Ref<Object> m_calendar; // [[Calendar]]
+    ISODate m_iso_date; // [[ISODate]]
+    String m_calendar;  // [[Calendar]]
 };
 
-struct ISOMonthDay {
-    u8 month;
-    u8 day;
-    i32 reference_iso_year;
-};
-
-ThrowCompletionOr<PlainMonthDay*> to_temporal_month_day(VM&, Value item, Object const* options = nullptr);
-ThrowCompletionOr<PlainMonthDay*> create_temporal_month_day(VM&, u8 iso_month, u8 iso_day, Object& calendar, i32 reference_iso_year, FunctionObject const* new_target = nullptr);
-ThrowCompletionOr<String> temporal_month_day_to_string(VM&, PlainMonthDay&, StringView show_calendar);
+ThrowCompletionOr<GC::Ref<PlainMonthDay>> to_temporal_month_day(VM&, Value item, Value options = js_undefined());
+ThrowCompletionOr<GC::Ref<PlainMonthDay>> create_temporal_month_day(VM&, ISODate, String calendar, GC::Ptr<FunctionObject> new_target = {});
+String temporal_month_day_to_string(PlainMonthDay const&, ShowCalendar);
 
 }

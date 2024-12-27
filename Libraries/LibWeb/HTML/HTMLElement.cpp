@@ -5,6 +5,7 @@
  */
 
 #include <AK/StringBuilder.h>
+#include <LibJS/Runtime/NativeFunction.h>
 #include <LibWeb/ARIA/Roles.h>
 #include <LibWeb/Bindings/ExceptionOrUtils.h>
 #include <LibWeb/Bindings/HTMLElementPrototype.h>
@@ -17,6 +18,7 @@
 #include <LibWeb/DOM/Position.h>
 #include <LibWeb/DOM/ShadowRoot.h>
 #include <LibWeb/HTML/BrowsingContext.h>
+#include <LibWeb/HTML/CloseWatcher.h>
 #include <LibWeb/HTML/CustomElements/CustomElementDefinition.h>
 #include <LibWeb/HTML/ElementInternals.h>
 #include <LibWeb/HTML/EventHandler.h>
@@ -24,9 +26,11 @@
 #include <LibWeb/HTML/HTMLBRElement.h>
 #include <LibWeb/HTML/HTMLBaseElement.h>
 #include <LibWeb/HTML/HTMLBodyElement.h>
+#include <LibWeb/HTML/HTMLDialogElement.h>
 #include <LibWeb/HTML/HTMLElement.h>
 #include <LibWeb/HTML/HTMLLabelElement.h>
 #include <LibWeb/HTML/HTMLParagraphElement.h>
+#include <LibWeb/HTML/ToggleEvent.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Infra/CharacterTypes.h>
 #include <LibWeb/Infra/Strings.h>
@@ -62,6 +66,8 @@ void HTMLElement::visit_edges(Cell::Visitor& visitor)
     HTMLOrSVGElement::visit_edges(visitor);
     visitor.visit(m_labels);
     visitor.visit(m_attached_internals);
+    visitor.visit(m_popover_invoker);
+    visitor.visit(m_popover_close_watcher);
 }
 
 // https://html.spec.whatwg.org/multipage/dom.html#dom-dir
@@ -84,23 +90,9 @@ void HTMLElement::set_dir(String const& dir)
     MUST(set_attribute(HTML::AttributeNames::dir, dir));
 }
 
-bool HTMLElement::is_editable() const
-{
-    switch (m_content_editable_state) {
-    case ContentEditableState::True:
-        return true;
-    case ContentEditableState::False:
-        return false;
-    case ContentEditableState::Inherit:
-        return parent() && parent()->is_editable();
-    default:
-        VERIFY_NOT_REACHED();
-    }
-}
-
 bool HTMLElement::is_focusable() const
 {
-    return m_content_editable_state == ContentEditableState::True;
+    return is_editing_host();
 }
 
 // https://html.spec.whatwg.org/multipage/interaction.html#dom-iscontenteditable
@@ -108,7 +100,7 @@ bool HTMLElement::is_content_editable() const
 {
     // The isContentEditable IDL attribute, on getting, must return true if the element is either an editing host or
     // editable, and false otherwise.
-    return is_editable();
+    return is_editable_or_editing_host();
 }
 
 StringView HTMLElement::content_editable() const
@@ -118,6 +110,8 @@ StringView HTMLElement::content_editable() const
         return "true"sv;
     case ContentEditableState::False:
         return "false"sv;
+    case ContentEditableState::PlaintextOnly:
+        return "plaintext-only"sv;
     case ContentEditableState::Inherit:
         return "inherit"sv;
     }
@@ -135,11 +129,15 @@ WebIDL::ExceptionOr<void> HTMLElement::set_content_editable(StringView content_e
         MUST(set_attribute(HTML::AttributeNames::contenteditable, "true"_string));
         return {};
     }
+    if (content_editable.equals_ignoring_ascii_case("plaintext-only"sv)) {
+        MUST(set_attribute(HTML::AttributeNames::contenteditable, "plaintext-only"_string));
+        return {};
+    }
     if (content_editable.equals_ignoring_ascii_case("false"sv)) {
         MUST(set_attribute(HTML::AttributeNames::contenteditable, "false"_string));
         return {};
     }
-    return WebIDL::SyntaxError::create(realm(), "Invalid contentEditable value, must be 'true', 'false', or 'inherit'"_string);
+    return WebIDL::SyntaxError::create(realm(), "Invalid contentEditable value, must be 'true', 'false', 'plaintext-only' or 'inherit'"_string);
 }
 
 // https://html.spec.whatwg.org/multipage/dom.html#set-the-inner-text-steps
@@ -239,7 +237,7 @@ GC::Ref<DOM::DocumentFragment> HTMLElement::rendered_text_fragment(StringView in
                 input = input.substring_view(1);
             }
 
-            // 3. Append the result of creating an element given document, br, and the HTML namespace to fragment.
+            // 3. Append the result of creating an element given document, "br", and the HTML namespace to fragment.
             auto br_element = DOM::create_element(document(), HTML::TagNames::br, Namespace::HTML).release_value();
             MUST(fragment->append_child(br_element));
         }
@@ -602,18 +600,20 @@ void HTMLElement::attribute_changed(FlyString const& name, Optional<String> cons
 
     if (name == HTML::AttributeNames::contenteditable) {
         if (!value.has_value()) {
+            // No value maps to the "inherit" state.
             m_content_editable_state = ContentEditableState::Inherit;
+        } else if (value->is_empty() || value->equals_ignoring_ascii_case("true"sv)) {
+            // "true", an empty string or a missing value map to the "true" state.
+            m_content_editable_state = ContentEditableState::True;
+        } else if (value->equals_ignoring_ascii_case("false"sv)) {
+            // "false" maps to the "false" state.
+            m_content_editable_state = ContentEditableState::False;
+        } else if (value->equals_ignoring_ascii_case("plaintext-only"sv)) {
+            // "plaintext-only" maps to the "plaintext-only" state.
+            m_content_editable_state = ContentEditableState::PlaintextOnly;
         } else {
-            if (value->is_empty() || value->equals_ignoring_ascii_case("true"sv)) {
-                // "true", an empty string or a missing value map to the "true" state.
-                m_content_editable_state = ContentEditableState::True;
-            } else if (value->equals_ignoring_ascii_case("false"sv)) {
-                // "false" maps to the "false" state.
-                m_content_editable_state = ContentEditableState::False;
-            } else {
-                // Having no such attribute or an invalid value maps to the "inherit" state.
-                m_content_editable_state = ContentEditableState::Inherit;
-            }
+            // Having an invalid value maps to the "inherit" state.
+            m_content_editable_state = ContentEditableState::Inherit;
         }
     }
 
@@ -722,8 +722,16 @@ Optional<ARIA::Role> HTMLElement::default_role() const
     if (local_name() == TagNames::article)
         return ARIA::Role::article;
     // https://www.w3.org/TR/html-aria/#el-aside
-    if (local_name() == TagNames::aside)
+    if (local_name() == TagNames::aside) {
+        // https://w3c.github.io/html-aam/#el-aside
+        for (auto const* ancestor = parent_element(); ancestor; ancestor = ancestor->parent_element()) {
+            if (first_is_one_of(ancestor->local_name(), TagNames::article, TagNames::aside, TagNames::nav, TagNames::section)
+                && accessible_name(document()).value().is_empty())
+                return ARIA::Role::generic;
+        }
+        // https://w3c.github.io/html-aam/#el-aside-ancestorbodymain
         return ARIA::Role::complementary;
+    }
     // https://www.w3.org/TR/html-aria/#el-b
     if (local_name() == TagNames::b)
         return ARIA::Role::generic;
@@ -736,6 +744,15 @@ Optional<ARIA::Role> HTMLElement::default_role() const
     // https://www.w3.org/TR/html-aria/#el-code
     if (local_name() == TagNames::code)
         return ARIA::Role::code;
+    // https://w3c.github.io/html-aam/#el-dd
+    if (local_name() == TagNames::dd)
+        return ARIA::Role::definition;
+    // https://wpt.fyi/results/html-aam/dir-role.tentative.html
+    if (local_name() == TagNames::dir)
+        return ARIA::Role::list;
+    // https://w3c.github.io/html-aam/#el-dt
+    if (local_name() == TagNames::dt)
+        return ARIA::Role::term;
     // https://www.w3.org/TR/html-aria/#el-dfn
     if (local_name() == TagNames::dfn)
         return ARIA::Role::term;
@@ -746,16 +763,28 @@ Optional<ARIA::Role> HTMLElement::default_role() const
     if (local_name() == TagNames::figure)
         return ARIA::Role::figure;
     // https://www.w3.org/TR/html-aria/#el-footer
-    if (local_name() == TagNames::footer) {
-        // TODO: If not a descendant of an article, aside, main, nav or section element, or an element with role=article, complementary, main, navigation or region then role=contentinfo
-        // Otherwise, role=generic
-        return ARIA::Role::generic;
-    }
     // https://www.w3.org/TR/html-aria/#el-header
-    if (local_name() == TagNames::header) {
-        // TODO: If not a descendant of an article, aside, main, nav or section element, or an element with role=article, complementary, main, navigation or region then role=banner
-        // Otherwise, role=generic
-        return ARIA::Role::generic;
+    if (local_name() == TagNames::footer || local_name() == TagNames::header) {
+        // If not a descendant of an article, aside, main, nav or section element, or an element with role=article,
+        // complementary, main, navigation or region then (footer) role=contentinfo (header) role=banner. Otherwise,
+        // role=generic.
+        for (auto const* ancestor = parent_element(); ancestor; ancestor = ancestor->parent_element()) {
+            if (first_is_one_of(ancestor->local_name(), TagNames::article, TagNames::aside, TagNames::main, TagNames::nav, TagNames::section)) {
+                if (local_name() == TagNames::footer)
+                    return ARIA::Role::sectionfooter;
+                return ARIA::Role::sectionheader;
+            }
+            if (first_is_one_of(ancestor->role_or_default(), ARIA::Role::article, ARIA::Role::complementary, ARIA::Role::main, ARIA::Role::navigation, ARIA::Role::region)) {
+                if (local_name() == TagNames::footer)
+                    return ARIA::Role::sectionfooter;
+                return ARIA::Role::sectionheader;
+            }
+        }
+        // then (footer) role=contentinfo.
+        if (local_name() == TagNames::footer)
+            return ARIA::Role::contentinfo;
+        // (header) role=banner
+        return ARIA::Role::banner;
     }
     // https://www.w3.org/TR/html-aria/#el-hgroup
     if (local_name() == TagNames::hgroup)
@@ -766,6 +795,9 @@ Optional<ARIA::Role> HTMLElement::default_role() const
     // https://www.w3.org/TR/html-aria/#el-main
     if (local_name() == TagNames::main)
         return ARIA::Role::main;
+    // https://www.w3.org/TR/html-aria/#el-mark
+    if (local_name() == TagNames::mark)
+        return ARIA::Role::mark;
     // https://www.w3.org/TR/html-aria/#el-nav
     if (local_name() == TagNames::nav)
         return ARIA::Role::navigation;
@@ -775,11 +807,16 @@ Optional<ARIA::Role> HTMLElement::default_role() const
     // https://www.w3.org/TR/html-aria/#el-samp
     if (local_name() == TagNames::samp)
         return ARIA::Role::generic;
+    // https://www.w3.org/TR/html-aria/#el-search
+    if (local_name() == TagNames::search)
+        return ARIA::Role::search;
     // https://www.w3.org/TR/html-aria/#el-section
     if (local_name() == TagNames::section) {
-        // TODO:  role=region if the section element has an accessible name
-        //        Otherwise, no corresponding role
-        return ARIA::Role::region;
+        // role=region if the section element has an accessible name
+        if (!accessible_name(document()).value().is_empty())
+            return ARIA::Role::region;
+        // Otherwise, role=generic
+        return ARIA::Role::generic;
     }
     // https://www.w3.org/TR/html-aria/#el-small
     if (local_name() == TagNames::small)
@@ -903,7 +940,7 @@ WebIDL::ExceptionOr<void> HTMLElement::set_popover(Optional<String> value)
     return {};
 }
 
-void HTMLElement::adjust_computed_style(CSS::StyleProperties& style)
+void HTMLElement::adjust_computed_style(CSS::ComputedProperties& style)
 {
     // https://drafts.csswg.org/css-display-3/#unbox
     if (local_name() == HTML::TagNames::wbr) {
@@ -912,9 +949,324 @@ void HTMLElement::adjust_computed_style(CSS::StyleProperties& style)
     }
 }
 
+// https://html.spec.whatwg.org/multipage/popover.html#check-popover-validity
+WebIDL::ExceptionOr<bool> HTMLElement::check_popover_validity(ExpectedToBeShowing expected_to_be_showing, ThrowExceptions throw_exceptions, GC::Ptr<DOM::Document> expected_document)
+{
+    // 1. If element's popover attribute is in the no popover state, then:
+    if (!popover().has_value()) {
+        // 1.1. If throwExceptions is true, then throw a "NotSupportedError" DOMException.
+        if (throw_exceptions == ThrowExceptions::Yes)
+            return WebIDL::NotSupportedError::create(realm(), "Element is not a popover"_string);
+        // 1.2. Return false.
+        return false;
+    }
+
+    // 2. If any of the following are true:
+    // - expectedToBeShowing is true and element's popover visibility state is not showing; or
+    // - expectedToBeShowing is false and element's popover visibility state is not hidden,
+    if ((expected_to_be_showing == ExpectedToBeShowing::Yes && m_popover_visibility_state != PopoverVisibilityState::Showing) || (expected_to_be_showing == ExpectedToBeShowing::No && m_popover_visibility_state != PopoverVisibilityState::Hidden)) {
+        // then return false.
+        return false;
+    }
+
+    // 3. If any of the following are true:
+    // - element is not connected;
+    // - element's node document is not fully active;
+    // - expectedDocument is not null and element's node document is not expectedDocument;
+    // - element is a dialog element and its is modal flage is set to true; or
+    // - FIXME: element's fullscreen flag is set,
+    // then:
+    // 3.1 If throwExceptions is true, then throw an "InvalidStateError" DOMException.
+    // 3.2 Return false.
+    if (!is_connected() || !document().is_fully_active() || (expected_document && &document() != expected_document) || (is<HTMLDialogElement>(*this) && verify_cast<HTMLDialogElement>(*this).is_modal())) {
+        if (throw_exceptions == ThrowExceptions::Yes)
+            return WebIDL::InvalidStateError::create(realm(), "Element is not in a valid state to show a popover"_string);
+        return false;
+    }
+
+    // 4. Return true.
+    return true;
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#dom-showpopover
+WebIDL::ExceptionOr<void> HTMLElement::show_popover_for_bindings(ShowPopoverOptions const& options)
+{
+    // 1. Let invoker be options["source"] if it exists; otherwise, null.
+    auto invoker = options.source;
+    // 2. Run show popover given this, true, and invoker.
+    return show_popover(ThrowExceptions::Yes, invoker);
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#show-popover
+WebIDL::ExceptionOr<void> HTMLElement::show_popover(ThrowExceptions throw_exceptions, GC::Ptr<HTMLElement> invoker)
+{
+    // 1. If the result of running check popover validity given element, false, throwExceptions, and null is false, then return.
+    if (!TRY(check_popover_validity(ExpectedToBeShowing::No, throw_exceptions, nullptr)))
+        return {};
+
+    // 2. Let document be element's node document.
+    auto& document = this->document();
+
+    // 3. Assert: element's popover invoker is null.
+    VERIFY(!m_popover_invoker);
+
+    // 4. Assert: element is not in document's top layer.
+    VERIFY(!in_top_layer());
+
+    // 5. Let nestedShow be element's popover showing or hiding.
+    auto nested_show = m_popover_showing_or_hiding;
+
+    // 6. Set element's popover showing or hiding to true.
+    m_popover_showing_or_hiding = true;
+
+    // 7. Let cleanupShowingFlag be the following steps:
+    auto cleanup_showing_flag = [&nested_show, this] {
+        // 7.1. If nestedShow is false, then set element's popover showing or hiding to false.
+        if (!nested_show)
+            m_popover_showing_or_hiding = false;
+    };
+
+    // 8. If the result of firing an event named beforetoggle, using ToggleEvent, with the cancelable attribute initialized to true, the oldState attribute initialized to "closed", and the newState attribute initialized to "open" at element is false, then run cleanupShowingFlag and return.
+    ToggleEventInit event_init {};
+    event_init.old_state = "closed"_string;
+    event_init.new_state = "open"_string;
+    event_init.cancelable = true;
+    if (!dispatch_event(ToggleEvent::create(realm(), HTML::EventNames::beforetoggle, move(event_init)))) {
+        cleanup_showing_flag();
+        return {};
+    }
+
+    // 9. If the result of running check popover validity given element, false, throwExceptions, and document is false, then run cleanupShowingFlag and return.
+    if (!TRY(check_popover_validity(ExpectedToBeShowing::No, throw_exceptions, nullptr))) {
+        cleanup_showing_flag();
+        return {};
+    }
+
+    // 10. Let shouldRestoreFocus be false.
+    bool should_restore_focus = false;
+
+    // 11. If element's popover attribute is in the auto state, then:
+    if (popover().has_value() && popover().value() == "auto"sv) {
+        // FIXME: 11.1. Let originalType be the value of element's popover attribute.
+        // FIXME: 11.2. Let ancestor be the result of running the topmost popover ancestor algorithm given element, invoker, and true.
+        // FIXME: 11.3. If ancestor is null, then set ancestor to document.
+        // FIXME: 11.4. Run hide all popovers until given ancestor, false, and not nestedShow.
+        // FIXME: 11.5. If originalType is not equal to the value of element's popover attribute, then throw a "InvalidStateError" DOMException.
+        // FIXME: 11.6. If the result of running check popover validity given element, false, throwExceptions, and document is false, then run cleanupShowingFlag and return.
+        // FIXME: 11.7. If the result of running topmost auto popover on document is null, then set shouldRestoreFocus to true.
+        // 11.8. Set element's popover close watcher to the result of establishing a close watcher given element's relevant global object, with:
+        m_popover_close_watcher = CloseWatcher::establish(*document.window());
+        // - cancelAction being to return true.
+        // We simply don't add an event listener for the cancel action.
+        // - closeAction being to hide a popover given element, true, true, and false.
+        auto close_callback_function = JS::NativeFunction::create(
+            realm(), [this](JS::VM&) {
+                MUST(hide_popover(FocusPreviousElement::Yes, FireEvents::Yes, ThrowExceptions::No));
+
+                return JS::js_undefined();
+            },
+            0, "", &realm());
+        auto close_callback = realm().heap().allocate<WebIDL::CallbackType>(*close_callback_function, realm());
+        m_popover_close_watcher->add_event_listener_without_options(HTML::EventNames::close, DOM::IDLEventListener::create(realm(), close_callback));
+    }
+
+    // FIXME: 12. Set element's previously focused element to null.
+    // FIXME: 13. Let originallyFocusedElement be document's focused area of the document's DOM anchor.
+
+    // 14. Add an element to the top layer given element.
+    document.add_an_element_to_the_top_layer(*this);
+    // 15. Set element's popover visibility state to showing.
+    m_popover_visibility_state = PopoverVisibilityState::Showing;
+    // 16. Set element's popover invoker to invoker.
+    m_popover_invoker = invoker;
+
+    // FIXME: 17. Set element's implicit anchor element to invoker.
+
+    // FIXME: 18. Run the popover focusing steps given element.
+
+    // 19. If shouldRestoreFocus is true and element's popover attribute is not in the no popover state
+    if (should_restore_focus && popover().has_value()) {
+        // FIXME: then set element's previously focused element to originallyFocusedElement.
+    }
+
+    // 20. Queue a popover toggle event task given element, "closed", and "open".
+    queue_a_popover_toggle_event_task("closed"_string, "open"_string);
+
+    // 21. Run cleanupShowingFlag.
+    cleanup_showing_flag();
+
+    return {};
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#dom-hidepopover
+WebIDL::ExceptionOr<void> HTMLElement::hide_popover_for_bindings()
+{
+    // The hidePopover() method steps are to run the hide popover algorithm given this, true, true, and true.
+    return hide_popover(FocusPreviousElement::Yes, FireEvents::Yes, ThrowExceptions::Yes);
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
+WebIDL::ExceptionOr<void> HTMLElement::hide_popover(FocusPreviousElement, FireEvents fire_events, ThrowExceptions throw_exceptions)
+{
+    // 1. If the result of running check popover validity given element, true, throwExceptions, and null is false, then return.
+    if (!TRY(check_popover_validity(ExpectedToBeShowing::Yes, throw_exceptions, nullptr)))
+        return {};
+
+    // 2. Let document be element's node document.
+    auto& document = this->document();
+
+    // 3. Let nestedHide be element's popover showing or hiding.
+    auto nested_hide = m_popover_showing_or_hiding;
+
+    // 4. Set element's popover showing or hiding to true.
+    m_popover_showing_or_hiding = true;
+
+    // 5. If nestedHide is true, then set fireEvents to false.
+    if (nested_hide)
+        fire_events = FireEvents::No;
+
+    // 6. Let cleanupSteps be the following steps:
+    auto cleanup_steps = [&nested_hide, this] {
+        // 6.1. If nestedHide is false, then set element's popover showing or hiding to false.
+        if (nested_hide)
+            m_popover_showing_or_hiding = false;
+        // 6.2. If element's popover close watcher is not null, then:
+        if (m_popover_close_watcher) {
+            // 6.2.1. Destroy element's popover close watcher.
+            m_popover_close_watcher->destroy();
+            // 6.2.2. Set element's popover close watcher to null.
+            m_popover_close_watcher = nullptr;
+        }
+    };
+
+    // 7. If element's popover attribute is in the auto state, then:
+    if (popover().has_value() && popover().value() == "auto"sv) {
+        // FIXME: 7.1. Run hide all popovers until given element, focusPreviousElement, and fireEvents.
+        // FIXME: 7.2. If the result of running check popover validity given element, true, and throwExceptions is false, then run cleanupSteps and return.
+    }
+    // FIXME: 8. Let autoPopoverListContainsElement be true if document's showing auto popover list's last item is element, otherwise false.
+
+    // 9. Set element's popover invoker to null.
+    m_popover_invoker = nullptr;
+
+    // 10. If fireEvents is true:
+    if (fire_events == FireEvents::Yes) {
+        // 10.1. Fire an event named beforetoggle, using ToggleEvent, with the oldState attribute initialized to "open" and the newState attribute initialized to "closed" at element.
+        ToggleEventInit event_init {};
+        event_init.old_state = "open"_string;
+        event_init.new_state = "closed"_string;
+        dispatch_event(ToggleEvent::create(realm(), HTML::EventNames::beforetoggle, move(event_init)));
+
+        // FIXME: 10.2. If autoPopoverListContainsElement is true and document's showing auto popover list's last item is not element, then run hide all popovers until given element, focusPreviousElement, and false.
+
+        // 10.3. If the result of running check popover validity given element, true, throwExceptions, and null is false, then run cleanupSteps and return.
+        if (!TRY(check_popover_validity(ExpectedToBeShowing::Yes, throw_exceptions, nullptr))) {
+            cleanup_steps();
+            return {};
+        }
+        // 10.4. Request an element to be removed from the top layer given element.
+        document.request_an_element_to_be_remove_from_the_top_layer(*this);
+    } else {
+        // 11. Otherwise, remove an element from the top layer immediately given element.
+        document.remove_an_element_from_the_top_layer_immediately(*this);
+    }
+
+    // 12. Set element's popover visibility state to hidden.
+    m_popover_visibility_state = PopoverVisibilityState::Hidden;
+
+    // 13. If fireEvents is true, then queue a popover toggle event task given element, "open", and "closed".
+    if (fire_events == FireEvents::Yes)
+        queue_a_popover_toggle_event_task("open"_string, "closed"_string);
+
+    // FIXME: 14. Let previouslyFocusedElement be element's previously focused element.
+
+    // FIXME: 15. If previouslyFocusedElement is not null, then:
+    // FIXME: 15.1. Set element's previously focused element to null.
+    // FIXME: 15.2. If focusPreviousElement is true and document's focused area of the document's DOM anchor is a shadow-including inclusive descendant of element, then run the focusing steps for previouslyFocusedElement; the viewport should not be scrolled by doing this step.
+
+    // 16. Run cleanupSteps.
+    cleanup_steps();
+
+    return {};
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#dom-togglepopover
+WebIDL::ExceptionOr<bool> HTMLElement::toggle_popover(TogglePopoverOptionsOrForceBoolean const& options)
+{
+    // 1. Let force be null.
+    Optional<bool> force;
+    GC::Ptr<HTMLElement> invoker;
+
+    // 2. If options is a boolean, set force to options.
+    options.visit(
+        [&force](bool forceBool) {
+            force = forceBool;
+        },
+        [&force, &invoker](TogglePopoverOptions options) {
+            // 3. Otherwise, if options["force"] exists, set force to options["force"].
+            force = options.force;
+            // 4. Let invoker be options["source"] if it exists; otherwise, null.
+            invoker = options.source;
+        });
+
+    // 5. If this's popover visibility state is showing, and force is null or false, then run the hide popover algorithm given this, true, true, and true.
+    if (popover_visibility_state() == PopoverVisibilityState::Showing && (!force.has_value() || !force.value()))
+        TRY(hide_popover(FocusPreviousElement::Yes, FireEvents::Yes, ThrowExceptions::Yes));
+    // 6. Otherwise, if force is not present or true, then run show popover given this true, and invoker.
+    else if (!force.has_value() || force.value())
+        TRY(show_popover(ThrowExceptions::Yes, invoker));
+    // 7. Otherwise:
+    else {
+        // 7.1 Let expectedToBeShowing be true if this's popover visibility state is showing; otherwise false.
+        ExpectedToBeShowing expected_to_be_showing = popover_visibility_state() == PopoverVisibilityState::Showing ? ExpectedToBeShowing::Yes : ExpectedToBeShowing::No;
+        // 7.2 Run check popover validity given expectedToBeShowing, true, and null.
+        TRY(check_popover_validity(expected_to_be_showing, ThrowExceptions::Yes, nullptr));
+    }
+    // 8. Return true if this's popover visibility state is showing; otherwise false.
+    return popover_visibility_state() == PopoverVisibilityState::Showing;
+}
+
+// https://html.spec.whatwg.org/multipage/popover.html#queue-a-popover-toggle-event-task
+void HTMLElement::queue_a_popover_toggle_event_task(String old_state, String new_state)
+{
+    // 1. If element's popover toggle task tracker is not null, then:
+    if (m_popover_toggle_task_tracker.has_value()) {
+        // 1. Set oldState to element's popover toggle task tracker's old state.
+        old_state = move(m_popover_toggle_task_tracker->old_state);
+
+        // 2. Remove element's popover toggle task tracker's task from its task queue.
+        HTML::main_thread_event_loop().task_queue().remove_tasks_matching([&](auto const& task) {
+            return task.id() == m_popover_toggle_task_tracker->task_id;
+        });
+
+        // 3. Set element's popover toggle task tracker to null.
+        m_popover_toggle_task_tracker->task_id = {};
+    }
+
+    // 2. Queue an element task given the DOM manipulation task source and element to run the following steps:
+    auto task_id = queue_an_element_task(HTML::Task::Source::DOMManipulation, [this, old_state, new_state = move(new_state)]() mutable {
+        // 1. Fire an event named toggle at element, using ToggleEvent, with the oldState attribute initialized to
+        //    oldState and the newState attribute initialized to newState.
+        ToggleEventInit event_init {};
+        event_init.old_state = move(old_state);
+        event_init.new_state = move(new_state);
+
+        dispatch_event(ToggleEvent::create(realm(), HTML::EventNames::toggle, move(event_init)));
+
+        // 2. Set element's popover toggle task tracker to null.
+        m_popover_toggle_task_tracker = {};
+    });
+
+    // 3. Set element's popover toggle task tracker to a struct with task set to the just-queued task and old state set to oldState.
+    m_popover_toggle_task_tracker = ToggleTaskTracker {
+        .task_id = task_id,
+        .old_state = move(old_state),
+    };
+}
+
 void HTMLElement::did_receive_focus()
 {
-    if (m_content_editable_state != ContentEditableState::True)
+    if (!first_is_one_of(m_content_editable_state, ContentEditableState::True, ContentEditableState::PlaintextOnly))
         return;
 
     auto editing_host = document().editing_host_manager();
@@ -935,10 +1287,19 @@ void HTMLElement::did_receive_focus()
 
 void HTMLElement::did_lose_focus()
 {
-    if (m_content_editable_state != ContentEditableState::True)
+    if (!first_is_one_of(m_content_editable_state, ContentEditableState::True, ContentEditableState::PlaintextOnly))
         return;
 
     document().editing_host_manager()->set_active_contenteditable_element(nullptr);
+}
+
+void HTMLElement::removed_from(Node* old_parent)
+{
+    Element::removed_from(old_parent);
+
+    // If removedNode's popover attribute is not in the no popover state, then run the hide popover algorithm given removedNode, false, false, and false.
+    if (popover().has_value())
+        MUST(hide_popover(FocusPreviousElement::No, FireEvents::No, ThrowExceptions::No));
 }
 
 // https://html.spec.whatwg.org/multipage/interaction.html#dom-accesskeylabel

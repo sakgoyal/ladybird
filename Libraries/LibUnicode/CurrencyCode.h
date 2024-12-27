@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include <AK/HashMap.h>
 #include <AK/Optional.h>
 #include <AK/Span.h>
 #include <AK/StringView.h>
@@ -17,6 +16,6 @@ struct CurrencyCode {
     Optional<int> minor_unit {};
 };
 
-Optional<CurrencyCode> get_currency_code(StringView currency);
+Optional<CurrencyCode const&> get_currency_code(StringView currency);
 
 }

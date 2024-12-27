@@ -6,7 +6,7 @@ describe("correct behavior", () => {
     test("basic functionality - time zone", () => {
         // 3.b. in the spec
         const plainDate = new Temporal.PlainDate(2021, 7, 6);
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = plainDate.toZonedDateTime(timeZone);
         expect(zonedDateTime.year).toBe(2021);
         expect(zonedDateTime.month).toBe(7);
@@ -17,15 +17,15 @@ describe("correct behavior", () => {
         expect(zonedDateTime.millisecond).toBe(0);
         expect(zonedDateTime.microsecond).toBe(0);
         expect(zonedDateTime.nanosecond).toBe(0);
-        expect(zonedDateTime.calendar).toBe(plainDate.calendar);
-        expect(zonedDateTime.timeZone).toBe(timeZone);
+        expect(zonedDateTime.calendarId).toBe(plainDate.calendarId);
+        expect(zonedDateTime.timeZoneId).toBe(timeZone);
     });
 
     test("basic functionality - time zone like object", () => {
         // 3.c. in the spec
         const plainDate = new Temporal.PlainDate(2021, 7, 6);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDate.toZonedDateTime({ timeZone });
+        const timeZone = "UTC";
+        const zonedDateTime = plainDate.toZonedDateTime(timeZone);
         expect(zonedDateTime.year).toBe(2021);
         expect(zonedDateTime.month).toBe(7);
         expect(zonedDateTime.day).toBe(6);
@@ -35,15 +35,15 @@ describe("correct behavior", () => {
         expect(zonedDateTime.millisecond).toBe(0);
         expect(zonedDateTime.microsecond).toBe(0);
         expect(zonedDateTime.nanosecond).toBe(0);
-        expect(zonedDateTime.calendar).toBe(plainDate.calendar);
-        expect(zonedDateTime.timeZone).toBe(timeZone);
+        expect(zonedDateTime.calendarId).toBe(plainDate.calendarId);
+        expect(zonedDateTime.timeZoneId).toBe(timeZone);
     });
 
     test("basic functionality - time zone like object and plain time", () => {
         // 3.c. in the spec
         const plainDate = new Temporal.PlainDate(2021, 7, 6);
         const plainTime = new Temporal.PlainTime(18, 14, 47, 123, 456, 789);
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = plainDate.toZonedDateTime({ timeZone, plainTime });
         expect(zonedDateTime.year).toBe(2021);
         expect(zonedDateTime.month).toBe(7);
@@ -54,8 +54,8 @@ describe("correct behavior", () => {
         expect(zonedDateTime.millisecond).toBe(123);
         expect(zonedDateTime.microsecond).toBe(456);
         expect(zonedDateTime.nanosecond).toBe(789);
-        expect(zonedDateTime.calendar).toBe(plainDate.calendar);
-        expect(zonedDateTime.timeZone).toBe(timeZone);
+        expect(zonedDateTime.calendarId).toBe(plainDate.calendarId);
+        expect(zonedDateTime.timeZoneId).toBe(timeZone);
     });
 
     test("basic functionality - time zone identifier", () => {
@@ -71,28 +71,8 @@ describe("correct behavior", () => {
         expect(zonedDateTime.millisecond).toBe(0);
         expect(zonedDateTime.microsecond).toBe(0);
         expect(zonedDateTime.nanosecond).toBe(0);
-        expect(zonedDateTime.calendar).toBe(plainDate.calendar);
-        expect(zonedDateTime.timeZone.id).toBe("UTC");
-    });
-
-    test("time zone fast path returns if it is passed a Temporal.TimeZone instance", () => {
-        const plainDate = new Temporal.PlainDate(2021, 7, 6);
-
-        // This is obseravble via there being no property lookups (avoiding a "timeZone" property lookup in this case)
-        let madeObservableHasPropertyLookup = false;
-        class TimeZone extends Temporal.TimeZone {
-            constructor() {
-                super("UTC");
-            }
-
-            get timeZone() {
-                madeObservableHasPropertyLookup = true;
-                return this;
-            }
-        }
-        const timeZone = new TimeZone();
-        plainDate.toZonedDateTime(timeZone);
-        expect(madeObservableHasPropertyLookup).toBeFalse();
+        expect(zonedDateTime.calendarId).toBe(plainDate.calendarId);
+        expect(zonedDateTime.timeZoneId).toBe("UTC");
     });
 });
 

@@ -83,8 +83,8 @@ public:
     String const& scheme() const { return m_data->scheme; }
     String const& username() const { return m_data->username; }
     String const& password() const { return m_data->password; }
-    Host const& host() const { return m_data->host; }
-    ErrorOr<String> serialized_host() const;
+    Optional<Host> const& host() const { return m_data->host; }
+    String serialized_host() const;
     ByteString basename() const;
     Optional<String> const& query() const { return m_data->query; }
     Optional<String> const& fragment() const { return m_data->fragment; }
@@ -117,10 +117,10 @@ public:
     }
 
     String serialize_path() const;
-    ByteString serialize(ExcludeFragment = ExcludeFragment::No) const;
+    String serialize(ExcludeFragment = ExcludeFragment::No) const;
     ByteString serialize_for_display() const;
-    ByteString to_byte_string() const { return serialize(); }
-    ErrorOr<String> to_string() const;
+    ByteString to_byte_string() const { return serialize().to_byte_string(); }
+    String to_string() const { return serialize(); }
 
     Origin origin() const;
 
@@ -171,7 +171,7 @@ private:
         String password;
 
         // A URL’s host is null or a host. It is initially null.
-        Host host;
+        Optional<Host> host;
 
         // A URL’s port is either null or a 16-bit unsigned integer that identifies a networking port. It is initially null.
         Optional<u16> port;
@@ -199,6 +199,9 @@ URL create_with_url_or_path(ByteString const&);
 URL create_with_file_scheme(ByteString const& path, ByteString const& fragment = {}, ByteString const& hostname = {});
 URL create_with_data(StringView mime_type, StringView payload, bool is_base64 = false);
 
+bool is_public_suffix(StringView host);
+Optional<String> get_public_suffix(StringView host);
+
 }
 
 template<>
@@ -211,5 +214,5 @@ struct AK::Formatter<URL::URL> : AK::Formatter<StringView> {
 
 template<>
 struct AK::Traits<URL::URL> : public AK::DefaultTraits<URL::URL> {
-    static unsigned hash(URL::URL const& url) { return url.to_byte_string().hash(); }
+    static unsigned hash(URL::URL const& url) { return url.to_string().hash(); }
 };

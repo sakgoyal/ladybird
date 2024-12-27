@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2022-2023, networkException <networkexception@serenityos.org>
  * Copyright (c) 2024, Tim Ledbetter <timledbetter@gmail.com>
+ * Copyright (c) 2024, Shannon Booth <shannon@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -9,6 +10,8 @@
 #include <LibGC/Function.h>
 #include <LibJS/Runtime/ModuleRequest.h>
 #include <LibTextCodec/Decoder.h>
+#include <LibWeb/Bindings/MainThreadVM.h>
+#include <LibWeb/Bindings/PrincipalHostDefined.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOMURL/DOMURL.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
@@ -84,77 +87,91 @@ ByteString module_type_from_module_request(JS::ModuleRequest const& module_reque
 // https://whatpr.org/html/9893/webappapis.html#resolve-a-module-specifier
 WebIDL::ExceptionOr<URL::URL> resolve_module_specifier(Optional<Script&> referring_script, ByteString const& specifier)
 {
-    // 1. Let settingsObject and baseURL be null.
-    Optional<EnvironmentSettingsObject&> settings_object;
-    Optional<URL::URL const&> base_url;
+    auto& vm = Bindings::main_thread_vm();
+
+    // 1. Let realm and baseURL be null.
+    GC::Ptr<JS::Realm> realm;
+    Optional<URL::URL> base_url;
 
     // 2. If referringScript is not null, then:
     if (referring_script.has_value()) {
-        // 1. Set settingsObject to referringScript's settings object.
-        settings_object = referring_script->settings_object();
+        // 1. Set realm to referringScript's realm.
+        realm = referring_script->realm();
 
         // 2. Set baseURL to referringScript's base URL.
         base_url = referring_script->base_url();
     }
     // 3. Otherwise:
     else {
-        // 1. Assert: there is a current principal settings object.
-        // NOTE: This is handled by the current_principal_settings_object() accessor.
+        // 1. Assert: there is a current realm.
+        VERIFY(vm.current_realm());
 
-        // 2. Set settingsObject to the current principal settings object.
-        settings_object = current_principal_settings_object();
+        // 2. Set realm to the current realm.
+        realm = *vm.current_realm();
 
-        // 3. Set baseURL to settingsObject's API base URL.
-        base_url = settings_object->api_base_url();
+        // 3. Set baseURL to realm's principal realm's settings object's API base URL.
+        base_url = Bindings::principal_host_defined_environment_settings_object(HTML::principal_realm(*realm)).api_base_url();
     }
 
     // 4. Let importMap be an empty import map.
     ImportMap import_map;
 
-    // 5. If settingsObject's global object implements Window, then set importMap to settingsObject's global object's import map.
-    if (is<Window>(settings_object->global_object()))
-        import_map = verify_cast<Window>(settings_object->global_object()).import_map();
+    // 5. If realm's global object implements Window, then set importMap to settingsObject's global object's import map.
+    if (is<Window>(realm->global_object()))
+        import_map = verify_cast<Window>(realm->global_object()).import_map();
 
-    // 6. Let baseURLString be baseURL, serialized.
-    auto base_url_string = base_url->serialize();
+    // 6. Let serializedBaseURL be baseURL, serialized.
+    auto serialized_base_url = base_url->serialize();
 
     // 7. Let asURL be the result of resolving a URL-like module specifier given specifier and baseURL.
     auto as_url = resolve_url_like_module_specifier(specifier, *base_url);
 
     // 8. Let normalizedSpecifier be the serialization of asURL, if asURL is non-null; otherwise, specifier.
-    auto normalized_specifier = as_url.has_value() ? as_url->serialize() : specifier;
+    auto normalized_specifier = as_url.has_value() ? as_url->serialize().to_byte_string() : specifier;
 
-    // 9. For each scopePrefix → scopeImports of importMap's scopes:
+    // 9. Let result be a URL-or-null, initially null.
+    Optional<URL::URL> result;
+
+    // 10. For each scopePrefix → scopeImports of importMap's scopes:
     for (auto const& entry : import_map.scopes()) {
         // FIXME: Clarify if the serialization steps need to be run here. The steps below assume
         //        scopePrefix to be a string.
         auto const& scope_prefix = entry.key.serialize();
         auto const& scope_imports = entry.value;
 
-        // 1. If scopePrefix is baseURLString, or if scopePrefix ends with U+002F (/) and scopePrefix is a code unit prefix of baseURLString, then:
-        if (scope_prefix == base_url_string || (scope_prefix.ends_with("/"sv) && Infra::is_code_unit_prefix(scope_prefix, base_url_string))) {
+        // 1. If scopePrefix is serializedBaseURL, or if scopePrefix ends with U+002F (/) and scopePrefix is a code unit prefix of serializedBaseURL, then:
+        if (scope_prefix == serialized_base_url || (scope_prefix.ends_with('/') && Infra::is_code_unit_prefix(scope_prefix, serialized_base_url))) {
             // 1. Let scopeImportsMatch be the result of resolving an imports match given normalizedSpecifier, asURL, and scopeImports.
             auto scope_imports_match = TRY(resolve_imports_match(normalized_specifier, as_url, scope_imports));
 
-            // 2. If scopeImportsMatch is not null, then return scopeImportsMatch.
-            if (scope_imports_match.has_value())
-                return scope_imports_match.release_value();
+            // 2. If scopeImportsMatch is not null, then set result to scopeImportsMatch, and break.
+            if (scope_imports_match.has_value()) {
+                result = scope_imports_match.release_value();
+                break;
+            }
         }
     }
 
-    // 10. Let topLevelImportsMatch be the result of resolving an imports match given normalizedSpecifier, asURL, and importMap's imports.
-    auto top_level_imports_match = TRY(resolve_imports_match(normalized_specifier, as_url, import_map.imports()));
+    // 11. If result is null, set result be the result of resolving an imports match given normalizedSpecifier, asURL, and importMap's imports.
+    if (!result.has_value())
+        result = TRY(resolve_imports_match(normalized_specifier, as_url, import_map.imports()));
 
-    // 11. If topLevelImportsMatch is not null, then return topLevelImportsMatch.
-    if (top_level_imports_match.has_value())
-        return top_level_imports_match.release_value();
+    // 12. If result is null, set it to asURL.
+    // Spec-Note: By this point, if result was null, specifier wasn't remapped to anything by importMap, but it might have been able to be turned into a URL.
+    if (!result.has_value())
+        result = as_url;
 
-    // 12. If asURL is not null, then return asURL.
-    if (as_url.has_value())
-        return as_url.release_value();
+    // 13. If result is not null, then:
+    if (result.has_value()) {
+        // 1. Add module to resolved module set given realm, serializedBaseURL, normalizedSpecifier, and asURL.
+        add_module_to_resolved_module_set(*realm, serialized_base_url, MUST(String::from_byte_string(normalized_specifier)), as_url);
 
-    // 13. Throw a TypeError indicating that specifier was a bare specifier, but was not remapped to anything by importMap.
-    return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, String::formatted("Failed to resolve non relative module specifier '{}' from an import map.", specifier).release_value_but_fixme_should_propagate_errors() };
+        // 2. Return result.
+        return result.release_value();
+    }
+
+    // 14. Throw a TypeError indicating that specifier was a bare specifier, but was not remapped to anything by importMap.
+    return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, MUST(String::formatted("Failed to resolve non relative module specifier '{}' from an import map.", specifier)) };
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#resolving-an-imports-match
@@ -197,7 +214,7 @@ WebIDL::ExceptionOr<Optional<URL::URL>> resolve_imports_match(ByteString const& 
             auto after_prefix = normalized_specifier.substring(specifier_key.length());
 
             // 4. Assert: resolutionResult, serialized, ends with U+002F (/), as enforced during parsing.
-            VERIFY(resolution_result->serialize().ends_with("/"sv));
+            VERIFY(resolution_result->serialize().ends_with('/'));
 
             // 5. Let url be the result of URL parsing afterPrefix with resolutionResult.
             auto url = DOMURL::parse(after_prefix, *resolution_result);
@@ -282,39 +299,32 @@ static void set_up_module_script_request(Fetch::Infrastructure::Request& request
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#get-the-descendant-script-fetch-options
-WebIDL::ExceptionOr<ScriptFetchOptions> get_descendant_script_fetch_options(ScriptFetchOptions const& original_options, URL::URL const& url, EnvironmentSettingsObject& settings_object)
+ScriptFetchOptions get_descendant_script_fetch_options(ScriptFetchOptions const& original_options, URL::URL const& url, EnvironmentSettingsObject& settings_object)
 {
     // 1. Let newOptions be a copy of originalOptions.
     auto new_options = original_options;
 
-    // 2. Let integrity be the empty string.
-    String integrity;
+    // 2. Let integrity be the result of resolving a module integrity metadata with url and settingsObject.
+    String integrity = resolve_a_module_integrity_metadata(url, settings_object);
 
-    // 3. If settingsObject's global object is a Window object, then set integrity to the result of resolving a module integrity metadata with url and settingsObject.
-    if (is<Window>(settings_object.global_object()))
-        integrity = TRY(resolve_a_module_integrity_metadata(url, settings_object));
-
-    // 4. Set newOptions's integrity metadata to integrity.
+    // 3. Set newOptions's integrity metadata to integrity.
     new_options.integrity_metadata = integrity;
 
-    // 5. Set newOptions's fetch priority to "auto".
+    // 4. Set newOptions's fetch priority to "auto".
     new_options.fetch_priority = Fetch::Infrastructure::Request::Priority::Auto;
 
-    // 6. Return newOptions.
+    // 5. Return newOptions.
     return new_options;
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#resolving-a-module-integrity-metadata
-WebIDL::ExceptionOr<String> resolve_a_module_integrity_metadata(const URL::URL& url, EnvironmentSettingsObject& settings_object)
+String resolve_a_module_integrity_metadata(const URL::URL& url, EnvironmentSettingsObject& settings_object)
 {
-    // 1. Assert: settingsObject's global object is a Window object.
-    VERIFY(is<Window>(settings_object.global_object()));
+    // 1. Let map be settingsObject's global object's import map.
+    auto map = verify_cast<Window>(settings_object.global_object()).import_map();
 
-    // 2. Let map be settingsObject's global object's import map.
-    auto map = static_cast<Window const&>(settings_object.global_object()).import_map();
-
-    // 3. If map's integrity[url] does not exist, then return the empty string.
-    // 4. Return map's integrity[url].
+    // 2. If map's integrity[url] does not exist, then return the empty string.
+    // 3. Return map's integrity[url].
     return MUST(String::from_byte_string(map.integrity().get(url).value_or("")));
 }
 
@@ -470,7 +480,7 @@ WebIDL::ExceptionOr<GC::Ref<ClassicScript>> fetch_a_classic_worker_imported_scri
     auto& vm = realm.vm();
 
     // 1. Let response be null.
-    GC::Ptr<Fetch::Infrastructure::Response> response = nullptr;
+    IGNORE_USE_IN_ESCAPING_LAMBDA GC::Ptr<Fetch::Infrastructure::Response> response = nullptr;
 
     // 2. Let bodyBytes be null.
     Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes;
@@ -505,6 +515,7 @@ WebIDL::ExceptionOr<GC::Ref<ClassicScript>> fetch_a_classic_worker_imported_scri
     }
 
     // 5. Pause until response is not null.
+    // FIXME: Consider using a "response holder" to avoid needing to annotate response as IGNORE_USE_IN_ESCAPING_LAMBDA.
     auto& event_loop = settings_object.responsible_event_loop();
     event_loop.spin_until(GC::create_function(vm.heap(), [&]() -> bool {
         return response;
@@ -854,9 +865,6 @@ void fetch_single_module_script(JS::Realm& realm,
 // https://whatpr.org/html/9893/webappapis.html#fetch-a-module-script-tree
 void fetch_external_module_script_graph(JS::Realm& realm, URL::URL const& url, EnvironmentSettingsObject& settings_object, ScriptFetchOptions const& options, OnFetchScriptComplete on_complete)
 {
-    // 1. Disallow further import maps given settingsObject's realm.
-    disallow_further_import_maps(settings_object.realm());
-
     auto steps = create_on_fetch_script_complete(realm.heap(), [&realm, &settings_object, on_complete, url](auto result) mutable {
         // 1. If result is null, run onComplete given null, and abort these steps.
         if (!result) {
@@ -869,27 +877,17 @@ void fetch_external_module_script_graph(JS::Realm& realm, URL::URL const& url, E
         fetch_descendants_of_and_link_a_module_script(realm, module_script, settings_object, Fetch::Infrastructure::Request::Destination::Script, nullptr, on_complete);
     });
 
-    // 2. Fetch a single module script given url, settingsObject, "script", options, settingsObject's realm, "client", true, and with the following steps given result:
+    // 1. Fetch a single module script given url, settingsObject, "script", options, settingsObject's realm, "client", true, and with the following steps given result:
     fetch_single_module_script(realm, url, settings_object, Fetch::Infrastructure::Request::Destination::Script, options, settings_object.realm(), Web::Fetch::Infrastructure::Request::Referrer::Client, {}, TopLevelModule::Yes, nullptr, steps);
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-an-inline-module-script-graph
-// https://whatpr.org/html/9893/webappapis.html#fetch-an-inline-module-script-graph
 void fetch_inline_module_script_graph(JS::Realm& realm, ByteString const& filename, ByteString const& source_text, URL::URL const& base_url, EnvironmentSettingsObject& settings_object, OnFetchScriptComplete on_complete)
 {
-    // 1. Disallow further import maps given settingsObject's realm.
-    disallow_further_import_maps(settings_object.realm());
-
-    // 2. Let script be the result of creating a JavaScript module script using sourceText, settingsObject's realm, baseURL, and options.
+    // 1. Let script be the result of creating a JavaScript module script using sourceText, settingsObject's realm, baseURL, and options.
     auto script = JavaScriptModuleScript::create(filename, source_text.view(), settings_object.realm(), base_url).release_value_but_fixme_should_propagate_errors();
 
-    // 3. If script is null, run onComplete given null, and return.
-    if (!script) {
-        on_complete->function()(nullptr);
-        return;
-    }
-
-    // 5. Fetch the descendants of and link script, given settingsObject, "script", and onComplete.
+    // 2. Fetch the descendants of and link script, given settingsObject, "script", and onComplete.
     fetch_descendants_of_and_link_a_module_script(realm, *script, settings_object, Fetch::Infrastructure::Request::Destination::Script, nullptr, on_complete);
 }
 

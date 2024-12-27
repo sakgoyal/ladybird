@@ -16,6 +16,7 @@
 #include <LibJS/Forward.h>
 #include <LibJS/Runtime/Array.h>
 #include <LibJS/Runtime/ArrayBuffer.h>
+#include <LibJS/Runtime/ArrayBufferConstructor.h>
 #include <LibJS/Runtime/BigInt.h>
 #include <LibJS/Runtime/BigIntObject.h>
 #include <LibJS/Runtime/BooleanObject.h>
@@ -26,6 +27,7 @@
 #include <LibJS/Runtime/PrimitiveString.h>
 #include <LibJS/Runtime/RegExpObject.h>
 #include <LibJS/Runtime/Set.h>
+#include <LibJS/Runtime/SharedArrayBufferConstructor.h>
 #include <LibJS/Runtime/StringObject.h>
 #include <LibJS/Runtime/TypedArray.h>
 #include <LibJS/Runtime/VM.h>
@@ -46,6 +48,7 @@
 #include <LibWeb/Geometry/DOMRectReadOnly.h>
 #include <LibWeb/HTML/MessagePort.h>
 #include <LibWeb/HTML/StructuredSerialize.h>
+#include <LibWeb/WebIDL/DOMException.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
 
 namespace Web::HTML {
@@ -152,6 +155,7 @@ public:
     Serializer(JS::VM& vm, SerializationMemory& memory, bool for_storage)
         : m_vm(vm)
         , m_memory(memory)
+        , m_next_id(memory.size())
         , m_for_storage(for_storage)
     {
     }
@@ -564,8 +568,8 @@ WebIDL::ExceptionOr<void> serialize_array_buffer(JS::VM& vm, Vector<u32>& vector
 {
     // 13. Otherwise, if value has an [[ArrayBufferData]] internal slot, then:
 
-    // FIXME: 1.  If IsSharedArrayBuffer(value) is true, then:
-    if (false) {
+    // 1.  If IsSharedArrayBuffer(value) is true, then:
+    if (array_buffer.is_shared_array_buffer()) {
         // 1. If the current principal settings object's cross-origin isolated capability is false, then throw a "DataCloneError" DOMException.
         // NOTE: This check is only needed when serializing (and not when deserializing) as the cross-origin isolated capability cannot change
         //       over time and a SharedArrayBuffer cannot leave an agent cluster.
@@ -576,12 +580,23 @@ WebIDL::ExceptionOr<void> serialize_array_buffer(JS::VM& vm, Vector<u32>& vector
         if (for_storage)
             return WebIDL::DataCloneError::create(*vm.current_realm(), "Cannot serialize SharedArrayBuffer for storage"_string);
 
-        // FIXME: 3. If value has an [[ArrayBufferMaxByteLength]] internal slot, then set serialized to { [[Type]]: "GrowableSharedArrayBuffer",
-        //           [[ArrayBufferData]]: value.[[ArrayBufferData]], [[ArrayBufferByteLengthData]]: value.[[ArrayBufferByteLengthData]],
-        //           [[ArrayBufferMaxByteLength]]: value.[[ArrayBufferMaxByteLength]], [[AgentCluster]]: the surrounding agent's agent cluster }.
-        // FIXME: 4. Otherwise, set serialized to { [[Type]]: "SharedArrayBuffer", [[ArrayBufferData]]: value.[[ArrayBufferData]],
-        //           [[ArrayBufferByteLength]]: value.[[ArrayBufferByteLength]], [[AgentCluster]]: the surrounding agent's agent cluster }.
+        if (!array_buffer.is_fixed_length()) {
+            // 3. If value has an [[ArrayBufferMaxByteLength]] internal slot, then set serialized to { [[Type]]: "GrowableSharedArrayBuffer",
+            //           [[ArrayBufferData]]: value.[[ArrayBufferData]], [[ArrayBufferByteLengthData]]: value.[[ArrayBufferByteLengthData]],
+            //           [[ArrayBufferMaxByteLength]]: value.[[ArrayBufferMaxByteLength]],
+            //           FIXME: [[AgentCluster]]: the surrounding agent's agent cluster }.
+            serialize_enum(vector, ValueTag::GrowableSharedArrayBuffer);
+            TRY(serialize_bytes(vm, vector, array_buffer.buffer().bytes()));
+            serialize_primitive_type(vector, array_buffer.max_byte_length());
+        } else {
+            // 4. Otherwise, set serialized to { [[Type]]: "SharedArrayBuffer", [[ArrayBufferData]]: value.[[ArrayBufferData]],
+            //           [[ArrayBufferByteLength]]: value.[[ArrayBufferByteLength]],
+            //           FIXME: [[AgentCluster]]: the surrounding agent's agent cluster }.
+            serialize_enum(vector, ValueTag::SharedArrayBuffer);
+            TRY(serialize_bytes(vm, vector, array_buffer.buffer().bytes()));
+        }
     }
+
     // 2. Otherwise:
     else {
         // 1. If IsDetachedBuffer(value) is true, then throw a "DataCloneError" DOMException.
@@ -598,9 +613,12 @@ WebIDL::ExceptionOr<void> serialize_array_buffer(JS::VM& vm, Vector<u32>& vector
         // 4. Perform CopyDataBlockBytes(dataCopy, 0, value.[[ArrayBufferData]], 0, size).
         JS::copy_data_block_bytes(data_copy.buffer(), 0, array_buffer.buffer(), 0, size);
 
-        // FIXME: 5. If value has an [[ArrayBufferMaxByteLength]] internal slot, then set serialized to { [[Type]]: "ResizableArrayBuffer",
+        // 5. If value has an [[ArrayBufferMaxByteLength]] internal slot, then set serialized to { [[Type]]: "ResizableArrayBuffer",
         //    [[ArrayBufferData]]: dataCopy, [[ArrayBufferByteLength]]: size, [[ArrayBufferMaxByteLength]]: value.[[ArrayBufferMaxByteLength]] }.
-        if (false) {
+        if (!array_buffer.is_fixed_length()) {
+            serialize_enum(vector, ValueTag::ResizeableArrayBuffer);
+            TRY(serialize_bytes(vm, vector, data_copy.buffer().bytes()));
+            serialize_primitive_type(vector, array_buffer.max_byte_length());
         }
         // 6. Otherwise, set serialized to { [[Type]]: "ArrayBuffer", [[ArrayBufferData]]: dataCopy, [[ArrayBufferByteLength]]: size }.
         else {
@@ -634,14 +652,19 @@ WebIDL::ExceptionOr<void> serialize_viewed_array_buffer(JS::VM& vm, Vector<u32>&
     }
 
     // 2. Let buffer be the value of value's [[ViewedArrayBuffer]] internal slot.
-    auto* buffer = view.viewed_array_buffer();
+    JS::Value buffer = view.viewed_array_buffer();
 
     // 3. Let bufferSerialized be ? StructuredSerializeInternal(buffer, forStorage, memory).
-    auto buffer_serialized = TRY(structured_serialize_internal(vm, JS::Value(buffer), for_storage, memory));
+    auto buffer_serialized = TRY(structured_serialize_internal(vm, buffer, for_storage, memory));
 
     // 4. Assert: bufferSerialized.[[Type]] is "ArrayBuffer", "ResizableArrayBuffer", "SharedArrayBuffer", or "GrowableSharedArrayBuffer".
-    // NOTE: We currently only implement this for ArrayBuffer
-    VERIFY(buffer_serialized[0] == ValueTag::ArrayBuffer);
+    // NOTE: Object reference + memory check is required when ArrayBuffer is transfered.
+    auto tag = buffer_serialized[0];
+    VERIFY(tag == ValueTag::ArrayBuffer
+        || tag == ValueTag::ResizeableArrayBuffer
+        || tag == ValueTag::SharedArrayBuffer
+        || tag == ValueTag::GrowableSharedArrayBuffer
+        || (tag == ValueTag::ObjectReference && memory.contains(buffer)));
 
     // 5. If value has a [[DataView]] internal slot, then set serialized to { [[Type]]: "ArrayBufferView", [[Constructor]]: "DataView",
     //    [[ArrayBufferSerialized]]: bufferSerialized, [[ByteLength]]: value.[[ByteLength]], [[ByteOffset]]: value.[[ByteOffset]] }.
@@ -771,8 +794,39 @@ public:
             value = TRY(deserialize_reg_exp_object(*m_vm.current_realm(), m_serialized, m_position));
             break;
         }
-        // FIXME: 12. Otherwise, if serialized.[[Type]] is "SharedArrayBuffer", then:
-        // FIXME: 13. Otherwise, if serialized.[[Type]] is "GrowableSharedArrayBuffer", then:
+        // 12. Otherwise, if serialized.[[Type]] is "SharedArrayBuffer", then:
+        case ValueTag::SharedArrayBuffer: {
+            // FIXME: 1. If targetRealm's corresponding agent cluster is not serialized.[[AgentCluster]], then throw a "DataCloneError" DOMException.
+            // 2. Otherwise, set value to a new SharedArrayBuffer object in targetRealm whose [[ArrayBufferData]] internal slot value is serialized.[[ArrayBufferData]]
+            //    and whose [[ArrayBufferByteLength]] internal slot value is serialized.[[ArrayBufferByteLength]].
+            auto* realm = m_vm.current_realm();
+            auto bytes_or_error = deserialize_bytes(m_vm, m_serialized, m_position);
+            if (bytes_or_error.is_error())
+                return WebIDL::DataCloneError::create(*realm, "out of memory"_string);
+            auto bytes = bytes_or_error.release_value();
+            JS::ArrayBuffer* buffer = TRY(JS::allocate_shared_array_buffer(m_vm, realm->intrinsics().shared_array_buffer_constructor(), bytes.size()));
+            bytes.span().copy_to(buffer->buffer().span());
+            value = buffer;
+            break;
+        }
+        // 13. Otherwise, if serialized.[[Type]] is "GrowableSharedArrayBuffer", then:
+        case ValueTag::GrowableSharedArrayBuffer: {
+            // FIXME: 1. If targetRealm's corresponding agent cluster is not serialized.[[AgentCluster]], then throw a "DataCloneError" DOMException.
+            // 2. Otherwise, set value to a new SharedArrayBuffer object in targetRealm whose [[ArrayBufferData]] internal slot value is serialized.[[ArrayBufferData]],
+            //    whose [[ArrayBufferByteLengthData]] internal slot value is serialized.[[ArrayBufferByteLengthData]],
+            //    and whose [[ArrayBufferMaxByteLength]] internal slot value is serialized.[[ArrayBufferMaxByteLength]].
+            auto* realm = m_vm.current_realm();
+            auto bytes_or_error = deserialize_bytes(m_vm, m_serialized, m_position);
+            if (bytes_or_error.is_error())
+                return WebIDL::DataCloneError::create(*realm, "out of memory"_string);
+            size_t max_byte_length = deserialize_primitive_type<size_t>(m_serialized, m_position);
+            auto bytes = bytes_or_error.release_value();
+            JS::ArrayBuffer* buffer = TRY(JS::allocate_shared_array_buffer(m_vm, realm->intrinsics().shared_array_buffer_constructor(), bytes.size()));
+            bytes.span().copy_to(buffer->buffer().span());
+            buffer->set_max_byte_length(max_byte_length);
+            value = buffer;
+            break;
+        }
         // 14. Otherwise, if serialized.[[Type]] is "ArrayBuffer", then set value to a new ArrayBuffer object in targetRealm whose [[ArrayBufferData]] internal slot value is serialized.[[ArrayBufferData]], and whose [[ArrayBufferByteLength]] internal slot value is serialized.[[ArrayBufferByteLength]].
         case ValueTag::ArrayBuffer: {
             auto* realm = m_vm.current_realm();
@@ -783,7 +837,19 @@ public:
             value = JS::ArrayBuffer::create(*realm, bytes_or_error.release_value());
             break;
         }
-        // FIXME: 15. Otherwise, if serialized.[[Type]] is "ResizableArrayBuffer", then set value to a new ArrayBuffer object in targetRealm whose [[ArrayBufferData]] internal slot value is serialized.[[ArrayBufferData]], whose [[ArrayBufferByteLength]] internal slot value is serialized.[[ArrayBufferByteLength]], and whose [[ArrayBufferMaxByteLength]] internal slot value is a serialized.[[ArrayBufferMaxByteLength]].
+        // 15. Otherwise, if serialized.[[Type]] is "ResizableArrayBuffer", then set value to a new ArrayBuffer object in targetRealm whose [[ArrayBufferData]] internal slot value is serialized.[[ArrayBufferData]], whose [[ArrayBufferByteLength]] internal slot value is serialized.[[ArrayBufferByteLength]], and whose [[ArrayBufferMaxByteLength]] internal slot value is a serialized.[[ArrayBufferMaxByteLength]].
+        case ValueTag::ResizeableArrayBuffer: {
+            auto* realm = m_vm.current_realm();
+            // If this throws an exception, catch it, and then throw a "DataCloneError" DOMException.
+            auto bytes_or_error = deserialize_bytes(m_vm, m_serialized, m_position);
+            if (bytes_or_error.is_error())
+                return WebIDL::DataCloneError::create(*m_vm.current_realm(), "out of memory"_string);
+            size_t max_byte_length = deserialize_primitive_type<size_t>(m_serialized, m_position);
+            auto buffer = JS::ArrayBuffer::create(*realm, bytes_or_error.release_value());
+            buffer->set_max_byte_length(max_byte_length);
+            value = buffer;
+            break;
+        }
         // 16. Otherwise, if serialized.[[Type]] is "ArrayBufferView", then:
         case ValueTag::ArrayBufferView: {
             auto* realm = m_vm.current_realm();
@@ -896,7 +962,7 @@ public:
                 return WebIDL::DataCloneError::create(realm, "Unsupported type"_string);
 
             // 3. Set value to a new instance of the interface identified by interfaceName, created in targetRealm.
-            value = TRY(create_serialized_type(interface_name, realm));
+            value = create_serialized_type(interface_name, realm);
 
             // 4. Set deep to true.
             deep = true;
@@ -974,10 +1040,10 @@ public:
 private:
     JS::VM& m_vm;
     ReadonlySpan<u32> m_serialized;
-    GC::MarkedVector<JS::Value> m_memory; // Index -> JS value
+    GC::RootVector<JS::Value> m_memory; // Index -> JS value
     size_t m_position { 0 };
 
-    static WebIDL::ExceptionOr<GC::Ref<Bindings::PlatformObject>> create_serialized_type(StringView interface_name, JS::Realm& realm)
+    static GC::Ref<Bindings::PlatformObject> create_serialized_type(StringView interface_name, JS::Realm& realm)
     {
         if (interface_name == "Blob"sv)
             return FileAPI::Blob::create(realm);
@@ -985,6 +1051,8 @@ private:
             return FileAPI::File::create(realm);
         if (interface_name == "FileList"sv)
             return FileAPI::FileList::create(realm);
+        if (interface_name == "DOMException"sv)
+            return WebIDL::DOMException::create(realm);
         if (interface_name == "DOMMatrixReadOnly"sv)
             return Geometry::DOMMatrixReadOnly::create(realm);
         if (interface_name == "DOMMatrix"sv)
@@ -1111,14 +1179,18 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
 
     // 2. For each transferable of transferList:
     for (auto const& transferable : transfer_list) {
+        auto is_array_buffer = is<JS::ArrayBuffer>(*transferable);
 
         // 1. If transferable has neither an [[ArrayBufferData]] internal slot nor a [[Detached]] internal slot, then throw a "DataCloneError" DOMException.
-        // FIXME: Handle transferring ArrayBufferData objects
-        if (!is<Bindings::Transferable>(*transferable)) {
+        // FIXME: Handle transferring objects with [[Detached]] internal slot.
+        if (!is_array_buffer && !is<Bindings::Transferable>(*transferable)) {
             return WebIDL::DataCloneError::create(*vm.current_realm(), "Cannot transfer type"_string);
         }
 
-        // FIXME: 2. If transferable has an [[ArrayBufferData]] internal slot and IsSharedArrayBuffer(transferable) is true, then throw a "DataCloneError" DOMException.
+        // 2. If transferable has an [[ArrayBufferData]] internal slot and IsSharedArrayBuffer(transferable) is true, then throw a "DataCloneError" DOMException.
+        if (is_array_buffer && dynamic_cast<JS::ArrayBuffer&>(*transferable).is_shared_array_buffer()) {
+            return WebIDL::DataCloneError::create(*vm.current_realm(), "Cannot transfer shared array buffer"_string);
+        }
 
         // 3. If memory[transferable] exists, then throw a "DataCloneError" DOMException.
         auto transferable_value = JS::Value(transferable);
@@ -1127,7 +1199,7 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
         }
 
         // 4. Set memory[transferable] to { [[Type]]: an uninitialized value }.
-        memory.set(GC::make_root(transferable_value), NumericLimits<u32>::max());
+        memory.set(GC::make_root(transferable_value), memory.size());
     }
 
     // 3. Let serialized be ? StructuredSerializeInternal(value, false, memory).
@@ -1139,7 +1211,13 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
 
     // 5. For each transferable of transferList:
     for (auto& transferable : transfer_list) {
-        // 1. FIXME: If transferable has an [[ArrayBufferData]] internal slot and IsDetachedBuffer(transferable) is true, then throw a "DataCloneError" DOMException.
+        auto is_array_buffer = is<JS::ArrayBuffer>(*transferable);
+        auto is_detached = is_array_buffer && dynamic_cast<JS::ArrayBuffer&>(*transferable).is_detached();
+
+        // 1. If transferable has an [[ArrayBufferData]] internal slot and IsDetachedBuffer(transferable) is true, then throw a "DataCloneError" DOMException.
+        if (is_detached) {
+            return WebIDL::DataCloneError::create(*vm.current_realm(), "Cannot transfer detached buffer"_string);
+        }
 
         // 2. If transferable has a [[Detached]] internal slot and transferable.[[Detached]] is true, then throw a "DataCloneError" DOMException.
         if (is<Bindings::Transferable>(*transferable)) {
@@ -1153,8 +1231,32 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
         // IMPLEMENTATION DEFINED: We just create a data holder here, our memory holds indices into the SerializationRecord
         TransferDataHolder data_holder;
 
-        // FIXME 4. If transferable has an [[ArrayBufferData]] internal slot, then:
-        if (false) {
+        // 4. If transferable has an [[ArrayBufferData]] internal slot, then:
+        if (is_array_buffer) {
+            // 1. If transferable has an [[ArrayBufferMaxByteLength]] internal slot, then:
+            auto& array_buffer = dynamic_cast<JS::ArrayBuffer&>(*transferable);
+            if (!array_buffer.is_fixed_length()) {
+                // 1. Set dataHolder.[[Type]] to "ResizableArrayBuffer".
+                // 2. Set dataHolder.[[ArrayBufferData]] to transferable.[[ArrayBufferData]].
+                // 3. Set dataHolder.[[ArrayBufferByteLength]] to transferable.[[ArrayBufferByteLength]].
+                // 4. Set dataHolder.[[ArrayBufferMaxByteLength]] to transferable.[[ArrayBufferMaxByteLength]].
+                serialize_enum<TransferType>(data_holder.data, TransferType::ResizableArrayBuffer);
+                MUST(serialize_bytes(vm, data_holder.data, array_buffer.buffer().bytes())); // serializes both byte length and bytes
+                serialize_primitive_type<size_t>(data_holder.data, array_buffer.max_byte_length());
+            }
+
+            // 2. Otherwise:
+            else {
+                // 1. Set dataHolder.[[Type]] to "ArrayBuffer".
+                // 2. Set dataHolder.[[ArrayBufferData]] to transferable.[[ArrayBufferData]].
+                // 3. Set dataHolder.[[ArrayBufferByteLength]] to transferable.[[ArrayBufferByteLength]].
+                serialize_enum<TransferType>(data_holder.data, TransferType::ArrayBuffer);
+                MUST(serialize_bytes(vm, data_holder.data, array_buffer.buffer().bytes())); // serializes both byte length and bytes
+            }
+
+            // 3. Perform ? DetachArrayBuffer(transferable).
+            // NOTE: Specifications can use the [[ArrayBufferDetachKey]] internal slot to prevent ArrayBuffers from being detached. This is used in WebAssembly JavaScript Interface, for example. See: https://html.spec.whatwg.org/multipage/references.html#refsWASMJS
+            TRY(JS::detach_array_buffer(vm, array_buffer));
         }
 
         // 5. Otherwise:
@@ -1167,7 +1269,7 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
             auto interface_name = transferable_object.primary_interface();
 
             // 3. Set dataHolder.[[Type]] to interfaceName.
-            data_holder.data.append(to_underlying(interface_name));
+            serialize_enum<TransferType>(data_holder.data, interface_name);
 
             // 4. Perform the appropriate transfer steps for the interface identified by interfaceName, given transferable and dataHolder.
             TRY(transferable_object.transfer_steps(data_holder));
@@ -1184,15 +1286,15 @@ WebIDL::ExceptionOr<SerializedTransferRecord> structured_serialize_with_transfer
     return SerializedTransferRecord { .serialized = move(serialized), .transfer_data_holders = move(transfer_data_holders) };
 }
 
-static bool is_interface_exposed_on_target_realm(u8 name, JS::Realm& realm)
+static bool is_interface_exposed_on_target_realm(TransferType name, JS::Realm& realm)
 {
     auto const& intrinsics = Bindings::host_defined_intrinsics(realm);
-    switch (static_cast<TransferType>(name)) {
+    switch (name) {
     case TransferType::MessagePort:
         return intrinsics.is_exposed("MessagePort"sv);
         break;
     default:
-        dbgln("Unknown interface type for transfer: {}", name);
+        dbgln("Unknown interface type for transfer: {}", to_underlying(name));
         break;
     }
     return false;
@@ -1206,6 +1308,10 @@ static WebIDL::ExceptionOr<GC::Ref<Bindings::PlatformObject>> create_transferred
         TRY(message_port->transfer_receiving_steps(transfer_data_holder));
         return message_port;
     }
+    case TransferType::ArrayBuffer:
+    case TransferType::ResizableArrayBuffer:
+        dbgln("ArrayBuffer ({}) is not a platform object.", to_underlying(name));
+        break;
     }
     VERIFY_NOT_REACHED();
 }
@@ -1223,39 +1329,54 @@ WebIDL::ExceptionOr<DeserializedTransferRecord> structured_deserialize_with_tran
 
     // 3. For each transferDataHolder of serializeWithTransferResult.[[TransferDataHolders]]:
     for (auto& transfer_data_holder : serialize_with_transfer_result.transfer_data_holders) {
+        if (transfer_data_holder.data.is_empty())
+            continue;
+
         // 1. Let value be an uninitialized value.
         JS::Value value;
 
-        // FIXME: 2. If transferDataHolder.[[Type]] is "ArrayBuffer", then set value to a new ArrayBuffer object in targetRealm
+        size_t data_holder_position = 0;
+        auto type = deserialize_primitive_type<TransferType>(transfer_data_holder.data.span(), data_holder_position);
+
+        // 2. If transferDataHolder.[[Type]] is "ArrayBuffer", then set value to a new ArrayBuffer object in targetRealm
         //    whose [[ArrayBufferData]] internal slot value is transferDataHolder.[[ArrayBufferData]], and
         //    whose [[ArrayBufferByteLength]] internal slot value is transferDataHolder.[[ArrayBufferByteLength]].
         // NOTE: In cases where the original memory occupied by [[ArrayBufferData]] is accessible during the deserialization,
         //       this step is unlikely to throw an exception, as no new memory needs to be allocated: the memory occupied by
         //       [[ArrayBufferData]] is instead just getting transferred into the new ArrayBuffer. This could be true, for example,
         //       when both the source and target realms are in the same process.
-        if (false) {
+        if (type == TransferType::ArrayBuffer) {
+            auto bytes = TRY(deserialize_bytes(vm, transfer_data_holder.data, data_holder_position));
+            JS::ArrayBuffer* data = TRY(JS::allocate_array_buffer(vm, target_realm.intrinsics().array_buffer_constructor(), bytes.size()));
+            bytes.span().copy_to(data->buffer().span());
+            value = JS::Value(data);
         }
 
-        // FIXME: 3. Otherwise, if transferDataHolder.[[Type]] is "ResizableArrayBuffer", then set value to a new ArrayBuffer object
+        // 3. Otherwise, if transferDataHolder.[[Type]] is "ResizableArrayBuffer", then set value to a new ArrayBuffer object
         //     in targetRealm whose [[ArrayBufferData]] internal slot value is transferDataHolder.[[ArrayBufferData]], whose
         //     [[ArrayBufferByteLength]] internal slot value is transferDataHolder.[[ArrayBufferByteLength]], and whose
         //     [[ArrayBufferMaxByteLength]] internal slot value is transferDataHolder.[[ArrayBufferMaxByteLength]].
         // NOTE: For the same reason as the previous step, this step is also unlikely to throw an exception.
-        else if (false) {
+        else if (type == TransferType::ResizableArrayBuffer) {
+            auto bytes = TRY(deserialize_bytes(vm, transfer_data_holder.data, data_holder_position));
+            auto max_byte_length = deserialize_primitive_type<size_t>(transfer_data_holder.data, data_holder_position);
+            JS::ArrayBuffer* data = TRY(JS::allocate_array_buffer(vm, target_realm.intrinsics().array_buffer_constructor(), bytes.size()));
+            data->set_max_byte_length(max_byte_length);
+            bytes.span().copy_to(data->buffer().span());
+            value = JS::Value(data);
         }
 
         // 4. Otherwise:
         else {
             // 1. Let interfaceName be transferDataHolder.[[Type]].
-            u8 const interface_name = transfer_data_holder.data.take_first();
-
             // 2. If the interface identified by interfaceName is not exposed in targetRealm, then throw a "DataCloneError" DOMException.
-            if (!is_interface_exposed_on_target_realm(interface_name, target_realm))
+            if (!is_interface_exposed_on_target_realm(type, target_realm))
                 return WebIDL::DataCloneError::create(target_realm, "Unknown type transferred"_string);
 
             // 3. Set value to a new instance of the interface identified by interfaceName, created in targetRealm.
             // 4. Perform the appropriate transfer-receiving steps for the interface identified by interfaceName given transferDataHolder and value.
-            value = TRY(create_transferred_value(static_cast<TransferType>(interface_name), target_realm, transfer_data_holder));
+            transfer_data_holder.data.remove(0, data_holder_position);
+            value = TRY(create_transferred_value(type, target_realm, transfer_data_holder));
         }
 
         // 5. Set memory[transferDataHolder] to value.
@@ -1348,7 +1469,7 @@ ErrorOr<void> encode(Encoder& encoder, ::Web::HTML::SerializedTransferRecord con
 template<>
 ErrorOr<::Web::HTML::TransferDataHolder> decode(Decoder& decoder)
 {
-    auto data = TRY(decoder.decode<Vector<u8>>());
+    auto data = TRY(decoder.decode<Vector<u32>>());
     auto fds = TRY(decoder.decode<Vector<IPC::File>>());
     return ::Web::HTML::TransferDataHolder { move(data), move(fds) };
 }

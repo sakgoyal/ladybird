@@ -100,7 +100,7 @@ void ResizeObserver::disconnect()
 void ResizeObserver::invoke_callback(ReadonlySpan<GC::Ref<ResizeObserverEntry>> entries) const
 {
     auto& callback = *m_callback;
-    auto& realm = callback.callback_context->realm();
+    auto& realm = callback.callback_context;
 
     auto wrapped_records = MUST(JS::Array::create(realm, 0));
     for (size_t i = 0; i < entries.size(); ++i) {
@@ -109,9 +109,7 @@ void ResizeObserver::invoke_callback(ReadonlySpan<GC::Ref<ResizeObserverEntry>> 
         MUST(wrapped_records->create_data_property(property_index, record.ptr()));
     }
 
-    auto result = WebIDL::invoke_callback(callback, JS::js_undefined(), wrapped_records);
-    if (result.is_abrupt())
-        HTML::report_exception(result, realm);
+    (void)WebIDL::invoke_callback(callback, JS::js_undefined(), WebIDL::ExceptionBehavior::Report, wrapped_records);
 }
 
 }

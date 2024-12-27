@@ -10,7 +10,7 @@ def main() -> int:
     script_dir = pathlib.Path(__file__).parent.resolve()
 
     git_repo = "https://github.com/microsoft/vcpkg.git"
-    git_rev = "10b7a178346f3f0abef60cecd5130e295afd8da4"  # 2024.10.21
+    git_rev = "b322364f06308bdd24823f9d8f03fe0cc86fd46f"  # 2024.12.16
 
     build_dir = script_dir.parent / "Build"
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -31,7 +31,7 @@ def main() -> int:
     subprocess.check_call(args=["git", "checkout", git_rev], cwd=vcpkg_checkout)
 
     bootstrap_script = "bootstrap-vcpkg.bat" if os.name == 'nt' else "bootstrap-vcpkg.sh"
-    subprocess.check_call(args=[vcpkg_checkout / bootstrap_script, "-disableMetrics"], cwd=vcpkg_checkout, shell=True)
+    subprocess.check_call(args=[vcpkg_checkout / bootstrap_script, "-disableMetrics"], cwd=vcpkg_checkout)
 
     return 0
 

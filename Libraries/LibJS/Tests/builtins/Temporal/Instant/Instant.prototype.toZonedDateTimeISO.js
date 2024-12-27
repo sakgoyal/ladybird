@@ -15,34 +15,15 @@ describe("correct behavior", () => {
         expect(zonedDateTime.millisecond).toBe(123);
         expect(zonedDateTime.microsecond).toBe(456);
         expect(zonedDateTime.nanosecond).toBe(789);
-        expect(zonedDateTime.calendar.id).toBe("iso8601");
-        expect(zonedDateTime.timeZone.id).toBe("UTC");
+        expect(zonedDateTime.calendarId).toBe("iso8601");
+        expect(zonedDateTime.timeZoneId).toBe("UTC");
     });
 
     test("custom time zone object", () => {
+        const timeZone = "UTC";
         const instant = new Temporal.Instant(1625614921123456789n);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = instant.toZonedDateTimeISO({ timeZone });
-        expect(zonedDateTime.timeZone).toBe(timeZone);
-    });
-
-    test("avoids extra timeZone property lookup", () => {
-        const instant = new Temporal.Instant(1625614921123456789n);
-
-        let timesGetterCalled = 0;
-        const timeZoneObject = {
-            get timeZone() {
-                timesGetterCalled++;
-                return "UTC";
-            },
-
-            toString() {
-                return "UTC";
-            },
-        };
-
-        instant.toZonedDateTimeISO({ timeZone: timeZoneObject });
-        expect(timesGetterCalled).toBe(0);
+        const zonedDateTime = instant.toZonedDateTimeISO(timeZone);
+        expect(zonedDateTime.timeZoneId).toBe(timeZone);
     });
 });
 

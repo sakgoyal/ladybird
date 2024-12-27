@@ -38,7 +38,7 @@ class HTMLImageElement final
 public:
     virtual ~HTMLImageElement() override;
 
-    virtual void form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value) override;
+    virtual void form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value, Optional<FlyString> const&) override;
 
     Optional<String> alternative_text() const override
     {
@@ -52,11 +52,11 @@ public:
 
     RefPtr<Gfx::ImmutableBitmap> immutable_bitmap() const;
 
-    unsigned width() const;
-    WebIDL::ExceptionOr<void> set_width(unsigned);
+    WebIDL::UnsignedLong width() const;
+    WebIDL::ExceptionOr<void> set_width(WebIDL::UnsignedLong);
 
-    unsigned height() const;
-    WebIDL::ExceptionOr<void> set_height(unsigned);
+    WebIDL::UnsignedLong height() const;
+    WebIDL::ExceptionOr<void> set_height(WebIDL::UnsignedLong);
 
     unsigned natural_width() const;
     unsigned natural_height() const;
@@ -86,10 +86,6 @@ public:
 
     // https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
     [[nodiscard]] Optional<ImageSourceAndPixelDensity> select_an_image_source();
-
-    StringView decoding() const;
-
-    void set_decoding(String);
 
     void set_source_set(SourceSet);
 
@@ -125,13 +121,14 @@ private:
 
     virtual void adopted_from(DOM::Document&) override;
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 
     // https://html.spec.whatwg.org/multipage/embedded-content.html#the-img-element:dimension-attributes
     virtual bool supports_dimension_attributes() const override { return true; }
 
-    virtual GC::Ptr<Layout::Node> create_layout_node(CSS::StyleProperties) override;
-    virtual void adjust_computed_style(CSS::StyleProperties&) override;
+    virtual GC::Ptr<Layout::Node> create_layout_node(GC::Ref<CSS::ComputedProperties>) override;
+    virtual void adjust_computed_style(CSS::ComputedProperties&) override;
 
     virtual void did_set_viewport_rect(CSSPixelRect const&) override;
 
@@ -162,15 +159,6 @@ private:
     SourceSet m_source_set;
 
     CSSPixelSize m_last_seen_viewport_size;
-
-    // https://html.spec.whatwg.org/multipage/images.html#image-decoding-hint
-    enum class ImageDecodingHint {
-        Auto,
-        Sync,
-        Async
-    };
-
-    ImageDecodingHint m_decoding_hint = ImageDecodingHint::Auto;
 };
 
 }

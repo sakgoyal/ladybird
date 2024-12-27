@@ -124,7 +124,7 @@ ErrorOr<void> WebSocket::establish_web_socket_connection(URL::URL& url_record, V
 
     auto* window_or_worker = dynamic_cast<HTML::WindowOrWorkerGlobalScopeMixin*>(&client.global_object());
     VERIFY(window_or_worker);
-    auto origin_string = MUST(window_or_worker->origin()).to_byte_string();
+    auto origin_string = window_or_worker->origin().to_byte_string();
 
     Vector<ByteString> protcol_byte_strings;
     for (auto const& protocol : protocols)
@@ -292,7 +292,7 @@ void WebSocket::on_message(ByteBuffer message, bool is_text)
             auto text_message = ByteString(ReadonlyBytes(message));
             HTML::MessageEventInit event_init;
             event_init.data = JS::PrimitiveString::create(vm(), text_message);
-            event_init.origin = url().release_value_but_fixme_should_propagate_errors();
+            event_init.origin = url();
             dispatch_event(HTML::MessageEvent::create(realm(), HTML::EventNames::message, event_init));
             return;
         }
@@ -301,14 +301,14 @@ void WebSocket::on_message(ByteBuffer message, bool is_text)
             // type indicates that the data is Binary and binaryType is "blob"
             HTML::MessageEventInit event_init;
             event_init.data = FileAPI::Blob::create(realm(), message, "text/plain;charset=utf-8"_string);
-            event_init.origin = url().release_value_but_fixme_should_propagate_errors();
+            event_init.origin = url();
             dispatch_event(HTML::MessageEvent::create(realm(), HTML::EventNames::message, event_init));
             return;
         } else if (m_binary_type == "arraybuffer") {
             // type indicates that the data is Binary and binaryType is "arraybuffer"
             HTML::MessageEventInit event_init;
             event_init.data = JS::ArrayBuffer::create(realm(), message);
-            event_init.origin = url().release_value_but_fixme_should_propagate_errors();
+            event_init.origin = url();
             dispatch_event(HTML::MessageEvent::create(realm(), HTML::EventNames::message, event_init));
             return;
         }

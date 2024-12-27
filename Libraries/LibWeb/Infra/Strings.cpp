@@ -147,11 +147,12 @@ ErrorOr<String> to_ascii_uppercase(StringView string)
 // https://infra.spec.whatwg.org/#isomorphic-encode
 ByteBuffer isomorphic_encode(StringView input)
 {
+    // To isomorphic encode an isomorphic string input: return a byte sequence whose length is equal to input’s code
+    // point length and whose bytes have the same values as the values of input’s code points, in the same order.
+    // NOTE: This is essentially spec-speak for "Encode as ISO-8859-1 / Latin-1".
     ByteBuffer buf = {};
     for (auto code_point : Utf8View { input }) {
-        // VERIFY(code_point <= 0xFF);
-        if (code_point > 0xFF)
-            dbgln("FIXME: Trying to isomorphic encode a string with code points > U+00FF.");
+        VERIFY(code_point <= 0xFF);
         buf.append((u8)code_point);
     }
     return buf;
@@ -160,11 +161,46 @@ ByteBuffer isomorphic_encode(StringView input)
 // https://infra.spec.whatwg.org/#isomorphic-decode
 String isomorphic_decode(ReadonlyBytes input)
 {
+    // To isomorphic decode a byte sequence input, return a string whose code point length is equal
+    // to input’s length and whose code points have the same values as the values of input’s bytes, in the same order.
+    // NOTE: This is essentially spec-speak for "Decode as ISO-8859-1 / Latin-1".
     StringBuilder builder(input.size());
     for (u8 code_point : input) {
         builder.append_code_point(code_point);
     }
     return builder.to_string_without_validation();
+}
+
+// https://infra.spec.whatwg.org/#code-unit-less-than
+bool code_unit_less_than(StringView a, StringView b)
+{
+    // 1. If b is a code unit prefix of a, then return false.
+    if (is_code_unit_prefix(b, a))
+        return false;
+
+    // 2. If a is a code unit prefix of b, then return true.
+    if (is_code_unit_prefix(a, b))
+        return true;
+
+    auto code_units_a = MUST(utf8_to_utf16(a));
+    auto code_units_b = MUST(utf8_to_utf16(b));
+
+    auto view_a = Utf16View(code_units_a);
+    auto view_b = Utf16View(code_units_b);
+
+    // 3. Let n be the smallest index such that the nth code unit of a is different from the nth code unit of b.
+    //    (There has to be such an index, since neither string is a prefix of the other.)
+    size_t n = 0;
+    size_t min_length = min(view_a.length_in_code_units(), view_b.length_in_code_units());
+    while (n < min_length && view_a.code_unit_at(n) == view_b.code_unit_at(n))
+        ++n;
+
+    // 4. If the nth code unit of a is less than the nth code unit of b, then return true.
+    if (view_a.code_unit_at(n) < view_b.code_unit_at(n))
+        return true;
+
+    // 5. Return false.
+    return false;
 }
 
 }

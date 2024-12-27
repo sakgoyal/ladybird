@@ -4,9 +4,8 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const calendar = { hello: "friends" };
-        const firstPlainMonthDay = new Temporal.PlainMonthDay(2, 1, calendar);
-        const secondPlainMonthDay = new Temporal.PlainMonthDay(1, 1, calendar);
+        const firstPlainMonthDay = new Temporal.PlainMonthDay(2, 1, "iso8601");
+        const secondPlainMonthDay = new Temporal.PlainMonthDay(1, 1, "iso8601");
         expect(firstPlainMonthDay.equals(firstPlainMonthDay)).toBeTrue();
         expect(secondPlainMonthDay.equals(secondPlainMonthDay)).toBeTrue();
         expect(firstPlainMonthDay.equals(secondPlainMonthDay)).toBeFalse();

@@ -12,18 +12,17 @@ describe("correct behavior", () => {
             [123456789123456789n, 0n, "PT34293H33M9.123456789S"],
             [0n, 123456789123456789n, "-PT34293H33M9.123456789S"],
         ];
-        const utc = new Temporal.TimeZone("UTC");
+
         for (const [arg, argOther, expected] of values) {
-            const zonedDateTime = new Temporal.ZonedDateTime(arg, utc);
-            const other = new Temporal.ZonedDateTime(argOther, utc);
+            const zonedDateTime = new Temporal.ZonedDateTime(arg, "UTC");
+            const other = new Temporal.ZonedDateTime(argOther, "UTC");
             expect(zonedDateTime.since(other).toString()).toBe(expected);
         }
     });
 
     test("smallestUnit option", () => {
-        const utc = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(34401906007008009n, utc);
-        const other = new Temporal.ZonedDateTime(0n, utc);
+        const zonedDateTime = new Temporal.ZonedDateTime(34401906007008009n, "UTC");
+        const other = new Temporal.ZonedDateTime(0n, "UTC");
         const values = [
             ["year", "P1Y"],
             ["month", "P13M"],
@@ -36,15 +35,15 @@ describe("correct behavior", () => {
             ["microsecond", "PT9556H5M6.007008S"],
             ["nanosecond", "PT9556H5M6.007008009S"],
         ];
+
         for (const [smallestUnit, expected] of values) {
             expect(zonedDateTime.since(other, { smallestUnit }).toString()).toBe(expected);
         }
     });
 
     test("largestUnit option", () => {
-        const utc = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(34401906007008009n, utc);
-        const other = new Temporal.ZonedDateTime(0n, utc);
+        const zonedDateTime = new Temporal.ZonedDateTime(34401906007008009n, "UTC");
+        const other = new Temporal.ZonedDateTime(0n, "UTC");
         const values = [
             ["year", "P1Y1M2DT4H5M6.007008009S"],
             ["month", "P13M2DT4H5M6.007008009S"],
@@ -57,6 +56,7 @@ describe("correct behavior", () => {
             ["microsecond", "PT34401906.007008009S"],
             ["nanosecond", "PT34401906.007008008S"],
         ];
+
         for (const [largestUnit, expected] of values) {
             expect(zonedDateTime.since(other, { largestUnit }).toString()).toBe(expected);
         }
@@ -71,21 +71,8 @@ describe("errors", () => {
     });
 
     test("cannot compare dates from different calendars", () => {
-        const calendarOne = {
-            toString() {
-                return "calendarOne";
-            },
-        };
-
-        const calendarTwo = {
-            toString() {
-                return "calendarTwo";
-            },
-        };
-
-        const utc = new Temporal.TimeZone("UTC");
-        const zonedDateTimeOne = new Temporal.ZonedDateTime(0n, utc, calendarOne);
-        const zonedDateTimeTwo = new Temporal.ZonedDateTime(0n, utc, calendarTwo);
+        const zonedDateTimeOne = new Temporal.ZonedDateTime(0n, "UTC", "iso8601");
+        const zonedDateTimeTwo = new Temporal.ZonedDateTime(0n, "UTC", "gregory");
 
         expect(() => {
             zonedDateTimeOne.since(zonedDateTimeTwo);
@@ -93,20 +80,8 @@ describe("errors", () => {
     });
 
     test("cannot compare dates from different time zones", () => {
-        const timeZoneOne = {
-            toString() {
-                return "timeZoneOne";
-            },
-        };
-
-        const timeZoneTwo = {
-            toString() {
-                return "timeZoneTwo";
-            },
-        };
-
-        const zonedDateTimeOne = new Temporal.ZonedDateTime(0n, timeZoneOne);
-        const zonedDateTimeTwo = new Temporal.ZonedDateTime(0n, timeZoneTwo);
+        const zonedDateTimeOne = new Temporal.ZonedDateTime(0n, "UTC");
+        const zonedDateTimeTwo = new Temporal.ZonedDateTime(0n, "America/New_York");
 
         expect(() => {
             zonedDateTimeOne.since(zonedDateTimeTwo, { largestUnit: "day" });

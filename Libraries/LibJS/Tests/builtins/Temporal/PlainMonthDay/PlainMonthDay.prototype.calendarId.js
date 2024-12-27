@@ -1,7 +1,6 @@
 describe("correct behavior", () => {
     test("calendarId basic functionality", () => {
-        const calendar = "iso8601";
-        const plainMonthDay = new Temporal.PlainMonthDay(5, 1, calendar);
+        const plainMonthDay = new Temporal.PlainMonthDay(5, 1, "iso8601");
         expect(plainMonthDay.calendarId).toBe("iso8601");
     });
 });

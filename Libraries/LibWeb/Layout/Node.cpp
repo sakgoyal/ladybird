@@ -82,6 +82,12 @@ bool Node::can_contain_boxes_with_position_absolute() const
     // Any computed value other than none for the transform affects containing block and stacking context
     if (!computed_values().transformations().is_empty())
         return true;
+    if (computed_values().translate().has_value())
+        return true;
+    if (computed_values().rotate().has_value())
+        return true;
+    if (computed_values().scale().has_value())
+        return true;
 
     return false;
 }
@@ -175,6 +181,15 @@ bool Node::establishes_stacking_context() const
     if (!computed_values().transformations().is_empty())
         return true;
 
+    if (computed_values().translate().has_value())
+        return true;
+
+    if (computed_values().rotate().has_value())
+        return true;
+
+    if (computed_values().scale().has_value())
+        return true;
+
     // Element that is a child of a flex container, with z-index value other than auto.
     if (parent() && parent()->display().is_flex_inside() && computed_values().z_index().has_value())
         return true;
@@ -189,7 +204,7 @@ bool Node::establishes_stacking_context() const
     // [CSS21] and a Containing Block for absolute and fixed position descendants, unless the
     // element it applies to is a document root element in the current browsing context.
     // Spec Note: This rule works in the same way as for the filter property.
-    if (!computed_values().backdrop_filter().is_none() || !computed_values().filter().is_none())
+    if (!computed_values().backdrop_filter().is_empty() || !computed_values().filter().is_empty())
         return true;
 
     // Element with any of the following properties with value other than none:
@@ -199,7 +214,7 @@ bool Node::establishes_stacking_context() const
     // - perspective
     // - clip-path
     // - mask / mask-image / mask-border
-    if (computed_values().mask().has_value() || computed_values().clip_path().has_value())
+    if (computed_values().mask().has_value() || computed_values().clip_path().has_value() || computed_values().mask_image())
         return true;
 
     return computed_values().opacity() < 1.0f;
@@ -261,7 +276,7 @@ bool Node::is_sticky_position() const
     return position == CSS::Positioning::Sticky;
 }
 
-NodeWithStyle::NodeWithStyle(DOM::Document& document, DOM::Node* node, CSS::StyleProperties computed_style)
+NodeWithStyle::NodeWithStyle(DOM::Document& document, DOM::Node* node, GC::Ref<CSS::ComputedProperties> computed_style)
     : Node(document, node)
     , m_computed_values(make<CSS::ComputedValues>())
 {
@@ -309,7 +324,7 @@ static CSSPixels snap_a_length_as_a_border_width(double device_pixels_per_css_pi
     return length;
 }
 
-void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
+void NodeWithStyle::apply_style(const CSS::ComputedProperties& computed_style)
 {
     auto& computed_values = mutable_computed_values();
 
@@ -413,13 +428,13 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
 
             if (auto position_value = value_for_layer(x_positions, layer_index); position_value && position_value->is_edge()) {
                 auto& position = position_value->as_edge();
-                layer.position_edge_x = position.edge();
+                layer.position_edge_x = position.edge().value_or(CSS::PositionEdge::Left);
                 layer.position_offset_x = position.offset();
             }
 
             if (auto position_value = value_for_layer(y_positions, layer_index); position_value && position_value->is_edge()) {
                 auto& position = position_value->as_edge();
-                layer.position_edge_y = position.edge();
+                layer.position_edge_y = position.edge().value_or(CSS::PositionEdge::Top);
                 layer.position_offset_y = position.offset();
             };
 
@@ -458,12 +473,24 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     if (auto box_sizing = computed_style.box_sizing(); box_sizing.has_value())
         computed_values.set_box_sizing(box_sizing.release_value());
 
-    if (auto maybe_font_variant = computed_style.font_variant(); maybe_font_variant.has_value())
-        computed_values.set_font_variant(maybe_font_variant.release_value());
     if (auto maybe_font_language_override = computed_style.font_language_override(); maybe_font_language_override.has_value())
         computed_values.set_font_language_override(maybe_font_language_override.release_value());
     if (auto maybe_font_feature_settings = computed_style.font_feature_settings(); maybe_font_feature_settings.has_value())
         computed_values.set_font_feature_settings(maybe_font_feature_settings.release_value());
+    if (auto maybe_font_variant_alternates = computed_style.font_variant_alternates(); maybe_font_variant_alternates.has_value())
+        computed_values.set_font_variant_alternates(maybe_font_variant_alternates.release_value());
+    if (auto maybe_font_variant_caps = computed_style.font_variant_caps(); maybe_font_variant_caps.has_value())
+        computed_values.set_font_variant_caps(maybe_font_variant_caps.release_value());
+    if (auto maybe_font_variant_east_asian = computed_style.font_variant_east_asian(); maybe_font_variant_east_asian.has_value())
+        computed_values.set_font_variant_east_asian(maybe_font_variant_east_asian.release_value());
+    if (auto maybe_font_variant_emoji = computed_style.font_variant_emoji(); maybe_font_variant_emoji.has_value())
+        computed_values.set_font_variant_emoji(maybe_font_variant_emoji.release_value());
+    if (auto maybe_font_variant_ligatures = computed_style.font_variant_ligatures(); maybe_font_variant_ligatures.has_value())
+        computed_values.set_font_variant_ligatures(maybe_font_variant_ligatures.release_value());
+    if (auto maybe_font_variant_numeric = computed_style.font_variant_numeric(); maybe_font_variant_numeric.has_value())
+        computed_values.set_font_variant_numeric(maybe_font_variant_numeric.release_value());
+    if (auto maybe_font_variant_position = computed_style.font_variant_position(); maybe_font_variant_position.has_value())
+        computed_values.set_font_variant_position(maybe_font_variant_position.release_value());
     if (auto maybe_font_variation_settings = computed_style.font_variation_settings(); maybe_font_variation_settings.has_value())
         computed_values.set_font_variation_settings(maybe_font_variation_settings.release_value());
 
@@ -514,31 +541,31 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     computed_values.set_order(computed_style.order());
     computed_values.set_clip(computed_style.clip());
 
-    auto resolve_filter = [this](CSS::Filter const& computed_filter) -> CSS::ResolvedFilter {
-        CSS::ResolvedFilter resolved_filter;
+    auto resolve_filter = [this](CSS::Filter const& computed_filter) -> Vector<Gfx::Filter> {
+        Vector<Gfx::Filter> resolved_filter;
         for (auto const& filter : computed_filter.filters()) {
             filter.visit(
                 [&](CSS::FilterOperation::Blur const& blur) {
-                    resolved_filter.filters.append(CSS::ResolvedFilter::Blur {
+                    resolved_filter.append(Gfx::BlurFilter {
                         .radius = blur.resolved_radius(*this) });
                 },
                 [&](CSS::FilterOperation::DropShadow const& drop_shadow) {
                     auto context = CSS::Length::ResolutionContext::for_layout_node(*this);
                     // The default value for omitted values is missing length values set to 0
                     // and the missing used color is taken from the color property.
-                    resolved_filter.filters.append(CSS::ResolvedFilter::DropShadow {
-                        .offset_x = drop_shadow.offset_x.resolved(context).to_px(*this).to_double(),
-                        .offset_y = drop_shadow.offset_y.resolved(context).to_px(*this).to_double(),
-                        .radius = drop_shadow.radius.has_value() ? drop_shadow.radius->resolved(context).to_px(*this).to_double() : 0.0,
+                    resolved_filter.append(Gfx::DropShadowFilter {
+                        .offset_x = static_cast<float>(drop_shadow.offset_x.resolved(context).to_px(*this).to_double()),
+                        .offset_y = static_cast<float>(drop_shadow.offset_y.resolved(context).to_px(*this).to_double()),
+                        .radius = static_cast<float>(drop_shadow.radius.has_value() ? drop_shadow.radius->resolved(context).to_px(*this).to_double() : 0.0),
                         .color = drop_shadow.color.has_value() ? *drop_shadow.color : this->computed_values().color() });
                 },
                 [&](CSS::FilterOperation::Color const& color_operation) {
-                    resolved_filter.filters.append(CSS::ResolvedFilter::Color {
+                    resolved_filter.append(Gfx::ColorFilter {
                         .type = color_operation.operation,
                         .amount = color_operation.resolved_amount() });
                 },
                 [&](CSS::FilterOperation::HueRotate const& hue_rotate) {
-                    resolved_filter.filters.append(CSS::ResolvedFilter::HueRotate { .angle_degrees = hue_rotate.angle_degrees(*this) });
+                    resolved_filter.append(Gfx::HueRotateFilter { .angle_degrees = hue_rotate.angle_degrees(*this) });
                 });
         }
         return resolved_filter;
@@ -710,7 +737,13 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     computed_values.set_box_shadow(computed_style.box_shadow(*this));
 
     if (auto rotate_value = computed_style.rotate(*this); rotate_value.has_value())
-        computed_values.set_rotate(rotate_value.value());
+        computed_values.set_rotate(rotate_value.release_value());
+
+    if (auto translate_value = computed_style.translate(); translate_value.has_value())
+        computed_values.set_translate(translate_value.release_value());
+
+    if (auto scale_value = computed_style.scale(); scale_value.has_value())
+        computed_values.set_scale(scale_value.release_value());
 
     computed_values.set_transformations(computed_style.transformations());
     if (auto transform_box = computed_style.transform_box(); transform_box.has_value())
@@ -721,8 +754,8 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     if (transition_delay_property.is_time()) {
         auto const& transition_delay = transition_delay_property.as_time();
         computed_values.set_transition_delay(transition_delay.time());
-    } else if (transition_delay_property.is_math()) {
-        auto const& transition_delay = transition_delay_property.as_math();
+    } else if (transition_delay_property.is_calculated()) {
+        auto const& transition_delay = transition_delay_property.as_calculated();
         computed_values.set_transition_delay(transition_delay.resolve_time().value());
     }
 
@@ -743,8 +776,8 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
         } else {
             auto resolve_border_width = [&]() -> CSSPixels {
                 auto const& value = computed_style.property(width_property);
-                if (value.is_math())
-                    return max(CSSPixels { 0 }, value.as_math().resolve_length(*this)->to_px(*this));
+                if (value.is_calculated())
+                    return max(CSSPixels { 0 }, value.as_calculated().resolve_length(*this)->to_px(*this));
                 if (value.is_length())
                     return value.as_length().length().to_px(*this);
                 if (value.is_keyword()) {
@@ -829,6 +862,12 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     else if (stroke_width.is_percentage())
         computed_values.set_stroke_width(CSS::LengthPercentage { stroke_width.as_percentage().percentage() });
 
+    if (auto const& mask_image = computed_style.property(CSS::PropertyID::MaskImage); mask_image.is_abstract_image()) {
+        auto const& abstract_image = mask_image.as_abstract_image();
+        computed_values.set_mask_image(abstract_image);
+        const_cast<CSS::AbstractImageStyleValue&>(abstract_image).load_any_resources(document());
+    }
+
     if (auto mask_type = computed_style.mask_type(); mask_type.has_value())
         computed_values.set_mask_type(*mask_type);
 
@@ -848,6 +887,35 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
         computed_values.set_fill_rule(*fill_rule);
 
     computed_values.set_fill_opacity(computed_style.fill_opacity());
+
+    if (auto const& stroke_dasharray_or_none = computed_style.property(CSS::PropertyID::StrokeDasharray); !stroke_dasharray_or_none.is_keyword()) {
+        auto const& stroke_dasharray = stroke_dasharray_or_none.as_value_list();
+        Vector<Variant<CSS::LengthPercentage, CSS::NumberOrCalculated>> dashes;
+
+        for (auto const& value : stroke_dasharray.values()) {
+            if (value->is_length())
+                dashes.append(CSS::LengthPercentage { value->as_length().length() });
+            else if (value->is_percentage())
+                dashes.append(CSS::LengthPercentage { value->as_percentage().percentage() });
+            else if (value->is_calculated())
+                dashes.append(CSS::LengthPercentage { value->as_calculated() });
+            else if (value->is_number())
+                dashes.append(CSS::NumberOrCalculated { value->as_number().number() });
+        }
+
+        computed_values.set_stroke_dasharray(move(dashes));
+    }
+
+    auto const& stroke_dashoffset = computed_style.property(CSS::PropertyID::StrokeDashoffset);
+    // FIXME: Converting to pixels isn't really correct - values should be in "user units"
+    //        https://svgwg.org/svg2-draft/coords.html#TermUserUnits
+    if (stroke_dashoffset.is_number())
+        computed_values.set_stroke_dashoffset(CSS::Length::make_px(CSSPixels::nearest_value_for(stroke_dashoffset.as_number().number())));
+    else if (stroke_dashoffset.is_length())
+        computed_values.set_stroke_dashoffset(stroke_dashoffset.as_length().length());
+    else if (stroke_dashoffset.is_percentage())
+        computed_values.set_stroke_dashoffset(CSS::LengthPercentage { stroke_dashoffset.as_percentage().percentage() });
+
     if (auto stroke_linecap = computed_style.stroke_linecap(); stroke_linecap.has_value())
         computed_values.set_stroke_linecap(stroke_linecap.value());
     if (auto stroke_linejoin = computed_style.stroke_linejoin(); stroke_linejoin.has_value())

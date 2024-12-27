@@ -61,6 +61,24 @@ struct ArgvList {
     }
 };
 
+Process::Process(Process&& other)
+    : m_pid(exchange(other.m_pid, 0))
+    , m_should_disown(exchange(other.m_should_disown, false))
+{
+}
+
+Process& Process::operator=(Process&& other)
+{
+    m_pid = exchange(other.m_pid, 0);
+    m_should_disown = exchange(other.m_should_disown, false);
+    return *this;
+}
+
+Process::~Process()
+{
+    (void)disown();
+}
+
 Process Process::current()
 {
     auto p = Process { getpid() };
@@ -103,6 +121,10 @@ ErrorOr<Process> Process::spawn(ProcessSpawnOptions const& options)
             [&](FileAction::CloseFile const& action) -> ErrorOr<void> {
                 CHECK(posix_spawn_file_actions_addclose(&spawn_actions, action.fd));
                 return {};
+            },
+            [&](FileAction::DupFd const& action) -> ErrorOr<void> {
+                CHECK(posix_spawn_file_actions_adddup2(&spawn_actions, action.write_fd, action.fd));
+                return {};
             }));
     }
 
@@ -121,7 +143,7 @@ ErrorOr<Process> Process::spawn(ProcessSpawnOptions const& options)
     return Process { pid };
 }
 
-ErrorOr<pid_t> Process::spawn(StringView path, ReadonlySpan<ByteString> arguments, ByteString working_directory, KeepAsChild keep_as_child)
+ErrorOr<Process> Process::spawn(StringView path, ReadonlySpan<ByteString> arguments, ByteString working_directory, KeepAsChild keep_as_child)
 {
     auto process = TRY(spawn({
         .executable = path,
@@ -131,14 +153,11 @@ ErrorOr<pid_t> Process::spawn(StringView path, ReadonlySpan<ByteString> argument
 
     if (keep_as_child == KeepAsChild::No)
         TRY(process.disown());
-    else {
-        // FIXME: This won't be needed if return value is changed to Process.
-        process.m_should_disown = false;
-    }
-    return process.pid();
+
+    return process;
 }
 
-ErrorOr<pid_t> Process::spawn(StringView path, ReadonlySpan<StringView> arguments, ByteString working_directory, KeepAsChild keep_as_child)
+ErrorOr<Process> Process::spawn(StringView path, ReadonlySpan<StringView> arguments, ByteString working_directory, KeepAsChild keep_as_child)
 {
     Vector<ByteString> backing_strings;
     backing_strings.ensure_capacity(arguments.size());
@@ -153,29 +172,8 @@ ErrorOr<pid_t> Process::spawn(StringView path, ReadonlySpan<StringView> argument
 
     if (keep_as_child == KeepAsChild::No)
         TRY(process.disown());
-    else
-        process.m_should_disown = false;
-    return process.pid();
-}
 
-ErrorOr<pid_t> Process::spawn(StringView path, ReadonlySpan<char const*> arguments, ByteString working_directory, KeepAsChild keep_as_child)
-{
-    Vector<ByteString> backing_strings;
-    backing_strings.ensure_capacity(arguments.size());
-    for (auto const& argument : arguments)
-        backing_strings.append(argument);
-
-    auto process = TRY(spawn({
-        .executable = path,
-        .arguments = backing_strings,
-        .working_directory = working_directory.is_empty() ? Optional<ByteString> {} : Optional<ByteString> { working_directory },
-    }));
-
-    if (keep_as_child == KeepAsChild::No)
-        TRY(process.disown());
-    else
-        process.m_should_disown = false;
-    return process.pid();
+    return process;
 }
 
 ErrorOr<String> Process::get_name()
@@ -321,6 +319,11 @@ void Process::wait_for_debugger_and_break()
     }
 }
 
+pid_t Process::pid() const
+{
+    return m_pid;
+}
+
 ErrorOr<void> Process::disown()
 {
     if (m_pid != 0 && m_should_disown) {
@@ -336,19 +339,19 @@ ErrorOr<void> Process::disown()
     }
 }
 
-ErrorOr<bool> Process::wait_for_termination()
+ErrorOr<int> Process::wait_for_termination()
 {
     VERIFY(m_pid > 0);
 
-    bool exited_with_code_0 = true;
+    int exit_code = -1;
     int status;
     if (waitpid(m_pid, &status, 0) == -1)
-        return Error::from_syscall("waitpid"sv, errno);
+        return Error::from_syscall("waitpid"sv, -errno);
 
     if (WIFEXITED(status)) {
-        exited_with_code_0 &= WEXITSTATUS(status) == 0;
+        exit_code = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
-        exited_with_code_0 = false;
+        exit_code = 128 + WTERMSIG(status);
     } else if (WIFSTOPPED(status)) {
         // This is only possible if the child process is being traced by us.
         VERIFY_NOT_REACHED();
@@ -357,7 +360,7 @@ ErrorOr<bool> Process::wait_for_termination()
     }
 
     m_should_disown = false;
-    return exited_with_code_0;
+    return exit_code;
 }
 
 }

@@ -1,12 +1,8 @@
-Summary
-
 Harness status: OK
-
-Rerun
 
 Found 2 tests
 
-2 Fail
-Details
-Result	Test Name	MessageFail	Simple CSSOM manipulation of subrules	
-Fail	Simple CSSOM manipulation of subrules 1	
+1 Pass
+1 Fail
+Pass	Simple CSSOM manipulation of subrules
+Fail	Simple CSSOM manipulation of subrules 1

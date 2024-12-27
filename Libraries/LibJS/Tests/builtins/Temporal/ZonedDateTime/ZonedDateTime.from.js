@@ -4,36 +4,36 @@ describe("correct behavior", () => {
     });
 
     test("ZonedDateTime instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const calendar = new Temporal.Calendar("iso8601");
+        const timeZone = "UTC";
+        const calendar = "gregory";
         const zonedDateTime = new Temporal.ZonedDateTime(1627318123456789000n, timeZone, calendar);
         const createdZoneDateTime = Temporal.ZonedDateTime.from(zonedDateTime);
 
         expect(createdZoneDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
         expect(createdZoneDateTime).not.toBe(zonedDateTime);
-        expect(createdZoneDateTime.timeZone).toBe(timeZone);
-        expect(createdZoneDateTime.calendar).toBe(calendar);
+        expect(createdZoneDateTime.timeZoneId).toBe(timeZone);
+        expect(createdZoneDateTime.calendarId).toBe(calendar);
         expect(createdZoneDateTime.epochNanoseconds).toBe(1627318123456789000n);
     });
 
     test("PlainDate instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const calendar = new Temporal.Calendar("iso8601");
+        const timeZone = "UTC";
+        const calendar = "gregory";
         const plainDate = new Temporal.PlainDate(2021, 11, 7, calendar);
         plainDate.timeZone = timeZone;
         const createdZoneDateTime = Temporal.ZonedDateTime.from(plainDate);
 
         expect(createdZoneDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(createdZoneDateTime.timeZone).toBe(timeZone);
-        expect(createdZoneDateTime.calendar).toBe(calendar);
+        expect(createdZoneDateTime.timeZoneId).toBe(timeZone);
+        expect(createdZoneDateTime.calendarId).toBe(calendar);
         expect(createdZoneDateTime.year).toBe(2021);
         expect(createdZoneDateTime.month).toBe(11);
         expect(createdZoneDateTime.day).toBe(7);
     });
 
     test("PlainDateTime instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const calendar = new Temporal.Calendar("iso8601");
+        const timeZone = "UTC";
+        const calendar = "gregory";
         const plainDateTime = new Temporal.PlainDateTime(
             2021,
             11,
@@ -50,8 +50,8 @@ describe("correct behavior", () => {
         const createdZoneDateTime = Temporal.ZonedDateTime.from(plainDateTime);
 
         expect(createdZoneDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(createdZoneDateTime.timeZone).toBe(timeZone);
-        expect(createdZoneDateTime.calendar).toBe(calendar);
+        expect(createdZoneDateTime.timeZoneId).toBe(timeZone);
+        expect(createdZoneDateTime.calendarId).toBe(calendar);
         expect(createdZoneDateTime.year).toBe(2021);
         expect(createdZoneDateTime.month).toBe(11);
         expect(createdZoneDateTime.day).toBe(7);
@@ -64,8 +64,8 @@ describe("correct behavior", () => {
     });
 
     test("ZonedDateTime-like argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const calendar = new Temporal.Calendar("iso8601");
+        const timeZone = "UTC";
+        const calendar = "gregory";
         const zdtLike = {
             timeZone,
             calendar,
@@ -82,8 +82,8 @@ describe("correct behavior", () => {
         const createdZoneDateTime = Temporal.ZonedDateTime.from(zdtLike);
 
         expect(createdZoneDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(createdZoneDateTime.timeZone).toBe(timeZone);
-        expect(createdZoneDateTime.calendar).toBe(calendar);
+        expect(createdZoneDateTime.timeZoneId).toBe(timeZone);
+        expect(createdZoneDateTime.calendarId).toBe(calendar);
         expect(createdZoneDateTime.year).toBe(2021);
         expect(createdZoneDateTime.month).toBe(11);
         expect(createdZoneDateTime.day).toBe(7);
@@ -101,10 +101,8 @@ describe("correct behavior", () => {
         );
 
         expect(zonedDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(zonedDateTime.timeZone).toBeInstanceOf(Temporal.TimeZone);
-        expect(zonedDateTime.timeZone.id).toBe("UTC");
-        expect(zonedDateTime.calendar).toBeInstanceOf(Temporal.Calendar);
-        expect(zonedDateTime.calendar.id).toBe("iso8601");
+        expect(zonedDateTime.timeZoneId).toBe("UTC");
+        expect(zonedDateTime.calendarId).toBe("iso8601");
         expect(zonedDateTime.year).toBe(2021);
         expect(zonedDateTime.month).toBe(11);
         expect(zonedDateTime.day).toBe(7);
@@ -126,35 +124,9 @@ describe("errors", () => {
         }).toThrowWithMessage(TypeError, "Required property timeZone is missing or undefined");
     });
 
-    test("requires year property", () => {
-        expect(() => {
-            Temporal.ZonedDateTime.from({ timeZone: new Temporal.TimeZone("UTC") });
-        }).toThrowWithMessage(TypeError, "Required property day is missing or undefined");
-    });
-
-    test("requires month property", () => {
-        expect(() => {
-            Temporal.ZonedDateTime.from({
-                timeZone: new Temporal.TimeZone("UTC"),
-                day: 1,
-                year: 2021,
-            });
-        }).toThrowWithMessage(TypeError, "Required property month is missing or undefined");
-    });
-
-    test("requires day property", () => {
-        expect(() => {
-            Temporal.ZonedDateTime.from({
-                timeZone: new Temporal.TimeZone("UTC"),
-                year: 2021,
-                month: 11,
-            });
-        }).toThrowWithMessage(TypeError, "Required property day is missing or undefined");
-    });
-
     test("invalid zoned date time string", () => {
         expect(() => {
             Temporal.ZonedDateTime.from("foo");
-        }).toThrowWithMessage(RangeError, "Invalid zoned date time string 'foo'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 });

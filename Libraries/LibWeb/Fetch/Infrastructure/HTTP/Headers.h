@@ -29,6 +29,7 @@ struct Header {
 
     [[nodiscard]] static Header copy(Header const&);
     [[nodiscard]] static Header from_string_pair(StringView, StringView);
+    [[nodiscard]] static Header from_latin1_pair(StringView, StringView);
 };
 
 // https://fetch.spec.whatwg.org/#concept-header-list
@@ -93,7 +94,8 @@ struct ExtractHeaderParseFailure {
 [[nodiscard]] bool is_request_body_header_name(ReadonlyBytes);
 [[nodiscard]] Optional<Vector<ByteBuffer>> extract_header_values(Header const&);
 [[nodiscard]] Variant<Vector<ByteBuffer>, ExtractHeaderParseFailure, Empty> extract_header_list_values(ReadonlyBytes, HeaderList const&);
-[[nodiscard]] Optional<RangeHeaderValue> parse_single_range_header_value(ReadonlyBytes);
+[[nodiscard]] ByteString build_content_range(u64 const& range_start, u64 const& range_end, u64 const& full_length);
+[[nodiscard]] Optional<RangeHeaderValue> parse_single_range_header_value(ReadonlyBytes, bool);
 [[nodiscard]] ByteBuffer default_user_agent_value();
 
 }

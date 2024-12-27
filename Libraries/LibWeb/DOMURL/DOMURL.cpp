@@ -131,14 +131,14 @@ WebIDL::ExceptionOr<String> DOMURL::create_object_url(JS::VM& vm, GC::Ref<FileAP
 }
 
 // https://w3c.github.io/FileAPI/#dfn-revokeObjectURL
-WebIDL::ExceptionOr<void> DOMURL::revoke_object_url(JS::VM& vm, StringView url)
+void DOMURL::revoke_object_url(JS::VM&, StringView url)
 {
     // 1. Let url record be the result of parsing url.
     auto url_record = parse(url);
 
     // 2. If url record’s scheme is not "blob", return.
     if (url_record.scheme() != "blob"sv)
-        return {};
+        return;
 
     // 3. Let origin be the origin of url record.
     auto origin = url_record.origin();
@@ -148,11 +148,10 @@ WebIDL::ExceptionOr<void> DOMURL::revoke_object_url(JS::VM& vm, StringView url)
 
     // 5. If origin is not same origin with settings’s origin, return.
     if (!origin.is_same_origin(settings.origin()))
-        return {};
+        return;
 
     // 6. Remove an entry from the Blob URL Store for url.
-    TRY_OR_THROW_OOM(vm, FileAPI::remove_entry_from_blob_url_store(url));
-    return {};
+    FileAPI::remove_entry_from_blob_url_store(url);
 }
 
 // https://url.spec.whatwg.org/#dom-url-canparse
@@ -170,21 +169,17 @@ bool DOMURL::can_parse(JS::VM&, String const& url, Optional<String> const& base)
 }
 
 // https://url.spec.whatwg.org/#dom-url-href
-WebIDL::ExceptionOr<String> DOMURL::href() const
+String DOMURL::href() const
 {
-    auto& vm = realm().vm();
-
     // The href getter steps and the toJSON() method steps are to return the serialization of this’s URL.
-    return TRY_OR_THROW_OOM(vm, String::from_byte_string(m_url.serialize()));
+    return m_url.serialize();
 }
 
 // https://url.spec.whatwg.org/#dom-url-tojson
-WebIDL::ExceptionOr<String> DOMURL::to_json() const
+String DOMURL::to_json() const
 {
-    auto& vm = realm().vm();
-
     // The href getter steps and the toJSON() method steps are to return the serialization of this’s URL.
-    return TRY_OR_THROW_OOM(vm, String::from_byte_string(m_url.serialize()));
+    return m_url.serialize();
 }
 
 // https://url.spec.whatwg.org/#ref-for-dom-url-href②
@@ -213,12 +208,10 @@ WebIDL::ExceptionOr<void> DOMURL::set_href(String const& href)
 }
 
 // https://url.spec.whatwg.org/#dom-url-origin
-WebIDL::ExceptionOr<String> DOMURL::origin() const
+String DOMURL::origin() const
 {
-    auto& vm = realm().vm();
-
     // The origin getter steps are to return the serialization of this’s URL’s origin. [HTML]
-    return TRY_OR_THROW_OOM(vm, String::from_byte_string(m_url.origin().serialize()));
+    return m_url.origin().serialize();
 }
 
 // https://url.spec.whatwg.org/#dom-url-protocol
@@ -286,15 +279,15 @@ WebIDL::ExceptionOr<String> DOMURL::host() const
     auto& url = m_url;
 
     // 2. If url’s host is null, then return the empty string.
-    if (url.host().has<Empty>())
+    if (!url.host().has_value())
         return String {};
 
     // 3. If url’s port is null, return url’s host, serialized.
     if (!url.port().has_value())
-        return TRY_OR_THROW_OOM(vm, url.serialized_host());
+        return url.serialized_host();
 
     // 4. Return url’s host, serialized, followed by U+003A (:) and url’s port, serialized.
-    return TRY_OR_THROW_OOM(vm, String::formatted("{}:{}", TRY_OR_THROW_OOM(vm, url.serialized_host()), *url.port()));
+    return TRY_OR_THROW_OOM(vm, String::formatted("{}:{}", url.serialized_host(), *url.port()));
 }
 
 // https://url.spec.whatwg.org/#dom-url-hostref-for-dom-url-host%E2%91%A0
@@ -311,14 +304,12 @@ void DOMURL::set_host(String const& host)
 // https://url.spec.whatwg.org/#dom-url-hostname
 WebIDL::ExceptionOr<String> DOMURL::hostname() const
 {
-    auto& vm = realm().vm();
-
     // 1. If this’s URL’s host is null, then return the empty string.
-    if (m_url.host().has<Empty>())
+    if (!m_url.host().has_value())
         return String {};
 
     // 2. Return this’s URL’s host, serialized.
-    return TRY_OR_THROW_OOM(vm, m_url.serialized_host());
+    return m_url.serialized_host();
 }
 
 // https://url.spec.whatwg.org/#ref-for-dom-url-hostname①
@@ -479,6 +470,7 @@ void DOMURL::set_hash(String const& hash)
 }
 
 // https://url.spec.whatwg.org/#concept-domain
+// FIXME: Move into URL::Host
 bool host_is_domain(URL::Host const& host)
 {
     // A domain is a non-empty ASCII string that identifies a realm within a network.
@@ -509,7 +501,7 @@ void strip_trailing_spaces_from_an_opaque_path(DOMURL& url)
 }
 
 // https://url.spec.whatwg.org/#concept-url-parser
-URL::URL parse(StringView input, Optional<URL::URL> const& base_url, Optional<StringView> encoding)
+URL::URL parse(StringView input, Optional<URL::URL const&> base_url, Optional<StringView> encoding)
 {
     // FIXME: We should probably have an extended version of URL::URL for LibWeb instead of standalone functions like this.
 

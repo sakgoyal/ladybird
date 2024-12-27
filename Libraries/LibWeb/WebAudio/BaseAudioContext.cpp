@@ -16,9 +16,11 @@
 #include <LibWeb/WebAudio/AudioDestinationNode.h>
 #include <LibWeb/WebAudio/BaseAudioContext.h>
 #include <LibWeb/WebAudio/BiquadFilterNode.h>
+#include <LibWeb/WebAudio/ChannelMergerNode.h>
 #include <LibWeb/WebAudio/DynamicsCompressorNode.h>
 #include <LibWeb/WebAudio/GainNode.h>
 #include <LibWeb/WebAudio/OscillatorNode.h>
+#include <LibWeb/WebAudio/PannerNode.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
 #include <LibWeb/WebIDL/Promise.h>
 
@@ -80,6 +82,15 @@ WebIDL::ExceptionOr<GC::Ref<AudioBufferSourceNode>> BaseAudioContext::create_buf
     return AudioBufferSourceNode::create(realm(), *this);
 }
 
+// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createchannelmerger
+WebIDL::ExceptionOr<GC::Ref<ChannelMergerNode>> BaseAudioContext::create_channel_merger(WebIDL::UnsignedLong number_of_inputs)
+{
+    ChannelMergerOptions options;
+    options.number_of_inputs = number_of_inputs;
+
+    return ChannelMergerNode::create(realm(), *this, options);
+}
+
 // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createoscillator
 WebIDL::ExceptionOr<GC::Ref<OscillatorNode>> BaseAudioContext::create_oscillator()
 {
@@ -99,6 +110,13 @@ WebIDL::ExceptionOr<GC::Ref<GainNode>> BaseAudioContext::create_gain()
 {
     // Factory method for GainNode.
     return GainNode::create(realm(), *this);
+}
+
+// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createpanner
+WebIDL::ExceptionOr<GC::Ref<PannerNode>> BaseAudioContext::create_panner()
+{
+    // Factory method for a PannerNode.
+    return PannerNode::create(realm(), *this);
 }
 
 // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer

@@ -11,12 +11,12 @@
 namespace Web::ARIA {
 
 // https://www.w3.org/TR/wai-aria-1.2/#introroles
-Optional<Role> ARIAMixin::role_or_default() const
+Optional<Role> ARIAMixin::role_from_role_attribute_value() const
 {
     // 1. Use the rules of the host language to detect that an element has a role attribute and to identify the attribute value string for it.
     auto maybe_role_string = role();
     if (!maybe_role_string.has_value())
-        return default_role();
+        return OptionalNone {};
 
     // 2. Separate the attribute value string for that attribute into a sequence of whitespace-free substrings by separating on whitespace.
     auto role_string = maybe_role_string.value();
@@ -28,13 +28,34 @@ Optional<Role> ARIAMixin::role_or_default() const
         auto role = role_from_string(role_name);
         if (!role.has_value())
             continue;
-        if (is_non_abstract_role(*role))
+        // NOTE: Per https://w3c.github.io/aria/#directory, "Authors are advised to treat directory as deprecated and to
+        // use 'list'." Further, the "directory role == computedrole list" and "div w/directory role == computedrole
+        // list" tests in https://wpt.fyi/results/wai-aria/role/synonym-roles.html expect "list", not "directory".
+        if (role == Role::directory)
+            return Role::list;
+        // NOTE: The "image" role value is a synonym for the older "img" role value; however, the "synonym img role ==
+        // computedrole image" test in https://wpt.fyi/results/wai-aria/role/synonym-roles.html expects "image", not "img".
+        if (role == Role::img)
+            return Role::image;
+        // NOTE: Per https://w3c.github.io/aria/#presentation, "the working group introduced none as the preferred
+        // synonym to the presentation role"; further, https://wpt.fyi/results/wai-aria/role/synonym-roles.html has a
+        // "synonym presentation role == computedrole none" test that expects "none", not "presentation".
+        if (role == Role::presentation)
+            return Role::none;
+        if (!is_abstract_role(*role))
             return *role;
     }
 
     // https://www.w3.org/TR/wai-aria-1.2/#document-handling_author-errors_roles
     // If the role attribute contains no tokens matching the name of a non-abstract WAI-ARIA role, the user agent MUST treat the element as if no role had been provided.
     // https://www.w3.org/TR/wai-aria-1.2/#implicit_semantics
+    return OptionalNone {};
+}
+
+Optional<Role> ARIAMixin::role_or_default() const
+{
+    if (auto role = role_from_role_attribute_value(); role.has_value())
+        return role;
     return default_role();
 }
 

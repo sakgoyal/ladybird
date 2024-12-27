@@ -45,6 +45,7 @@ void WorkerGlobalScope::visit_edges(Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
     WindowOrWorkerGlobalScopeMixin::visit_edges(visitor);
+    UniversalGlobalScopeMixin::visit_edges(visitor);
 
     visitor.visit(m_location);
     visitor.visit(m_navigator);
@@ -102,7 +103,7 @@ WebIDL::ExceptionOr<void> WorkerGlobalScope::import_scripts(Vector<String> const
     // 5. For each url of urls:
     for (auto const& url : urls) {
         // 1. Let urlRecord be the result of encoding-parsing a URL given url, relative to settings object.
-        auto url_record = settings_object.parse_url(url);
+        auto url_record = settings_object.encoding_parse_url(url);
 
         // 2. If urlRecord is failure, then throw a "SyntaxError" DOMException.
         if (!url_record.is_valid())

@@ -8,6 +8,7 @@
 
 #include <LibCore/EventLoop.h>
 #include <LibCore/Socket.h>
+#include <LibTLS/TLSv12.h>
 #include <LibWebSocket/Impl/WebSocketImplSerenity.h>
 
 namespace WebSocket {
@@ -42,7 +43,7 @@ void WebSocketImplSerenity::connect(ConnectionInfo const& connection_info)
     VERIFY(on_connection_error);
     VERIFY(on_ready_to_read);
     auto socket_result = [&]() -> ErrorOr<NonnullOwnPtr<Core::BufferedSocketBase>> {
-        auto host = TRY(connection_info.url().serialized_host()).to_byte_string();
+        auto host = connection_info.url().serialized_host().to_byte_string();
         if (connection_info.is_secure()) {
             TLS::Options options;
             options.set_alert_handler([this](auto) {

@@ -5,8 +5,7 @@ describe("correct behavior", () => {
 
     test("basic functionality", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 12, 0, 22, 30, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const dayDuration = new Temporal.Duration(0, 0, 0, 1);
         const result = zonedDateTime.add(dayDuration);
 
@@ -19,8 +18,7 @@ describe("correct behavior", () => {
 
     test("duration-like object", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 12, 0, 22, 30, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const dayDuration = { days: 1 };
         const result = zonedDateTime.add(dayDuration);
 
@@ -33,8 +31,7 @@ describe("correct behavior", () => {
 
     test("duration string", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 12, 0, 22, 30, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const dayDuration = "P1D";
         const result = zonedDateTime.add(dayDuration);
 
@@ -55,7 +52,7 @@ describe("errors", () => {
 
     test("invalid duration-like object", () => {
         expect(() => {
-            new Temporal.ZonedDateTime(1n, {}).add({});
+            new Temporal.ZonedDateTime(1n, "UTC").add({});
         }).toThrowWithMessage(TypeError, "Invalid duration-like object");
     });
 });

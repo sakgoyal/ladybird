@@ -7,7 +7,6 @@
  */
 
 #include <AK/GenericShorthands.h>
-#include <LibGfx/DeprecatedPainter.h>
 #include <LibGfx/Font/ScaledFont.h>
 #include <LibUnicode/CharacterTypes.h>
 #include <LibWeb/CSS/SystemColor.h>
@@ -437,6 +436,16 @@ void PaintableBox::paint(PaintContext& context, PaintPhase phase) const
     }
 }
 
+void PaintableBox::set_stacking_context(NonnullOwnPtr<StackingContext> stacking_context)
+{
+    m_stacking_context = move(stacking_context);
+}
+
+void PaintableBox::invalidate_stacking_context()
+{
+    m_stacking_context = nullptr;
+}
+
 BordersData PaintableBox::remove_element_kind_from_borders_data(PaintableBox::BordersDataWithElementKind borders_data)
 {
     return {
@@ -461,7 +470,7 @@ void PaintableBox::paint_border(PaintContext& context) const
 void PaintableBox::paint_backdrop_filter(PaintContext& context) const
 {
     auto const& backdrop_filter = computed_values().backdrop_filter();
-    if (backdrop_filter.is_none()) {
+    if (backdrop_filter.is_empty()) {
         return;
     }
 
@@ -555,14 +564,20 @@ void paint_cursor_if_needed(PaintContext& context, TextPaintable const& paintabl
     if (cursor_position->offset() < (unsigned)fragment.start() || cursor_position->offset() > (unsigned)(fragment.start() + fragment.length()))
         return;
 
-    if (!fragment.layout_node().dom_node() || !fragment.layout_node().dom_node()->is_editable())
+    auto active_element = document.active_element();
+    auto active_element_is_editable = is<HTML::FormAssociatedTextControlElement>(active_element)
+        && dynamic_cast<HTML::FormAssociatedTextControlElement const&>(*active_element).is_mutable();
+
+    auto dom_node = fragment.layout_node().dom_node();
+    if (!dom_node || (!dom_node->is_editable() && !active_element_is_editable))
         return;
 
     auto fragment_rect = fragment.absolute_rect();
 
     auto text = fragment.string_view();
+    auto const& font = fragment.glyph_run() ? fragment.glyph_run()->font() : fragment.layout_node().first_available_font();
     CSSPixelRect cursor_rect {
-        fragment_rect.x() + CSSPixels::nearest_value_for(paintable.layout_node().first_available_font().width(text.substring_view(0, document.cursor_position()->offset() - fragment.start()))),
+        fragment_rect.x() + CSSPixels::nearest_value_for(font.width(text.substring_view(0, document.cursor_position()->offset() - fragment.start()))),
         fragment_rect.top(),
         1,
         fragment_rect.height()
@@ -668,16 +683,19 @@ void paint_text_fragment(PaintContext& context, TextPaintable const& paintable, 
         if (!glyph_run)
             return;
 
-        DevicePixelPoint baseline_start { fragment_absolute_device_rect.x(), fragment_absolute_device_rect.y() + context.rounded_device_pixels(fragment.baseline()) };
         auto scale = context.device_pixels_per_css_pixel();
-        painter.draw_text_run(baseline_start.to_type<int>(), *glyph_run, paintable.computed_values().webkit_text_fill_color(), fragment_absolute_device_rect.to_type<int>(), scale, fragment.orientation());
+        auto baseline_start = Gfx::FloatPoint {
+            fragment_absolute_rect.x().to_float(),
+            fragment_absolute_rect.y().to_float() + fragment.baseline().to_float(),
+        } * scale;
+        painter.draw_text_run(baseline_start, *glyph_run, paintable.computed_values().webkit_text_fill_color(), fragment_absolute_device_rect.to_type<int>(), scale, fragment.orientation());
 
-        auto selection_rect = context.enclosing_device_rect(fragment.selection_rect(paintable.layout_node().first_available_font())).to_type<int>();
+        auto selection_rect = context.enclosing_device_rect(fragment.selection_rect()).to_type<int>();
         if (!selection_rect.is_empty()) {
             painter.fill_rect(selection_rect, CSS::SystemColor::highlight());
             DisplayListRecorderStateSaver saver(painter);
             painter.add_clip_rect(selection_rect);
-            painter.draw_text_run(baseline_start.to_type<int>(), *glyph_run, CSS::SystemColor::highlight_text(), fragment_absolute_device_rect.to_type<int>(), scale, fragment.orientation());
+            painter.draw_text_run(baseline_start, *glyph_run, CSS::SystemColor::highlight_text(), fragment_absolute_device_rect.to_type<int>(), scale, fragment.orientation());
         }
 
         paint_text_decoration(context, paintable, fragment);
@@ -729,9 +747,8 @@ void PaintableWithLines::paint(PaintContext& context, PaintPhase phase) const
     // So, we paint the shadows before painting any text.
     // FIXME: Find a smarter way to do this?
     if (phase == PaintPhase::Foreground) {
-        for (auto& fragment : fragments()) {
+        for (auto& fragment : fragments())
             paint_text_shadow(context, fragment, fragment.shadows());
-        }
     }
 
     for (auto const& fragment : m_fragments) {
@@ -855,7 +872,7 @@ TraversalDecision PaintableBox::hit_test(CSSPixelPoint position, HitTestType typ
     if (hit_test_scrollbars(position_adjusted_by_scroll_offset, callback) == TraversalDecision::Break)
         return TraversalDecision::Break;
 
-    if (layout_node_with_style_and_box_metrics().is_viewport()) {
+    if (is_viewport()) {
         auto& viewport_paintable = const_cast<ViewportPaintable&>(static_cast<ViewportPaintable const&>(*this));
         viewport_paintable.build_stacking_context_tree_if_needed();
         viewport_paintable.document().update_paint_and_hit_testing_properties_if_needed();
@@ -907,6 +924,13 @@ TraversalDecision PaintableWithLines::hit_test(CSSPixelPoint position, HitTestTy
     auto position_adjusted_by_scroll_offset = position;
     position_adjusted_by_scroll_offset.translate_by(-cumulative_offset_of_enclosing_scroll_frame());
 
+    // NOTE: This CSSPixels -> Float -> CSSPixels conversion is because we can't AffineTransform::map() a CSSPixelPoint.
+    Gfx::FloatPoint offset_position {
+        (position_adjusted_by_scroll_offset.x() - transform_origin().x()).to_float(),
+        (position_adjusted_by_scroll_offset.y() - transform_origin().y()).to_float()
+    };
+    auto transformed_position_adjusted_by_scroll_offset = combined_css_transform().inverse().value_or({}).map(offset_position).to_type<CSSPixels>() + transform_origin();
+
     // TextCursor hit testing mode should be able to place cursor in contenteditable elements even if they are empty
     auto is_editable = layout_node_with_style_and_box_metrics().dom_node() && layout_node_with_style_and_box_metrics().dom_node()->is_editable();
     if (is_editable && m_fragments.is_empty() && !has_children() && type == HitTestType::TextCursor) {
@@ -924,7 +948,7 @@ TraversalDecision PaintableWithLines::hit_test(CSSPixelPoint position, HitTestTy
         return PaintableBox::hit_test(position, type, callback);
     }
 
-    if (hit_test_scrollbars(position_adjusted_by_scroll_offset, callback) == TraversalDecision::Break)
+    if (hit_test_scrollbars(transformed_position_adjusted_by_scroll_offset, callback) == TraversalDecision::Break)
         return TraversalDecision::Break;
 
     for (auto const* child = last_child(); child; child = child->previous_sibling()) {
@@ -933,13 +957,13 @@ TraversalDecision PaintableWithLines::hit_test(CSSPixelPoint position, HitTestTy
     }
 
     for (auto const& fragment : fragments()) {
-        if (fragment.paintable().stacking_context())
+        if (fragment.paintable().has_stacking_context())
             continue;
         auto fragment_absolute_rect = fragment.absolute_rect();
-        if (fragment_absolute_rect.contains(position_adjusted_by_scroll_offset)) {
-            if (fragment.paintable().hit_test(position, type, callback) == TraversalDecision::Break)
+        if (fragment_absolute_rect.contains(transformed_position_adjusted_by_scroll_offset)) {
+            if (fragment.paintable().hit_test(transformed_position_adjusted_by_scroll_offset, type, callback) == TraversalDecision::Break)
                 return TraversalDecision::Break;
-            HitTestResult hit_test_result { const_cast<Paintable&>(fragment.paintable()), fragment.text_index_at(position_adjusted_by_scroll_offset), 0, 0 };
+            HitTestResult hit_test_result { const_cast<Paintable&>(fragment.paintable()), fragment.text_index_at(transformed_position_adjusted_by_scroll_offset), 0, 0 };
             if (callback(hit_test_result) == TraversalDecision::Break)
                 return TraversalDecision::Break;
         } else if (type == HitTestType::TextCursor) {
@@ -962,30 +986,30 @@ TraversalDecision PaintableWithLines::hit_test(CSSPixelPoint position, HitTestTy
                 // the place to place the cursor. To determine the best place, we first find the closest fragment horizontally to
                 // the cursor. If we could not find one, then find for the closest vertically above the cursor.
                 // If we knew the direction of selection, we would look above if selecting upward.
-                if (fragment_absolute_rect.bottom() - 1 <= position_adjusted_by_scroll_offset.y()) { // fully below the fragment
+                if (fragment_absolute_rect.bottom() - 1 <= transformed_position_adjusted_by_scroll_offset.y()) { // fully below the fragment
                     HitTestResult hit_test_result {
                         .paintable = const_cast<Paintable&>(fragment.paintable()),
                         .index_in_node = fragment.start() + fragment.length(),
-                        .vertical_distance = position_adjusted_by_scroll_offset.y() - fragment_absolute_rect.bottom(),
+                        .vertical_distance = transformed_position_adjusted_by_scroll_offset.y() - fragment_absolute_rect.bottom(),
                     };
                     if (callback(hit_test_result) == TraversalDecision::Break)
                         return TraversalDecision::Break;
-                } else if (fragment_absolute_rect.top() <= position_adjusted_by_scroll_offset.y()) { // vertically within the fragment
-                    if (position_adjusted_by_scroll_offset.x() < fragment_absolute_rect.left()) {
+                } else if (fragment_absolute_rect.top() <= transformed_position_adjusted_by_scroll_offset.y()) { // vertically within the fragment
+                    if (transformed_position_adjusted_by_scroll_offset.x() < fragment_absolute_rect.left()) {
                         HitTestResult hit_test_result {
                             .paintable = const_cast<Paintable&>(fragment.paintable()),
                             .index_in_node = fragment.start(),
                             .vertical_distance = 0,
-                            .horizontal_distance = fragment_absolute_rect.left() - position_adjusted_by_scroll_offset.x(),
+                            .horizontal_distance = fragment_absolute_rect.left() - transformed_position_adjusted_by_scroll_offset.x(),
                         };
                         if (callback(hit_test_result) == TraversalDecision::Break)
                             return TraversalDecision::Break;
-                    } else if (position_adjusted_by_scroll_offset.x() > fragment_absolute_rect.right()) {
+                    } else if (transformed_position_adjusted_by_scroll_offset.x() > fragment_absolute_rect.right()) {
                         HitTestResult hit_test_result {
                             .paintable = const_cast<Paintable&>(fragment.paintable()),
                             .index_in_node = fragment.start() + fragment.length(),
                             .vertical_distance = 0,
-                            .horizontal_distance = position_adjusted_by_scroll_offset.x() - fragment_absolute_rect.right(),
+                            .horizontal_distance = transformed_position_adjusted_by_scroll_offset.x() - fragment_absolute_rect.right(),
                         };
                         if (callback(hit_test_result) == TraversalDecision::Break)
                             return TraversalDecision::Break;
@@ -995,7 +1019,7 @@ TraversalDecision PaintableWithLines::hit_test(CSSPixelPoint position, HitTestTy
         }
     }
 
-    if (!stacking_context() && is_visible() && absolute_border_box_rect().contains(position_adjusted_by_scroll_offset.x(), position_adjusted_by_scroll_offset.y())) {
+    if (!stacking_context() && is_visible() && absolute_border_box_rect().contains(transformed_position_adjusted_by_scroll_offset.x(), transformed_position_adjusted_by_scroll_offset.y())) {
         if (callback(HitTestResult { const_cast<PaintableWithLines&>(*this) }) == TraversalDecision::Break)
             return TraversalDecision::Break;
     }
@@ -1090,15 +1114,19 @@ void PaintableBox::resolve_paint_properties()
     auto const& layout_node = this->layout_node();
 
     // Border radii
-    CSSPixelRect const border_rect { 0, 0, border_box_width(), border_box_height() };
-    auto const& border_top_left_radius = computed_values.border_top_left_radius();
-    auto const& border_top_right_radius = computed_values.border_top_right_radius();
-    auto const& border_bottom_right_radius = computed_values.border_bottom_right_radius();
-    auto const& border_bottom_left_radius = computed_values.border_bottom_left_radius();
+    BorderRadiiData radii_data {};
+    if (computed_values.has_noninitial_border_radii()) {
+        CSSPixelRect const border_rect { 0, 0, border_box_width(), border_box_height() };
 
-    auto radii_data = normalize_border_radii_data(layout_node, border_rect, border_top_left_radius,
-        border_top_right_radius, border_bottom_right_radius,
-        border_bottom_left_radius);
+        auto const& border_top_left_radius = computed_values.border_top_left_radius();
+        auto const& border_top_right_radius = computed_values.border_top_right_radius();
+        auto const& border_bottom_right_radius = computed_values.border_bottom_right_radius();
+        auto const& border_bottom_left_radius = computed_values.border_bottom_left_radius();
+
+        radii_data = normalize_border_radii_data(layout_node, border_rect, border_top_left_radius,
+            border_top_right_radius, border_bottom_right_radius,
+            border_bottom_left_radius);
+    }
     set_border_radii_data(radii_data);
 
     // Box shadows
@@ -1118,8 +1146,17 @@ void PaintableBox::resolve_paint_properties()
     set_box_shadow_data(move(resolved_box_shadow_data));
 
     auto const& transformations = computed_values.transformations();
-    if (!transformations.is_empty()) {
+    auto const& translate = computed_values.translate();
+    auto const& rotate = computed_values.rotate();
+    auto const& scale = computed_values.scale();
+    if (!transformations.is_empty() || translate.has_value() || rotate.has_value() || scale.has_value()) {
         auto matrix = Gfx::FloatMatrix4x4::identity();
+        if (translate.has_value())
+            matrix = matrix * translate->to_matrix(*this).release_value();
+        if (rotate.has_value())
+            matrix = matrix * rotate->to_matrix(*this).release_value();
+        if (scale.has_value())
+            matrix = matrix * scale->to_matrix(*this).release_value();
         for (auto const& transform : transformations)
             matrix = matrix * transform.to_matrix(*this).release_value();
         set_transform(matrix);
@@ -1167,6 +1204,10 @@ void PaintableBox::resolve_paint_properties()
     if (background_layers) {
         m_resolved_background = resolve_background_layers(*background_layers, *this, background_color, background_rect, normalized_border_radii_data());
     };
+
+    if (auto mask_image = computed_values.mask_image()) {
+        mask_image->resolve_for_size(layout_node_with_style_and_box_metrics(), absolute_padding_box_rect().size());
+    }
 }
 
 void PaintableWithLines::resolve_paint_properties()

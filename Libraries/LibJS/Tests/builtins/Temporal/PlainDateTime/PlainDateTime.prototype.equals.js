@@ -4,7 +4,7 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const calendar = { hello: "friends" };
+        const calendar = "gregory";
         const firstPlainDateTime = new Temporal.PlainDateTime(1, 1, 1, 1, 1, 1, 1, 1, 1, calendar);
         const secondPlainDateTime = new Temporal.PlainDateTime(0, 1, 1, 1, 1, 1, 1, 1, 1, calendar);
         expect(firstPlainDateTime.equals(firstPlainDateTime));

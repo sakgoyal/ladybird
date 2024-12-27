@@ -8,6 +8,17 @@
 
 #if __has_include(<swift/bridging>)
 #    include <swift/bridging>
+// FIXME: Workaround for Xcode 14/15. When swif becomes required, we should bump the
+//        required Xcode verison to one that supports all the features we are using.
+#    ifndef SWIFT_UNCHECKED_SENDABLE
+#        define SWIFT_UNCHECKED_SENDABLE
+#        define SWIFT_NONCOPYABLE
+#        define SWIFT_NONESCAPABLE
+#        define SWIFT_ESCAPABLE
+#        define SWIFT_ESCAPABLE_IF(...)
+#        define SWIFT_RETURNS_RETAINED
+#        define SWIFT_RETURNS_UNRETAINED
+#    endif
 #else
 #    define SWIFT_SELF_CONTAINED
 #    define SWIFT_RETURNS_INDEPENDENT_VALUE
@@ -18,4 +29,11 @@
 #    define SWIFT_CONFORMS_TO_PROTOCOL(protocol)
 #    define SWIFT_COMPUTED_PROPERTY
 #    define SWIFT_MUTATING
+#    define SWIFT_UNCHECKED_SENDABLE
+#    define SWIFT_NONCOPYABLE
+#    define SWIFT_NONESCAPABLE
+#    define SWIFT_ESCAPABLE
+#    define SWIFT_ESCAPABLE_IF(...)
+#    define SWIFT_RETURNS_RETAINED
+#    define SWIFT_RETURNS_UNRETAINED
 #endif

@@ -55,7 +55,6 @@ set(AK_TEST_SOURCES
     TestOwnPtr.cpp
     TestPrint.cpp
     TestQueue.cpp
-    TestQuickSelect.cpp
     TestQuickSort.cpp
     TestRedBlackTree.cpp
     TestRefPtr.cpp
@@ -66,7 +65,6 @@ set(AK_TEST_SOURCES
     TestSourceLocation.cpp
     TestSpan.cpp
     TestStack.cpp
-    TestStatistics.cpp
     TestStdLibExtras.cpp
     TestString.cpp
     TestStringFloatingPointConversions.cpp

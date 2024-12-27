@@ -10,7 +10,6 @@
 #include <AK/ByteString.h>
 #include <AK/Endian.h>
 #include <AK/Types.h>
-#include <LibCrypto/Hash/HashFunction.h>
 
 namespace Crypto::Authentication {
 
@@ -49,6 +48,7 @@ public:
         return "GHash";
     }
 
+    void process_one(u32 (&tag)[4], ReadonlyBytes buf) const;
     TagType process(ReadonlyBytes aad, ReadonlyBytes cipher);
 
 private:

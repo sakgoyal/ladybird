@@ -15,6 +15,7 @@ namespace IDL {
 static constexpr Array libweb_interface_namespaces = {
     "CSS"sv,
     "Clipboard"sv,
+    "Compression"sv,
     "Crypto"sv,
     "DOM"sv,
     "DOMParsing"sv,
@@ -34,6 +35,7 @@ static constexpr Array libweb_interface_namespaces = {
     "ResizeObserver"sv,
     "SVG"sv,
     "Selection"sv,
+    "ServiceWorker"sv,
     "UIEvents"sv,
     "WebAudio"sv,
     "WebGL"sv,

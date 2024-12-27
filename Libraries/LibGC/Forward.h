@@ -6,11 +6,14 @@
 
 #pragma once
 
+#include <AK/Types.h>
+
 namespace GC {
 
 class Cell;
 class CellAllocator;
 class DeferGC;
+class ForeignCell;
 class RootImpl;
 class Heap;
 class HeapBlock;
@@ -27,6 +30,6 @@ template<class T, size_t inline_capacity = 0>
 class ConservativeVector;
 
 template<class T, size_t inline_capacity = 0>
-class MarkedVector;
+class RootVector;
 
 }

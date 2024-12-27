@@ -24,8 +24,8 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(allowfullscreen)            \
     __ENUMERATE_HTML_ATTRIBUTE(alt)                        \
     __ENUMERATE_HTML_ATTRIBUTE(archive)                    \
-    __ENUMERATE_HTML_ATTRIBUTE(async)                      \
     __ENUMERATE_HTML_ATTRIBUTE(as)                         \
+    __ENUMERATE_HTML_ATTRIBUTE(async)                      \
     __ENUMERATE_HTML_ATTRIBUTE(autocomplete)               \
     __ENUMERATE_HTML_ATTRIBUTE(autofocus)                  \
     __ENUMERATE_HTML_ATTRIBUTE(autoplay)                   \
@@ -34,6 +34,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(behavior)                   \
     __ENUMERATE_HTML_ATTRIBUTE(bgcolor)                    \
     __ENUMERATE_HTML_ATTRIBUTE(border)                     \
+    __ENUMERATE_HTML_ATTRIBUTE(bottommargin)               \
     __ENUMERATE_HTML_ATTRIBUTE(cellpadding)                \
     __ENUMERATE_HTML_ATTRIBUTE(cellspacing)                \
     __ENUMERATE_HTML_ATTRIBUTE(char_)                      \
@@ -59,6 +60,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(data)                       \
     __ENUMERATE_HTML_ATTRIBUTE(datetime)                   \
     __ENUMERATE_HTML_ATTRIBUTE(declare)                    \
+    __ENUMERATE_HTML_ATTRIBUTE(decoding)                   \
     __ENUMERATE_HTML_ATTRIBUTE(default_)                   \
     __ENUMERATE_HTML_ATTRIBUTE(defaultchecked)             \
     __ENUMERATE_HTML_ATTRIBUTE(defaultselected)            \
@@ -70,6 +72,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(download)                   \
     __ENUMERATE_HTML_ATTRIBUTE(enctype)                    \
     __ENUMERATE_HTML_ATTRIBUTE(ended)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(enterkeyhint)               \
     __ENUMERATE_HTML_ATTRIBUTE(event)                      \
     __ENUMERATE_HTML_ATTRIBUTE(face)                       \
     __ENUMERATE_HTML_ATTRIBUTE(fetchpriority)              \
@@ -95,6 +98,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(imagesrcset)                \
     __ENUMERATE_HTML_ATTRIBUTE(indeterminate)              \
     __ENUMERATE_HTML_ATTRIBUTE(inert)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(inputmode)                  \
     __ENUMERATE_HTML_ATTRIBUTE(integrity)                  \
     __ENUMERATE_HTML_ATTRIBUTE(is)                         \
     __ENUMERATE_HTML_ATTRIBUTE(iscontenteditable)          \
@@ -104,6 +108,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(label)                      \
     __ENUMERATE_HTML_ATTRIBUTE(lang)                       \
     __ENUMERATE_HTML_ATTRIBUTE(language)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(leftmargin)                 \
     __ENUMERATE_HTML_ATTRIBUTE(link)                       \
     __ENUMERATE_HTML_ATTRIBUTE(list)                       \
     __ENUMERATE_HTML_ATTRIBUTE(loading)                    \
@@ -132,7 +137,9 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onabort)                    \
     __ENUMERATE_HTML_ATTRIBUTE(onafterprint)               \
     __ENUMERATE_HTML_ATTRIBUTE(onauxclick)                 \
+    __ENUMERATE_HTML_ATTRIBUTE(onbeforeinput)              \
     __ENUMERATE_HTML_ATTRIBUTE(onbeforeprint)              \
+    __ENUMERATE_HTML_ATTRIBUTE(onbeforetoggle)             \
     __ENUMERATE_HTML_ATTRIBUTE(onbeforeunload)             \
     __ENUMERATE_HTML_ATTRIBUTE(onblur)                     \
     __ENUMERATE_HTML_ATTRIBUTE(oncancel)                   \
@@ -142,7 +149,9 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onclick)                    \
     __ENUMERATE_HTML_ATTRIBUTE(onclose)                    \
     __ENUMERATE_HTML_ATTRIBUTE(oncontextmenu)              \
+    __ENUMERATE_HTML_ATTRIBUTE(oncopy)                     \
     __ENUMERATE_HTML_ATTRIBUTE(oncuechange)                \
+    __ENUMERATE_HTML_ATTRIBUTE(oncut)                      \
     __ENUMERATE_HTML_ATTRIBUTE(ondblclick)                 \
     __ENUMERATE_HTML_ATTRIBUTE(ondrag)                     \
     __ENUMERATE_HTML_ATTRIBUTE(ondragend)                  \
@@ -159,6 +168,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onfocusin)                  \
     __ENUMERATE_HTML_ATTRIBUTE(onfocusout)                 \
     __ENUMERATE_HTML_ATTRIBUTE(onformdata)                 \
+    __ENUMERATE_HTML_ATTRIBUTE(ongotpointercapture)        \
     __ENUMERATE_HTML_ATTRIBUTE(onhashchange)               \
     __ENUMERATE_HTML_ATTRIBUTE(oninput)                    \
     __ENUMERATE_HTML_ATTRIBUTE(oninvalid)                  \
@@ -170,6 +180,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onloadeddata)               \
     __ENUMERATE_HTML_ATTRIBUTE(onloadedmetadata)           \
     __ENUMERATE_HTML_ATTRIBUTE(onloadstart)                \
+    __ENUMERATE_HTML_ATTRIBUTE(onlostpointercapture)       \
     __ENUMERATE_HTML_ATTRIBUTE(onmessage)                  \
     __ENUMERATE_HTML_ATTRIBUTE(onmessageerror)             \
     __ENUMERATE_HTML_ATTRIBUTE(onmousedown)                \
@@ -182,10 +193,22 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onoffline)                  \
     __ENUMERATE_HTML_ATTRIBUTE(ononline)                   \
     __ENUMERATE_HTML_ATTRIBUTE(onpagehide)                 \
+    __ENUMERATE_HTML_ATTRIBUTE(onpagereveal)               \
     __ENUMERATE_HTML_ATTRIBUTE(onpageshow)                 \
+    __ENUMERATE_HTML_ATTRIBUTE(onpageswap)                 \
+    __ENUMERATE_HTML_ATTRIBUTE(onpaste)                    \
     __ENUMERATE_HTML_ATTRIBUTE(onpause)                    \
     __ENUMERATE_HTML_ATTRIBUTE(onplay)                     \
     __ENUMERATE_HTML_ATTRIBUTE(onplaying)                  \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointercancel)            \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerdown)              \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerenter)             \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerleave)             \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointermove)              \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerout)               \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerover)              \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerrawupdate)         \
+    __ENUMERATE_HTML_ATTRIBUTE(onpointerup)                \
     __ENUMERATE_HTML_ATTRIBUTE(onpopstate)                 \
     __ENUMERATE_HTML_ATTRIBUTE(onprogress)                 \
     __ENUMERATE_HTML_ATTRIBUTE(onratechange)               \
@@ -193,6 +216,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(onreset)                    \
     __ENUMERATE_HTML_ATTRIBUTE(onresize)                   \
     __ENUMERATE_HTML_ATTRIBUTE(onscroll)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(onscrollend)                \
     __ENUMERATE_HTML_ATTRIBUTE(onsecuritypolicyviolation)  \
     __ENUMERATE_HTML_ATTRIBUTE(onseeked)                   \
     __ENUMERATE_HTML_ATTRIBUTE(onseeking)                  \
@@ -222,6 +246,8 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(placeholder)                \
     __ENUMERATE_HTML_ATTRIBUTE(playsinline)                \
     __ENUMERATE_HTML_ATTRIBUTE(popover)                    \
+    __ENUMERATE_HTML_ATTRIBUTE(popovertarget)              \
+    __ENUMERATE_HTML_ATTRIBUTE(popovertargetaction)        \
     __ENUMERATE_HTML_ATTRIBUTE(poster)                     \
     __ENUMERATE_HTML_ATTRIBUTE(preload)                    \
     __ENUMERATE_HTML_ATTRIBUTE(readonly)                   \
@@ -230,9 +256,11 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(required)                   \
     __ENUMERATE_HTML_ATTRIBUTE(rev)                        \
     __ENUMERATE_HTML_ATTRIBUTE(reversed)                   \
+    __ENUMERATE_HTML_ATTRIBUTE(rightmargin)                \
     __ENUMERATE_HTML_ATTRIBUTE(rows)                       \
     __ENUMERATE_HTML_ATTRIBUTE(rowspan)                    \
     __ENUMERATE_HTML_ATTRIBUTE(rules)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(sandbox)                    \
     __ENUMERATE_HTML_ATTRIBUTE(scheme)                     \
     __ENUMERATE_HTML_ATTRIBUTE(scope)                      \
     __ENUMERATE_HTML_ATTRIBUTE(scrollamount)               \
@@ -258,10 +286,12 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(step)                       \
     __ENUMERATE_HTML_ATTRIBUTE(style)                      \
     __ENUMERATE_HTML_ATTRIBUTE(summary)                    \
+    __ENUMERATE_HTML_ATTRIBUTE(switch_)                    \
     __ENUMERATE_HTML_ATTRIBUTE(tabindex)                   \
     __ENUMERATE_HTML_ATTRIBUTE(target)                     \
     __ENUMERATE_HTML_ATTRIBUTE(text)                       \
     __ENUMERATE_HTML_ATTRIBUTE(title)                      \
+    __ENUMERATE_HTML_ATTRIBUTE(topmargin)                  \
     __ENUMERATE_HTML_ATTRIBUTE(truespeed)                  \
     __ENUMERATE_HTML_ATTRIBUTE(type)                       \
     __ENUMERATE_HTML_ATTRIBUTE(usemap)                     \

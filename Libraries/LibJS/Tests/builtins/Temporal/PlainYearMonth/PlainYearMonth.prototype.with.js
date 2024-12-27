@@ -31,27 +31,24 @@ describe("errors", () => {
     test("argument must be an object", () => {
         expect(() => {
             new Temporal.PlainYearMonth(1970, 1).with("foo");
-        }).toThrowWithMessage(TypeError, "foo is not an object");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
             new Temporal.PlainYearMonth(1970, 1).with(42);
-        }).toThrowWithMessage(TypeError, "42 is not an object");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument must have one of 'month', 'monthCode', 'year'", () => {
         expect(() => {
             new Temporal.PlainYearMonth(1970, 1).with({});
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: month, monthCode, year"
-        );
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument must not have 'calendar' or 'timeZone'", () => {
         expect(() => {
             new Temporal.PlainYearMonth(1970, 1).with({ calendar: {} });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined calendar property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
             new Temporal.PlainYearMonth(1970, 1).with({ timeZone: {} });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined timeZone property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 });

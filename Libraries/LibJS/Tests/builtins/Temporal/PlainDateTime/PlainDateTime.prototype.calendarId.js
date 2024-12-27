@@ -1,8 +1,8 @@
 describe("correct behavior", () => {
     test("calendarId basic functionality", () => {
-        const calendar = "iso8601";
-        const plainDateTime = new Temporal.PlainDateTime(2000, 5, 1, 12, 30, 0, calendar);
-        expect(plainDateTime.calendarId).toBe("iso8601");
+        const calendar = "gregory";
+        const plainDateTime = new Temporal.PlainDateTime(2000, 5, 1, 12, 30, 0, 0, 0, 0, calendar);
+        expect(plainDateTime.calendarId).toBe(calendar);
     });
 });
 

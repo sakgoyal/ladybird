@@ -3,16 +3,6 @@ describe("correct behavior", () => {
         const plainDate = new Temporal.PlainDate(2021, 7, 6);
         expect(plainDate.era).toBeUndefined();
     });
-
-    test("calendar with custom era function", () => {
-        const calendar = {
-            era() {
-                return "foo";
-            },
-        };
-        const plainDate = new Temporal.PlainDate(2021, 7, 6, calendar);
-        expect(plainDate.era).toBe("foo");
-    });
 });
 
 describe("errors", () => {

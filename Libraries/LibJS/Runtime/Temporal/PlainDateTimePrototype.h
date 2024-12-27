@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -22,8 +23,9 @@ public:
 private:
     explicit PlainDateTimePrototype(Realm&);
 
-    JS_DECLARE_NATIVE_FUNCTION(calendar_getter);
     JS_DECLARE_NATIVE_FUNCTION(calendar_id_getter);
+    JS_DECLARE_NATIVE_FUNCTION(era_getter);
+    JS_DECLARE_NATIVE_FUNCTION(era_year_getter);
     JS_DECLARE_NATIVE_FUNCTION(year_getter);
     JS_DECLARE_NATIVE_FUNCTION(month_getter);
     JS_DECLARE_NATIVE_FUNCTION(month_code_getter);
@@ -43,11 +45,8 @@ private:
     JS_DECLARE_NATIVE_FUNCTION(days_in_year_getter);
     JS_DECLARE_NATIVE_FUNCTION(months_in_year_getter);
     JS_DECLARE_NATIVE_FUNCTION(in_leap_year_getter);
-    JS_DECLARE_NATIVE_FUNCTION(era_getter);
-    JS_DECLARE_NATIVE_FUNCTION(era_year_getter);
     JS_DECLARE_NATIVE_FUNCTION(with);
     JS_DECLARE_NATIVE_FUNCTION(with_plain_time);
-    JS_DECLARE_NATIVE_FUNCTION(with_plain_date);
     JS_DECLARE_NATIVE_FUNCTION(with_calendar);
     JS_DECLARE_NATIVE_FUNCTION(add);
     JS_DECLARE_NATIVE_FUNCTION(subtract);
@@ -61,10 +60,7 @@ private:
     JS_DECLARE_NATIVE_FUNCTION(value_of);
     JS_DECLARE_NATIVE_FUNCTION(to_zoned_date_time);
     JS_DECLARE_NATIVE_FUNCTION(to_plain_date);
-    JS_DECLARE_NATIVE_FUNCTION(to_plain_year_month);
-    JS_DECLARE_NATIVE_FUNCTION(to_plain_month_day);
     JS_DECLARE_NATIVE_FUNCTION(to_plain_time);
-    JS_DECLARE_NATIVE_FUNCTION(get_iso_fields);
 };
 
 }

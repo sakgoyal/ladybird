@@ -146,12 +146,8 @@ public:
         return TraversalDecision::Continue;
     }
 
-    StackingContext* stacking_context() { return m_stacking_context; }
-    StackingContext const* stacking_context() const { return m_stacking_context; }
-    void set_stacking_context(NonnullOwnPtr<StackingContext>);
+    bool has_stacking_context() const;
     StackingContext* enclosing_stacking_context();
-
-    void invalidate_stacking_context();
 
     virtual void before_paint(PaintContext&, PaintPhase) const { }
     virtual void after_paint(PaintContext&, PaintPhase) const { }
@@ -183,7 +179,6 @@ public:
     virtual DispatchEventOfSameName handle_mousedown(Badge<EventHandler>, CSSPixelPoint, unsigned button, unsigned modifiers);
     virtual DispatchEventOfSameName handle_mouseup(Badge<EventHandler>, CSSPixelPoint, unsigned button, unsigned modifiers);
     virtual DispatchEventOfSameName handle_mousemove(Badge<EventHandler>, CSSPixelPoint, unsigned buttons, unsigned modifiers);
-    virtual DOM::Node* mouse_event_target() const { return nullptr; }
 
     virtual bool handle_mousewheel(Badge<EventHandler>, CSSPixelPoint, unsigned buttons, unsigned modifiers, int wheel_delta_x, int wheel_delta_y);
 
@@ -250,8 +245,6 @@ private:
     GC::Ptr<DOM::Node> m_dom_node;
     GC::Ref<Layout::Node const> m_layout_node;
     Optional<GC::Ptr<PaintableBox>> mutable m_containing_block;
-
-    OwnPtr<StackingContext> m_stacking_context;
 
     SelectionState m_selection_state { SelectionState::None };
 

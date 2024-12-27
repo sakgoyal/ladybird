@@ -18,11 +18,11 @@ class HTMLTableCellElement final : public HTMLElement {
 public:
     virtual ~HTMLTableCellElement() override;
 
-    unsigned col_span() const;
-    unsigned row_span() const;
+    WebIDL::UnsignedLong col_span() const;
+    WebIDL::UnsignedLong row_span() const;
 
-    WebIDL::ExceptionOr<void> set_col_span(unsigned);
-    WebIDL::ExceptionOr<void> set_row_span(unsigned);
+    WebIDL::ExceptionOr<void> set_col_span(WebIDL::UnsignedLong);
+    WebIDL::ExceptionOr<void> set_row_span(WebIDL::UnsignedLong);
 
     WebIDL::Long cell_index() const;
 
@@ -34,7 +34,8 @@ private:
     virtual bool is_html_table_cell_element() const override { return true; }
 
     virtual void initialize(JS::Realm&) override;
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 };
 
 }

@@ -7,7 +7,7 @@
 
 #include <AK/String.h>
 #include <AK/StringBuilder.h>
-#include <LibGC/MarkedVector.h>
+#include <LibGC/RootVector.h>
 #include <LibJS/Runtime/Completion.h>
 #include <LibJS/Runtime/PropertyDescriptor.h>
 #include <LibJS/Runtime/PropertyKey.h>
@@ -38,12 +38,35 @@ void Location::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_default_properties);
 }
 
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-location-interface
 void Location::initialize(JS::Realm& realm)
 {
     Base::initialize(realm);
     WEB_SET_PROTOTYPE_FOR_INTERFACE(Location);
 
-    // FIXME: Implement steps 2.-4.
+    auto& vm = this->vm();
+
+    // Step 2: Let valueOf be location's relevant realm.[[Intrinsics]].[[%Object.prototype.valueOf%]].
+    auto& intrinsics = realm.intrinsics();
+    auto value_of_function = intrinsics.object_prototype()->get_without_side_effects(vm.names.valueOf);
+
+    // Step 3: Perform ! location.[[DefineOwnProperty]]("valueOf", { [[Value]]: valueOf, [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: false }).
+    auto value_of_property_descriptor = JS::PropertyDescriptor {
+        .value = value_of_function,
+        .writable = false,
+        .enumerable = false,
+        .configurable = false,
+    };
+    MUST(internal_define_own_property(vm.names.valueOf, value_of_property_descriptor));
+
+    // Step 4: Perform ! location.[[DefineOwnProperty]](%Symbol.toPrimitive%, { [[Value]]: undefined, [[Writable]]: false, [[Enumerable]]: false, [[Configurable]]: false }).
+    auto to_primitive_property_descriptor = JS::PropertyDescriptor {
+        .value = JS::js_undefined(),
+        .writable = false,
+        .enumerable = false,
+        .configurable = false,
+    };
+    MUST(internal_define_own_property(vm.well_known_symbol_to_primitive(), to_primitive_property_descriptor));
 
     // 5. Set the value of the [[DefaultProperties]] internal slot of location to location.[[OwnPropertyKeys]]().
     // NOTE: In LibWeb this happens before the ESO is set up, so we must avoid location's custom [[OwnPropertyKeys]].
@@ -95,37 +118,34 @@ URL::URL Location::url() const
 // https://html.spec.whatwg.org/multipage/history.html#dom-location-href
 WebIDL::ExceptionOr<String> Location::href() const
 {
-    auto& vm = this->vm();
-
     // 1. If this's relevant Document is non-null and its origin is not same origin-domain with the entry settings object's origin, then throw a "SecurityError" DOMException.
     auto const relevant_document = this->relevant_document();
     if (relevant_document && !relevant_document->origin().is_same_origin_domain(entry_settings_object().origin()))
         return WebIDL::SecurityError::create(realm(), "Location's relevant document is not same origin-domain with the entry settings object's origin"_string);
 
     // 2. Return this's url, serialized.
-    return TRY_OR_THROW_OOM(vm, String::from_byte_string(url().serialize()));
+    return url().serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/history.html#the-location-interface:dom-location-href-2
 WebIDL::ExceptionOr<void> Location::set_href(String const& new_href)
 {
     auto& realm = this->realm();
-    auto& window = verify_cast<HTML::Window>(HTML::current_principal_global_object());
 
     // 1. If this's relevant Document is null, then return.
     auto const relevant_document = this->relevant_document();
     if (!relevant_document)
         return {};
 
-    // FIXME: 2. Let url be the result of encoding-parsing a URL given the given value, relative to the entry settings object.
-    auto href_url = window.associated_document().parse_url(new_href.to_byte_string());
+    // 2. Let url be the result of encoding-parsing a URL given the given value, relative to the entry settings object.
+    auto url = entry_settings_object().encoding_parse_url(new_href.to_byte_string());
 
     // 3. If url is failure, then throw a "SyntaxError" DOMException.
-    if (!href_url.is_valid())
+    if (!url.is_valid())
         return WebIDL::SyntaxError::create(realm, MUST(String::formatted("Invalid URL '{}'", new_href)));
 
     // 4. Location-object navigate this to url.
-    TRY(navigate(href_url));
+    TRY(navigate(url));
 
     return {};
 }
@@ -133,15 +153,13 @@ WebIDL::ExceptionOr<void> Location::set_href(String const& new_href)
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-location-origin
 WebIDL::ExceptionOr<String> Location::origin() const
 {
-    auto& vm = this->vm();
-
     // 1. If this's relevant Document is non-null and its origin is not same origin-domain with the entry settings object's origin, then throw a "SecurityError" DOMException.
     auto const relevant_document = this->relevant_document();
     if (relevant_document && !relevant_document->origin().is_same_origin_domain(entry_settings_object().origin()))
         return WebIDL::SecurityError::create(realm(), "Location's relevant document is not same origin-domain with the entry settings object's origin"_string);
 
     // 2. Return the serialization of this's url's origin.
-    return TRY_OR_THROW_OOM(vm, String::from_byte_string(url().origin().serialize()));
+    return url().origin().serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/history.html#dom-location-protocol
@@ -205,15 +223,15 @@ WebIDL::ExceptionOr<String> Location::host() const
     auto url = this->url();
 
     // 3. If url's host is null, return the empty string.
-    if (url.host().has<Empty>())
+    if (!url.host().has_value())
         return String {};
 
     // 4. If url's port is null, return url's host, serialized.
     if (!url.port().has_value())
-        return TRY_OR_THROW_OOM(vm, url.serialized_host());
+        return url.serialized_host();
 
     // 5. Return url's host, serialized, followed by ":" and url's port, serialized.
-    return TRY_OR_THROW_OOM(vm, String::formatted("{}:{}", TRY_OR_THROW_OOM(vm, url.serialized_host()), *url.port()));
+    return TRY_OR_THROW_OOM(vm, String::formatted("{}:{}", url.serialized_host(), *url.port()));
 }
 
 WebIDL::ExceptionOr<void> Location::set_host(String const&)
@@ -225,8 +243,6 @@ WebIDL::ExceptionOr<void> Location::set_host(String const&)
 // https://html.spec.whatwg.org/multipage/history.html#dom-location-hostname
 WebIDL::ExceptionOr<String> Location::hostname() const
 {
-    auto& vm = this->vm();
-
     // 1. If this's relevant Document is non-null and its origin is not same origin-domain with the entry settings object's origin, then throw a "SecurityError" DOMException.
     auto const relevant_document = this->relevant_document();
     if (relevant_document && !relevant_document->origin().is_same_origin_domain(entry_settings_object().origin()))
@@ -235,11 +251,11 @@ WebIDL::ExceptionOr<String> Location::hostname() const
     auto url = this->url();
 
     // 2. If this's url's host is null, return the empty string.
-    if (url.host().has<Empty>())
+    if (!url.host().has_value())
         return String {};
 
     // 3. Return this's url's host, serialized.
-    return TRY_OR_THROW_OOM(vm, url.serialized_host());
+    return url.serialized_host();
 }
 
 WebIDL::ExceptionOr<void> Location::set_hostname(String const&)
@@ -506,6 +522,7 @@ JS::ThrowCompletionOr<Optional<JS::PropertyDescriptor>> Location::internal_get_o
         auto descriptor = MUST(Object::internal_get_own_property(property_key));
 
         // 2. If the value of the [[DefaultProperties]] internal slot of this contains P, then set desc.[[Configurable]] to true.
+        // FIXME: This doesn't align with what the other browsers do. Spec issue: https://github.com/whatwg/html/issues/4157
         auto property_key_value = property_key.is_symbol()
             ? JS::Value { property_key.as_symbol() }
             : JS::PrimitiveString::create(vm, property_key.to_string());
@@ -579,7 +596,7 @@ JS::ThrowCompletionOr<bool> Location::internal_delete(JS::PropertyKey const& pro
 }
 
 // 7.10.5.10 [[OwnPropertyKeys]] ( ), https://html.spec.whatwg.org/multipage/history.html#location-ownpropertykeys
-JS::ThrowCompletionOr<GC::MarkedVector<JS::Value>> Location::internal_own_property_keys() const
+JS::ThrowCompletionOr<GC::RootVector<JS::Value>> Location::internal_own_property_keys() const
 {
     // 1. If IsPlatformObjectSameOrigin(this) is true, then return OrdinaryOwnPropertyKeys(this).
     if (HTML::is_platform_object_same_origin(*this))

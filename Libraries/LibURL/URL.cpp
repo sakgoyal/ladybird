@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018-2020, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, Max Wipfli <mail@maxwipfli.ch>
+ * Copyright (c) 2024, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -13,6 +14,10 @@
 #include <AK/Utf8View.h>
 #include <LibURL/Parser.h>
 #include <LibURL/URL.h>
+
+#if defined(ENABLE_PUBLIC_SUFFIX)
+#    include <LibURL/PublicSuffixData.h>
+#endif
 
 namespace URL {
 
@@ -81,9 +86,9 @@ void URL::set_host(Host host)
 }
 
 // https://url.spec.whatwg.org/#concept-host-serializer
-ErrorOr<String> URL::serialized_host() const
+String URL::serialized_host() const
 {
-    return Parser::serialize_host(m_data->host);
+    return m_data->host->serialize();
 }
 
 void URL::set_port(Optional<u16> port)
@@ -114,7 +119,8 @@ void URL::append_path(StringView path)
 bool URL::cannot_have_a_username_or_password_or_port() const
 {
     // A URL cannot have a username/password/port if its host is null or the empty string, or its scheme is "file".
-    return m_data->host.has<Empty>() || m_data->host == String {} || m_data->scheme == "file"sv;
+
+    return !m_data->host.has_value() || m_data->host->is_empty_host() || m_data->scheme == "file"sv;
 }
 
 // FIXME: This is by no means complete.
@@ -137,8 +143,8 @@ bool URL::compute_validity() const
             return false;
     }
 
-    // NOTE: A file URL's host should be the empty string for localhost, not null.
-    if (m_data->scheme == "file" && m_data->host.has<Empty>())
+    // FIXME: A file URL's host should be the empty string for localhost, not null.
+    if (m_data->scheme == "file" && !m_data->host.has_value())
         return false;
 
     return true;
@@ -239,7 +245,7 @@ String URL::serialize_path() const
 }
 
 // https://url.spec.whatwg.org/#concept-url-serializer
-ByteString URL::serialize(ExcludeFragment exclude_fragment) const
+String URL::serialize(ExcludeFragment exclude_fragment) const
 {
     // 1. Let output be url’s scheme and U+003A (:) concatenated.
     StringBuilder output;
@@ -247,7 +253,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
     output.append(':');
 
     // 2. If url’s host is non-null:
-    if (!m_data->host.has<Empty>()) {
+    if (m_data->host.has_value()) {
         // 1. Append "//" to output.
         output.append("//"sv);
 
@@ -267,7 +273,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
         }
 
         // 3. Append url’s host, serialized, to output.
-        output.append(serialized_host().release_value_but_fixme_should_propagate_errors());
+        output.append(serialized_host());
 
         // 4. If url’s port is non-null, append U+003A (:) followed by url’s port, serialized, to output.
         if (m_data->port.has_value())
@@ -280,7 +286,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
     if (cannot_be_a_base_url()) {
         output.append(m_data->paths[0]);
     } else {
-        if (m_data->host.has<Empty>() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
+        if (!m_data->host.has_value() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
             output.append("/."sv);
         for (auto& segment : m_data->paths) {
             output.append('/');
@@ -301,7 +307,7 @@ ByteString URL::serialize(ExcludeFragment exclude_fragment) const
     }
 
     // 7. Return output.
-    return output.to_byte_string();
+    return output.to_string_without_validation();
 }
 
 // https://url.spec.whatwg.org/#url-rendering
@@ -316,9 +322,9 @@ ByteString URL::serialize_for_display() const
     builder.append(m_data->scheme);
     builder.append(':');
 
-    if (!m_data->host.has<Empty>()) {
+    if (m_data->host.has_value()) {
         builder.append("//"sv);
-        builder.append(serialized_host().release_value_but_fixme_should_propagate_errors());
+        builder.append(serialized_host());
         if (m_data->port.has_value())
             builder.appendff(":{}", *m_data->port);
     }
@@ -326,7 +332,7 @@ ByteString URL::serialize_for_display() const
     if (cannot_be_a_base_url()) {
         builder.append(m_data->paths[0]);
     } else {
-        if (m_data->host.has<Empty>() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
+        if (!m_data->host.has_value() && m_data->paths.size() > 1 && m_data->paths[0].is_empty())
             builder.append("/."sv);
         for (auto& segment : m_data->paths) {
             builder.append('/');
@@ -347,19 +353,12 @@ ByteString URL::serialize_for_display() const
     return builder.to_byte_string();
 }
 
-ErrorOr<String> URL::to_string() const
-{
-    return String::from_byte_string(serialize());
-}
-
 // https://url.spec.whatwg.org/#concept-url-origin
 Origin URL::origin() const
 {
     // The origin of a URL url is the origin returned by running these steps, switching on url’s scheme:
     // -> "blob"
     if (scheme() == "blob"sv) {
-        auto url_string = to_string().release_value_but_fixme_should_propagate_errors();
-
         // 1. If url’s blob URL entry is non-null, then return url’s blob URL entry’s environment’s origin.
         if (blob_url_entry().has_value())
             return blob_url_entry()->environment_origin;
@@ -386,7 +385,7 @@ Origin URL::origin() const
     // -> "wss"
     if (scheme().is_one_of("ftp"sv, "http"sv, "https"sv, "ws"sv, "wss"sv)) {
         // Return the tuple origin (url’s scheme, url’s host, url’s port, null).
-        return Origin(scheme().to_byte_string(), host(), port());
+        return Origin(scheme(), host().value(), port());
     }
 
     // -> "file"
@@ -394,7 +393,7 @@ Origin URL::origin() const
     if (scheme() == "file"sv || scheme() == "resource"sv) {
         // Unfortunate as it is, this is left as an exercise to the reader. When in doubt, return a new opaque origin.
         // Note: We must return an origin with the `file://' protocol for `file://' iframes to work from `file://' pages.
-        return Origin(scheme().to_byte_string(), String {}, {});
+        return Origin(scheme(), String {}, {});
     }
 
     // -> Otherwise
@@ -476,26 +475,57 @@ String percent_encode(StringView input, PercentEncodeSet set, SpaceAsPlus space_
     return MUST(builder.to_string());
 }
 
+// https://url.spec.whatwg.org/#percent-decode
 ByteString percent_decode(StringView input)
 {
     if (!input.contains('%'))
         return input;
+
+    // 1. Let output be an empty byte sequence.
     StringBuilder builder;
-    Utf8View utf8_view(input);
-    for (auto it = utf8_view.begin(); !it.done(); ++it) {
-        if (*it != '%') {
-            builder.append_code_point(*it);
-        } else if (!is_ascii_hex_digit(it.peek(1).value_or(0)) || !is_ascii_hex_digit(it.peek(2).value_or(0))) {
-            builder.append_code_point(*it);
-        } else {
-            ++it;
-            u8 byte = parse_ascii_hex_digit(*it) << 4;
-            ++it;
-            byte += parse_ascii_hex_digit(*it);
-            builder.append(byte);
+
+    // 2. For each byte byte in input:
+    for (size_t i = 0; i < input.length(); ++i) {
+        // 1. If byte is not 0x25 (%), then append byte to output.
+        if (input[i] != '%') {
+            builder.append(input[i]);
+        }
+        // 2. Otherwise, if byte is 0x25 (%) and the next two bytes after byte in input are not in the ranges 0x30 (0)
+        //    to 0x39 (9), 0x41 (A) to 0x46 (F), and 0x61 (a) to 0x66 (f), all inclusive, append byte to output.
+        else if (i + 2 >= input.length() || !is_ascii_hex_digit(input[i + 1]) || !is_ascii_hex_digit(input[i + 2])) {
+            builder.append(input[i]);
+        }
+        // 3. Otherwise:
+        else {
+            // 1. Let bytePoint be the two bytes after byte in input, decoded, and then interpreted as hexadecimal number.
+            u8 byte_point = (parse_ascii_hex_digit(input[i + 1]) << 4) | parse_ascii_hex_digit(input[i + 2]);
+
+            // 2. Append a byte whose value is bytePoint to output.
+            builder.append(byte_point);
+
+            // 3. Skip the next two bytes in input.
+            i += 2;
         }
     }
     return builder.to_byte_string();
+}
+
+bool is_public_suffix([[maybe_unused]] StringView host)
+{
+#if defined(ENABLE_PUBLIC_SUFFIX)
+    return PublicSuffixData::the()->is_public_suffix(host);
+#else
+    return false;
+#endif
+}
+
+Optional<String> get_public_suffix([[maybe_unused]] StringView host)
+{
+#if defined(ENABLE_PUBLIC_SUFFIX)
+    return MUST(PublicSuffixData::the()->get_public_suffix(host));
+#else
+    return {};
+#endif
 }
 
 }

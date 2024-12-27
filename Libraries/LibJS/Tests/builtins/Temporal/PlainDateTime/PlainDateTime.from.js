@@ -33,8 +33,7 @@ describe("correct behavior", () => {
     });
 
     test("ZonedDateTime instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, timeZone);
+        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, "UTC");
         const plainDateTime = Temporal.PlainDateTime.from(zonedDateTime);
         expect(plainDateTime.year).toBe(2021);
         expect(plainDateTime.month).toBe(7);
@@ -112,7 +111,7 @@ describe("correct behavior", () => {
 describe("errors", () => {
     test("missing fields", () => {
         expect(() => {
-            Temporal.PlainDateTime.from({});
+            Temporal.PlainDateTime.from({ year: 0, month: 1 });
         }).toThrowWithMessage(TypeError, "Required property day is missing or undefined");
         expect(() => {
             Temporal.PlainDateTime.from({ year: 0, day: 1 });
@@ -124,9 +123,9 @@ describe("errors", () => {
 
     test("with 'reject' overflow option", () => {
         const values = [
-            [{ year: 1234567, month: 1, day: 1 }, "Invalid plain date"],
-            [{ year: 0, month: 13, day: 1 }, "Invalid plain date"],
-            [{ year: 0, month: 1, day: 32 }, "Invalid plain date"],
+            [{ year: 1234567, month: 1, day: 1 }, "Invalid ISO date"],
+            [{ year: 0, month: 13, day: 1 }, "Invalid ISO date"],
+            [{ year: 0, month: 1, day: 32 }, "Invalid ISO date"],
             [{ year: 0, month: 1, day: 1, hour: 24 }, "Invalid plain time"],
             [{ year: 0, month: 1, day: 1, hour: 0, minute: 60 }, "Invalid plain time"],
             [{ year: 0, month: 1, day: 1, hour: 0, minute: 0, second: 60 }, "Invalid plain time"],
@@ -168,31 +167,19 @@ describe("errors", () => {
             }).toThrowWithMessage(RangeError, error);
         }
     });
-});
-
-describe("errors", () => {
-    test("custom time zone doesn't have a getOffsetNanosecondsFor function", () => {
-        const zonedDateTime = new Temporal.ZonedDateTime(0n, {});
-        expect(() => {
-            Temporal.PlainDateTime.from(zonedDateTime);
-        }).toThrowWithMessage(TypeError, "getOffsetNanosecondsFor is undefined");
-    });
 
     test("string must not contain a UTC designator", () => {
         expect(() => {
             Temporal.PlainDateTime.from("2021-07-06T23:42:01Z");
-        }).toThrowWithMessage(
-            RangeError,
-            "Invalid date time string '2021-07-06T23:42:01Z': must not contain a UTC designator"
-        );
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     test("extended year must not be negative zero", () => {
         expect(() => {
             Temporal.PlainDateTime.from("-000000-01-01");
-        }).toThrowWithMessage(RangeError, "Invalid date time string '-000000-01-01'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
         expect(() => {
             Temporal.PlainDateTime.from("−000000-01-01"); // U+2212
-        }).toThrowWithMessage(RangeError, "Invalid date time string '−000000-01-01'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 });

@@ -34,9 +34,9 @@ interface HTMLElement : Element {
     ElementInternals attachInternals();
 
     // The popover API
-    [FIXME] undefined showPopover();
-    [FIXME] undefined hidePopover();
-    [FIXME] boolean togglePopover(optional boolean force);
+    [ImplementedAs=show_popover_for_bindings] undefined showPopover(optional ShowPopoverOptions options = {});
+    [ImplementedAs=hide_popover_for_bindings] undefined hidePopover();
+    boolean togglePopover(optional (TogglePopoverOptions or boolean) options = {});
     [CEReactions] attribute DOMString? popover;
 
     // https://drafts.csswg.org/cssom-view/#extensions-to-the-htmlelement-interface
@@ -48,16 +48,49 @@ interface HTMLElement : Element {
 
 };
 
+// https://html.spec.whatwg.org/multipage/dom.html#showpopoveroptions
+dictionary ShowPopoverOptions {
+    HTMLElement source;
+};
+
+// https://html.spec.whatwg.org/multipage/dom.html#togglepopoveroptions
+dictionary TogglePopoverOptions : ShowPopoverOptions {
+    boolean force;
+};
+
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes ElementContentEditable;
 HTMLElement includes HTMLOrSVGElement;
 
+// https://html.spec.whatwg.org/multipage/interaction.html#attr-enterkeyhint
+enum EnterKeyHint {
+    "enter",
+    "done",
+    "go",
+    "next",
+    "previous",
+    "search",
+    "send"
+};
+
+// https://html.spec.whatwg.org/#attr-inputmode
+enum InputMode {
+    "none",
+    "text",
+    "tel",
+    "url",
+    "email",
+    "numeric",
+    "decimal",
+    "search"
+};
+
 // https://html.spec.whatwg.org/#elementcontenteditable
 interface mixin ElementContentEditable {
     [CEReactions] attribute DOMString contentEditable;
-    [FIXME, CEReactions] attribute DOMString enterKeyHint;
+    [Reflect=enterkeyhint, Enumerated=EnterKeyHint, CEReactions] attribute DOMString enterKeyHint;
     readonly attribute boolean isContentEditable;
-    [FIXME, CEReactions] attribute DOMString inputMode;
+    [Reflect=inputmode, Enumerated=InputMode, CEReactions] attribute DOMString inputMode;
 };
 
 HTMLElement includes ElementCSSInlineStyle;

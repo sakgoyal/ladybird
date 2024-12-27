@@ -265,7 +265,7 @@ void add_@global_object_snake_name@_exposed_interfaces(JS::Object& global)
     static constexpr u8 attr = JS::Attribute::Writable | JS::Attribute::Configurable;
 )~~~");
 
-    auto add_interface = [](SourceGenerator& gen, StringView name, StringView prototype_class, Optional<LegacyConstructor> const& legacy_constructor, Optional<ByteString> const& legacy_alias_name) {
+    auto add_interface = [](SourceGenerator& gen, StringView name, StringView prototype_class, Optional<LegacyConstructor> const& legacy_constructor, Optional<ByteString const&> legacy_alias_name) {
         gen.set("interface_name", name);
         gen.set("prototype_class", prototype_class);
 
@@ -309,6 +309,9 @@ void add_@global_object_snake_name@_exposed_interfaces(JS::Object& global)
         if (interface.is_namespace) {
             add_namespace(gen, interface.name, interface.namespace_class);
         } else if (!interface.extended_attributes.contains("LegacyNamespace"sv)) {
+            if (interface.extended_attributes.contains("LegacyNoInterfaceObject")) {
+                continue;
+            }
             if (class_name == "Window") {
                 add_interface(gen, interface.namespaced_name, interface.prototype_class, lookup_legacy_constructor(interface), interface.extended_attributes.get("LegacyWindowAlias"sv));
             } else {
@@ -356,11 +359,10 @@ ErrorOr<int> serenity_main(Main::Arguments arguments)
     VERIFY(!paths.is_empty());
     VERIFY(!base_paths.is_empty());
 
-    Vector<StringView> lexical_bases;
+    Vector<ByteString> lexical_bases;
     for (auto const& base_path : base_paths) {
         VERIFY(!base_path.is_empty());
-        LexicalPath lexical_path(base_path);
-        lexical_bases.append(lexical_path.string());
+        lexical_bases.append(base_path);
     }
 
     // Read in all IDL files, we must own the storage for all of these for the lifetime of the program
@@ -423,8 +425,9 @@ enum ExposedTo {
     AudioWorklet = 0x8,
     Window = 0x10,
     ShadowRealm = 0x20,
+    Worklet = 0x40,
     AllWorkers = DedicatedWorker | SharedWorker | ServiceWorker | AudioWorklet, // FIXME: Is "AudioWorklet" a Worker? We'll assume it is for now (here, and line below)
-    All = AllWorkers | Window | ShadowRealm
+    All = AllWorkers | Window | ShadowRealm | Worklet,
 };
 AK_ENUM_BITWISE_OPERATORS(ExposedTo);
 
@@ -455,6 +458,8 @@ static ErrorOr<ExposedTo> parse_exposure_set(IDL::Interface& interface)
         return ExposedTo::ServiceWorker;
     if (exposed == "AudioWorklet"sv)
         return ExposedTo::AudioWorklet;
+    if (exposed == "Worklet"sv)
+        return ExposedTo::Worklet;
     if (exposed == "ShadowRealm"sv)
         return ExposedTo::ShadowRealm;
 
@@ -474,6 +479,8 @@ static ErrorOr<ExposedTo> parse_exposure_set(IDL::Interface& interface)
                 whom |= ExposedTo::ServiceWorker;
             } else if (candidate == "AudioWorklet"sv) {
                 whom |= ExposedTo::AudioWorklet;
+            } else if (candidate == "Worklet"sv) {
+                whom |= ExposedTo::Worklet;
             } else if (candidate == "ShadowRealm"sv) {
                 whom |= ExposedTo::ShadowRealm;
             } else {

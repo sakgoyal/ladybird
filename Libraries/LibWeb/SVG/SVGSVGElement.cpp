@@ -42,7 +42,7 @@ void SVGSVGElement::visit_edges(Visitor& visitor)
     visitor.visit(m_view_box_for_bindings);
 }
 
-GC::Ptr<Layout::Node> SVGSVGElement::create_layout_node(CSS::StyleProperties style)
+GC::Ptr<Layout::Node> SVGSVGElement::create_layout_node(GC::Ref<CSS::ComputedProperties> style)
 {
     return heap().allocate<Layout::SVGSVGBox>(document(), *this, move(style));
 }
@@ -79,26 +79,40 @@ RefPtr<CSS::CSSStyleValue> SVGSVGElement::height_style_value_from_attribute() co
     return nullptr;
 }
 
-void SVGSVGElement::apply_presentational_hints(CSS::StyleProperties& style) const
+bool SVGSVGElement::is_presentational_hint(FlyString const& name) const
 {
-    Base::apply_presentational_hints(style);
+    if (Base::is_presentational_hint(name))
+        return true;
+
+    return first_is_one_of(name,
+        SVG::AttributeNames::x,
+        SVG::AttributeNames::y,
+        SVG::AttributeNames::width,
+        SVG::AttributeNames::height,
+        SVG::AttributeNames::viewBox,
+        SVG::AttributeNames::preserveAspectRatio);
+}
+
+void SVGSVGElement::apply_presentational_hints(GC::Ref<CSS::CascadedProperties> cascaded_properties) const
+{
+    Base::apply_presentational_hints(cascaded_properties);
     auto parsing_context = CSS::Parser::ParsingContext { document(), CSS::Parser::ParsingContext::Mode::SVGPresentationAttribute };
 
     auto x_attribute = attribute(SVG::AttributeNames::x);
     if (auto x_value = parse_css_value(parsing_context, x_attribute.value_or(String {}), CSS::PropertyID::X)) {
-        style.set_property(CSS::PropertyID::X, x_value.release_nonnull());
+        cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::X, x_value.release_nonnull());
     }
 
     auto y_attribute = attribute(SVG::AttributeNames::y);
     if (auto y_value = parse_css_value(parsing_context, y_attribute.value_or(String {}), CSS::PropertyID::Y)) {
-        style.set_property(CSS::PropertyID::Y, y_value.release_nonnull());
+        cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Y, y_value.release_nonnull());
     }
 
     if (auto width = width_style_value_from_attribute())
-        style.set_property(CSS::PropertyID::Width, width.release_nonnull());
+        cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Width, width.release_nonnull());
 
     if (auto height = height_style_value_from_attribute())
-        style.set_property(CSS::PropertyID::Height, height.release_nonnull());
+        cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Height, height.release_nonnull());
 }
 
 void SVGSVGElement::attribute_changed(FlyString const& name, Optional<String> const& old_value, Optional<String> const& value, Optional<FlyString> const& namespace_)
@@ -264,6 +278,60 @@ GC::Ref<Geometry::DOMRect> SVGSVGElement::create_svg_rect() const
 GC::Ref<SVGTransform> SVGSVGElement::create_svg_transform() const
 {
     return SVGTransform::create(realm());
+}
+
+SVGSVGElement::NaturalMetrics SVGSVGElement::negotiate_natural_metrics(SVG::SVGSVGElement const& svg_root)
+{
+    // https://www.w3.org/TR/SVG2/coords.html#SizingSVGInCSS
+
+    NaturalMetrics natural_metrics;
+
+    // The intrinsic dimensions must also be determined from the width and height sizing properties.
+    // If either width or height are not specified, the used value is the initial value 'auto'.
+    // 'auto' and percentage lengths must not be used to determine an intrinsic width or intrinsic height.
+
+    if (auto width = svg_root.width_style_value_from_attribute(); width && width->is_length() && width->as_length().length().is_absolute()) {
+        natural_metrics.width = width->as_length().length().absolute_length_to_px();
+    }
+
+    if (auto height = svg_root.height_style_value_from_attribute(); height && height->is_length() && height->as_length().length().is_absolute()) {
+        natural_metrics.height = height->as_length().length().absolute_length_to_px();
+    }
+
+    // The intrinsic aspect ratio must be calculated using the following algorithm. If the algorithm returns null, then there is no intrinsic aspect ratio.
+    natural_metrics.aspect_ratio = [&]() -> Optional<CSSPixelFraction> {
+        // 1. If the width and height sizing properties on the ‘svg’ element are both absolute values:
+        if (natural_metrics.width.has_value() && natural_metrics.height.has_value()) {
+            if (natural_metrics.width != 0 && natural_metrics.height != 0) {
+                // 1. return width / height
+                return *natural_metrics.width / *natural_metrics.height;
+            }
+            return {};
+        }
+
+        // FIXME: 2. If an SVG View is active:
+        // FIXME:    1. let viewbox be the viewbox defined by the active SVG View
+        // FIXME:    2. return viewbox.width / viewbox.height
+
+        // 3. If the ‘viewBox’ on the ‘svg’ element is correctly specified:
+        if (svg_root.view_box().has_value()) {
+            // 1. let viewbox be the viewbox defined by the ‘viewBox’ attribute on the ‘svg’ element
+            auto const& viewbox = svg_root.view_box().value();
+
+            // 2. return viewbox.width / viewbox.height
+            auto viewbox_width = CSSPixels::nearest_value_for(viewbox.width);
+            auto viewbox_height = CSSPixels::nearest_value_for(viewbox.height);
+            if (viewbox_width != 0 && viewbox_height != 0)
+                return viewbox_width / viewbox_height;
+
+            return {};
+        }
+
+        // 4. return null
+        return {};
+    }();
+
+    return natural_metrics;
 }
 
 }

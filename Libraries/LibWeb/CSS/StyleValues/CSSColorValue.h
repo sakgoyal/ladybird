@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <AK/FlyString.h>
 #include <LibGfx/Color.h>
 #include <LibWeb/CSS/CSSStyleValue.h>
 
@@ -17,13 +18,15 @@ namespace Web::CSS {
 // https://drafts.css-houdini.org/css-typed-om-1/#csscolorvalue
 class CSSColorValue : public CSSStyleValue {
 public:
-    static ValueComparingNonnullRefPtr<CSSColorValue> create_from_color(Color color);
+    static ValueComparingNonnullRefPtr<CSSColorValue> create_from_color(Color color, Optional<FlyString> name = {});
     virtual ~CSSColorValue() override = default;
 
     virtual bool has_color() const override { return true; }
 
     enum class ColorType {
         RGB, // This is used by CSSRGB for rgb(...) and rgba(...).
+        A98RGB,
+        DisplayP3,
         HSL,
         HWB,
         Lab,
@@ -32,6 +35,8 @@ public:
         OKLCH,
         sRGB, // This is used by CSSColor for color(srgb ...).
         sRGBLinear,
+        ProPhotoRGB,
+        Rec2020,
         XYZD50,
         XYZD65,
     };
@@ -44,11 +49,10 @@ protected:
     {
     }
 
-    static Optional<float> resolve_hue(CSSStyleValue const&);
-    static Optional<float> resolve_with_reference_value(CSSStyleValue const&, float one_hundred_percent_value);
-    static Optional<float> resolve_alpha(CSSStyleValue const&);
+    static Optional<double> resolve_hue(CSSStyleValue const&);
+    static Optional<double> resolve_with_reference_value(CSSStyleValue const&, float one_hundred_percent_value);
+    static Optional<double> resolve_alpha(CSSStyleValue const&);
 
-private:
     ColorType m_color_type;
 };
 

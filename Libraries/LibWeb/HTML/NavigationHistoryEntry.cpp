@@ -44,7 +44,7 @@ void NavigationHistoryEntry::visit_edges(JS::Cell::Visitor& visitor)
 }
 
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-navigationhistoryentry-url
-WebIDL::ExceptionOr<Optional<String>> NavigationHistoryEntry::url() const
+Optional<String> NavigationHistoryEntry::url() const
 {
     // The url getter steps are:
     // 1. Let document be this's relevant global object's associated Document.
@@ -65,7 +65,7 @@ WebIDL::ExceptionOr<Optional<String>> NavigationHistoryEntry::url() const
         return OptionalNone {};
 
     // 5. Return she's URL, serialized.
-    return TRY_OR_THROW_OOM(vm(), String::from_byte_string(she->url().serialize()));
+    return she->url().serialize();
 }
 
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#concept-navigationhistoryentry-key
@@ -135,7 +135,7 @@ WebIDL::ExceptionOr<JS::Value> NavigationHistoryEntry::get_state()
     // 2. Return StructuredDeserialize(this's session history entry's navigation API state). Rethrow any exceptions.
     //    NOTE: This can in theory throw an exception, if attempting to deserialize a large ArrayBuffer
     //          when not enough memory is available.
-    return structured_deserialize(vm(), m_session_history_entry->navigation_api_state(), realm(), {});
+    return structured_deserialize(vm(), m_session_history_entry->navigation_api_state(), realm());
 }
 
 void NavigationHistoryEntry::set_ondispose(WebIDL::CallbackType* event_handler)

@@ -119,6 +119,7 @@ public:
             m_all_live_heap_blocks.set(&block);
             return IterationDecision::Continue;
         });
+        m_work_queue.ensure_capacity(roots.size());
 
         for (auto& [root, root_origin] : roots) {
             auto& graph_node = m_graph.ensure(bit_cast<FlatPtr>(root));
@@ -186,8 +187,8 @@ public:
                 case HeapRoot::Type::Root:
                     node.set("root"sv, ByteString::formatted("Root {} {}:{}", location->function_name(), location->filename(), location->line_number()));
                     break;
-                case HeapRoot::Type::MarkedVector:
-                    node.set("root"sv, "MarkedVector");
+                case HeapRoot::Type::RootVector:
+                    node.set("root"sv, "RootVector");
                     break;
                 case HeapRoot::Type::RegisterPointer:
                     node.set("root"sv, "RegisterPointer");

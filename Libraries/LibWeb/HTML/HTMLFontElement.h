@@ -17,7 +17,8 @@ class HTMLFontElement final : public HTMLElement {
 public:
     virtual ~HTMLFontElement() override;
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 
 private:
     HTMLFontElement(DOM::Document&, DOM::QualifiedName);

@@ -13,12 +13,12 @@
 #include <LibWeb/Bindings/ElementPrototype.h>
 #include <LibWeb/Bindings/ExceptionOrUtils.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/PropertyID.h>
 #include <LibWeb/CSS/ResolvedCSSStyleDeclaration.h>
 #include <LibWeb/CSS/SelectorEngine.h>
 #include <LibWeb/CSS/StyleComputer.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/CSS/StyleValues/CSSKeywordValue.h>
 #include <LibWeb/CSS/StyleValues/NumberStyleValue.h>
 #include <LibWeb/DOM/Attr.h>
@@ -101,8 +101,12 @@ void Element::visit_edges(Cell::Visitor& visitor)
     visitor.visit(m_class_list);
     visitor.visit(m_shadow_root);
     visitor.visit(m_custom_element_definition);
+    visitor.visit(m_cascaded_properties);
+    visitor.visit(m_computed_properties);
     if (m_pseudo_element_data) {
         for (auto& pseudo_element : *m_pseudo_element_data) {
+            visitor.visit(pseudo_element.cascaded_properties);
+            visitor.visit(pseudo_element.computed_properties);
             visitor.visit(pseudo_element.layout_node);
         }
     }
@@ -386,16 +390,16 @@ Vector<String> Element::get_attribute_names() const
     return names;
 }
 
-GC::Ptr<Layout::Node> Element::create_layout_node(CSS::StyleProperties style)
+GC::Ptr<Layout::Node> Element::create_layout_node(GC::Ref<CSS::ComputedProperties> style)
 {
     if (local_name() == "noscript" && document().is_scripting_enabled())
         return nullptr;
 
-    auto display = style.display();
-    return create_layout_node_for_display_type(document(), display, move(style), this);
+    auto display = style->display();
+    return create_layout_node_for_display_type(document(), display, style, this);
 }
 
-GC::Ptr<Layout::NodeWithStyle> Element::create_layout_node_for_display_type(DOM::Document& document, CSS::Display const& display, CSS::StyleProperties style, Element* element)
+GC::Ptr<Layout::NodeWithStyle> Element::create_layout_node_for_display_type(DOM::Document& document, CSS::Display const& display, GC::Ref<CSS::ComputedProperties> style, Element* element)
 {
     if (display.is_table_inside() || display.is_table_row_group() || display.is_table_header_group() || display.is_table_footer_group() || display.is_table_row())
         return document.heap().allocate<Layout::Box>(document, element, move(style));
@@ -452,7 +456,7 @@ void Element::run_attribute_change_steps(FlyString const& local_name, Optional<S
     }
 }
 
-static CSS::RequiredInvalidationAfterStyleChange compute_required_invalidation(CSS::StyleProperties const& old_style, CSS::StyleProperties const& new_style)
+static CSS::RequiredInvalidationAfterStyleChange compute_required_invalidation(CSS::ComputedProperties const& old_style, CSS::ComputedProperties const& new_style)
 {
     CSS::RequiredInvalidationAfterStyleChange invalidation;
 
@@ -476,40 +480,40 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
     VERIFY(parent());
 
     auto& style_computer = document().style_computer();
-    auto new_computed_css_values = style_computer.compute_style(*this);
+    auto new_computed_properties = style_computer.compute_style(*this);
 
     // Tables must not inherit -libweb-* values for text-align.
     // FIXME: Find the spec for this.
     if (is<HTML::HTMLTableElement>(*this)) {
-        auto text_align = new_computed_css_values.text_align();
+        auto text_align = new_computed_properties->text_align();
         if (text_align.has_value() && (text_align.value() == CSS::TextAlign::LibwebLeft || text_align.value() == CSS::TextAlign::LibwebCenter || text_align.value() == CSS::TextAlign::LibwebRight))
-            new_computed_css_values.set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Start));
+            new_computed_properties->set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Start));
     }
 
     CSS::RequiredInvalidationAfterStyleChange invalidation;
-    if (m_computed_css_values.has_value())
-        invalidation = compute_required_invalidation(*m_computed_css_values, new_computed_css_values);
+    if (m_computed_properties)
+        invalidation = compute_required_invalidation(*m_computed_properties, new_computed_properties);
     else
         invalidation = CSS::RequiredInvalidationAfterStyleChange::full();
 
     if (!invalidation.is_none())
-        set_computed_css_values(move(new_computed_css_values));
+        set_computed_properties(move(new_computed_properties));
 
     // Any document change that can cause this element's style to change, could also affect its pseudo-elements.
     auto recompute_pseudo_element_style = [&](CSS::Selector::PseudoElement::Type pseudo_element) {
         style_computer.push_ancestor(*this);
 
-        auto pseudo_element_style = pseudo_element_computed_css_values(pseudo_element);
+        auto pseudo_element_style = pseudo_element_computed_properties(pseudo_element);
         auto new_pseudo_element_style = style_computer.compute_pseudo_element_style_if_needed(*this, pseudo_element);
 
         // TODO: Can we be smarter about invalidation?
-        if (pseudo_element_style.has_value() && new_pseudo_element_style.has_value()) {
+        if (pseudo_element_style && new_pseudo_element_style) {
             invalidation |= compute_required_invalidation(*pseudo_element_style, *new_pseudo_element_style);
-        } else if (pseudo_element_style.has_value() || new_pseudo_element_style.has_value()) {
+        } else if (pseudo_element_style || new_pseudo_element_style) {
             invalidation = CSS::RequiredInvalidationAfterStyleChange::full();
         }
 
-        set_pseudo_element_computed_css_values(pseudo_element, move(new_pseudo_element_style));
+        set_pseudo_element_computed_properties(pseudo_element, move(new_pseudo_element_style));
         style_computer.pop_ancestor(*this);
     };
 
@@ -524,7 +528,7 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
 
     if (!invalidation.rebuild_layout_tree && layout_node()) {
         // If we're keeping the layout tree, we can just apply the new style to the existing layout tree.
-        layout_node()->apply_style(*m_computed_css_values);
+        layout_node()->apply_style(*m_computed_properties);
         if (invalidation.repaint && paintable())
             paintable()->set_needs_display();
 
@@ -535,8 +539,8 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
             if (!pseudo_element.has_value() || !pseudo_element->layout_node)
                 continue;
 
-            auto pseudo_element_style = pseudo_element_computed_css_values(pseudo_element_type);
-            if (!pseudo_element_style.has_value())
+            auto pseudo_element_style = pseudo_element_computed_properties(pseudo_element_type);
+            if (!pseudo_element_style)
                 continue;
 
             if (auto* node_with_style = dynamic_cast<Layout::NodeWithStyle*>(pseudo_element->layout_node.ptr())) {
@@ -550,17 +554,43 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
     return invalidation;
 }
 
-CSS::StyleProperties Element::resolved_css_values(Optional<CSS::Selector::PseudoElement::Type> type)
+CSS::RequiredInvalidationAfterStyleChange Element::recompute_inherited_style()
+{
+    // Traversal of the subtree is necessary to update the animated properties inherited from the target element.
+    auto computed_properties = this->computed_properties();
+    if (!computed_properties || !layout_node())
+        return {};
+
+    CSS::RequiredInvalidationAfterStyleChange invalidation;
+
+    for (auto i = to_underlying(CSS::first_property_id); i <= to_underlying(CSS::last_property_id); ++i) {
+        auto property_id = static_cast<CSS::PropertyID>(i);
+        if (!computed_properties->is_property_inherited(property_id))
+            continue;
+        RefPtr old_value = computed_properties->maybe_null_property(property_id);
+        RefPtr new_value = CSS::StyleComputer::get_inherit_value(property_id, this);
+        computed_properties->set_property(property_id, *new_value, CSS::ComputedProperties::Inherited::Yes);
+        invalidation |= CSS::compute_property_invalidation(property_id, old_value, new_value);
+    }
+
+    document().style_computer().compute_font(*computed_properties, this, {});
+    document().style_computer().absolutize_values(*computed_properties);
+
+    layout_node()->apply_style(*computed_properties);
+    return invalidation;
+}
+
+GC::Ref<CSS::ComputedProperties> Element::resolved_css_values(Optional<CSS::Selector::PseudoElement::Type> type)
 {
     auto element_computed_style = CSS::ResolvedCSSStyleDeclaration::create(*this, type);
-    CSS::StyleProperties properties = {};
+    auto properties = heap().allocate<CSS::ComputedProperties>();
 
     for (auto i = to_underlying(CSS::first_property_id); i <= to_underlying(CSS::last_property_id); ++i) {
         auto property_id = (CSS::PropertyID)i;
         auto maybe_value = element_computed_style->property(property_id);
         if (!maybe_value.has_value())
             continue;
-        properties.set_property(property_id, maybe_value.release_value().value);
+        properties->set_property(property_id, maybe_value.release_value().value);
     }
 
     return properties;
@@ -568,9 +598,9 @@ CSS::StyleProperties Element::resolved_css_values(Optional<CSS::Selector::Pseudo
 
 void Element::reset_animated_css_properties()
 {
-    if (!m_computed_css_values.has_value())
+    if (!m_computed_properties)
         return;
-    m_computed_css_values->reset_animated_properties();
+    m_computed_properties->reset_animated_properties();
 }
 
 DOMTokenList* Element::class_list()
@@ -1069,6 +1099,10 @@ void Element::set_pseudo_element_node(Badge<Layout::TreeBuilder>, CSS::Selector:
     if (!existing_pseudo_element.has_value() && !pseudo_element_node)
         return;
 
+    if (!CSS::Selector::PseudoElement::is_known_pseudo_element_type(pseudo_element)) {
+        return;
+    }
+
     ensure_pseudo_element(pseudo_element).layout_node = move(pseudo_element_node);
 }
 
@@ -1520,7 +1554,7 @@ WebIDL::ExceptionOr<void> Element::set_outer_html(String const& value)
     if (parent->is_document())
         return WebIDL::NoModificationAllowedError::create(realm(), "Cannot set outer HTML on document"_string);
 
-    // 5. If parent is a DocumentFragment, set parent to the result of creating an element given this's node document, body, and the HTML namespace.
+    // 5. If parent is a DocumentFragment, set parent to the result of creating an element given this's node document, "body", and the HTML namespace.
     if (parent->is_document_fragment())
         parent = TRY(create_element(document(), HTML::TagNames::body, Namespace::HTML));
 
@@ -1866,12 +1900,101 @@ ErrorOr<void> Element::scroll_into_view(Optional<Variant<bool, ScrollIntoViewOpt
     // FIXME: 8. Optionally perform some other action that brings the element to the user’s attention.
 }
 
+static bool attribute_name_may_affect_selectors(Element const& element, FlyString const& attribute_name)
+{
+    // FIXME: We could make these cases more narrow by making the conditions more elaborate.
+    if (attribute_name == HTML::AttributeNames::id
+        || attribute_name == HTML::AttributeNames::class_
+        || attribute_name == HTML::AttributeNames::dir
+        || attribute_name == HTML::AttributeNames::lang
+        || attribute_name == HTML::AttributeNames::checked
+        || attribute_name == HTML::AttributeNames::disabled
+        || attribute_name == HTML::AttributeNames::readonly
+        || attribute_name == HTML::AttributeNames::switch_
+        || attribute_name == HTML::AttributeNames::href
+        || attribute_name == HTML::AttributeNames::open
+        || attribute_name == HTML::AttributeNames::placeholder) {
+        return true;
+    }
+
+    return element.document().style_computer().has_attribute_selector(attribute_name);
+}
+
 void Element::invalidate_style_after_attribute_change(FlyString const& attribute_name)
 {
     // FIXME: Only invalidate if the attribute can actually affect style.
-    (void)attribute_name;
 
-    invalidate_style(StyleInvalidationReason::ElementAttributeChange);
+    // OPTIMIZATION: For the `style` attribute, unless it's referenced by an attribute selector,
+    //               only invalidate the element itself, then let inheritance propagate to descendants.
+    if (attribute_name == HTML::AttributeNames::style) {
+        if (!document().style_computer().has_attribute_selector(HTML::AttributeNames::style)) {
+            set_needs_style_update(true);
+            for_each_shadow_including_descendant([](Node& node) {
+                if (!node.is_element())
+                    return TraversalDecision::Continue;
+                auto& element = static_cast<Element&>(node);
+                element.set_needs_inherited_style_update(true);
+                return TraversalDecision::Continue;
+            });
+        } else {
+            invalidate_style(StyleInvalidationReason::ElementAttributeChange);
+        }
+        return;
+    }
+
+    if (is_presentational_hint(attribute_name)
+        || attribute_name_may_affect_selectors(*this, attribute_name)) {
+        invalidate_style(StyleInvalidationReason::ElementAttributeChange);
+        return;
+    }
+}
+
+bool Element::is_hidden() const
+{
+    if (layout_node() == nullptr)
+        return true;
+    if (layout_node()->computed_values().visibility() == CSS::Visibility::Hidden || layout_node()->computed_values().visibility() == CSS::Visibility::Collapse || layout_node()->computed_values().content_visibility() == CSS::ContentVisibility::Hidden)
+        return true;
+    for (ParentNode const* self_or_ancestor = this; self_or_ancestor; self_or_ancestor = self_or_ancestor->parent_or_shadow_host()) {
+        if (self_or_ancestor->is_element() && static_cast<DOM::Element const*>(self_or_ancestor)->aria_hidden() == "true")
+            return true;
+    }
+    return false;
+}
+
+bool Element::has_hidden_ancestor() const
+{
+    for (ParentNode const* self_or_ancestor = this; self_or_ancestor; self_or_ancestor = self_or_ancestor->parent_or_shadow_host()) {
+        if (self_or_ancestor->is_element() && static_cast<DOM::Element const*>(self_or_ancestor)->is_hidden())
+            return true;
+    }
+    return false;
+}
+
+bool Element::is_referenced() const
+{
+    bool is_referenced = false;
+    if (id().has_value()) {
+        root().for_each_in_subtree_of_type<HTML::HTMLElement>([&](auto& element) {
+            auto aria_data = MUST(Web::ARIA::AriaData::build_data(element));
+            if (aria_data->aria_labelled_by_or_default().contains_slow(id().value())) {
+                is_referenced = true;
+                return TraversalDecision::Break;
+            }
+            return TraversalDecision::Continue;
+        });
+    }
+    return is_referenced;
+}
+
+bool Element::has_referenced_and_hidden_ancestor() const
+{
+    for (auto const* ancestor = parent_or_shadow_host(); ancestor; ancestor = ancestor->parent_or_shadow_host()) {
+        if (ancestor->is_element())
+            if (auto const* element = static_cast<DOM::Element const*>(ancestor); element->is_referenced() && element->is_hidden())
+                return true;
+    }
+    return false;
 }
 
 // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion
@@ -1984,7 +2107,7 @@ void Element::enqueue_a_custom_element_upgrade_reaction(HTML::CustomElementDefin
     enqueue_an_element_on_the_appropriate_element_queue();
 }
 
-void Element::enqueue_a_custom_element_callback_reaction(FlyString const& callback_name, GC::MarkedVector<JS::Value> arguments)
+void Element::enqueue_a_custom_element_callback_reaction(FlyString const& callback_name, GC::RootVector<JS::Value> arguments)
 {
     // 1. Let definition be element's custom element definition.
     auto& definition = m_custom_element_definition;
@@ -2036,12 +2159,12 @@ JS::ThrowCompletionOr<void> Element::upgrade_element(GC::Ref<HTML::CustomElement
     set_custom_element_state(CustomElementState::Failed);
 
     // 4. For each attribute in element's attribute list, in order, enqueue a custom element callback reaction with element, callback name "attributeChangedCallback",
-    //    and an argument list containing attribute's local name, null, attribute's value, and attribute's namespace.
+    //    and « attribute's local name, null, attribute's value, attribute's namespace ».
     for (size_t attribute_index = 0; attribute_index < m_attributes->length(); ++attribute_index) {
         auto const* attribute = m_attributes->item(attribute_index);
         VERIFY(attribute);
 
-        GC::MarkedVector<JS::Value> arguments { vm.heap() };
+        GC::RootVector<JS::Value> arguments { vm.heap() };
 
         arguments.append(JS::PrimitiveString::create(vm, attribute->local_name()));
         arguments.append(JS::js_null());
@@ -2051,14 +2174,14 @@ JS::ThrowCompletionOr<void> Element::upgrade_element(GC::Ref<HTML::CustomElement
         enqueue_a_custom_element_callback_reaction(HTML::CustomElementReactionNames::attributeChangedCallback, move(arguments));
     }
 
-    // 5. If element is connected, then enqueue a custom element callback reaction with element, callback name "connectedCallback", and an empty argument list.
+    // 5. If element is connected, then enqueue a custom element callback reaction with element, callback name "connectedCallback", and « ».
     if (is_connected()) {
-        GC::MarkedVector<JS::Value> empty_arguments { vm.heap() };
+        GC::RootVector<JS::Value> empty_arguments { vm.heap() };
         enqueue_a_custom_element_callback_reaction(HTML::CustomElementReactionNames::connectedCallback, move(empty_arguments));
     }
 
     // 6. Add element to the end of definition's construction stack.
-    custom_element_definition->construction_stack().append(GC::make_root(this));
+    custom_element_definition->construction_stack().append(GC::Ref { *this });
 
     // 7. Let C be definition's constructor.
     auto& constructor = custom_element_definition->constructor();
@@ -2143,7 +2266,9 @@ void Element::set_custom_element_state(CustomElementState state)
     if (m_custom_element_state == state)
         return;
     m_custom_element_state = state;
-    invalidate_style(StyleInvalidationReason::CustomElementStateChange);
+
+    if (document().style_computer().has_defined_selectors())
+        invalidate_style(StyleInvalidationReason::CustomElementStateChange);
 }
 
 // https://html.spec.whatwg.org/multipage/dom.html#html-element-constructors
@@ -2221,24 +2346,51 @@ size_t Element::attribute_list_size() const
     return m_attributes->length();
 }
 
-void Element::set_computed_css_values(Optional<CSS::StyleProperties> style)
+GC::Ptr<CSS::CascadedProperties> Element::cascaded_properties(Optional<CSS::Selector::PseudoElement::Type> pseudo_element) const
 {
-    m_computed_css_values = move(style);
-    computed_css_values_changed();
+    if (pseudo_element.has_value()) {
+        auto pseudo_element_data = get_pseudo_element(pseudo_element.value());
+        if (pseudo_element_data.has_value())
+            return pseudo_element_data->cascaded_properties;
+        return nullptr;
+    }
+    return m_cascaded_properties;
 }
 
-void Element::set_pseudo_element_computed_css_values(CSS::Selector::PseudoElement::Type pseudo_element, Optional<CSS::StyleProperties> style)
+void Element::set_cascaded_properties(Optional<CSS::Selector::PseudoElement::Type> pseudo_element, GC::Ptr<CSS::CascadedProperties> cascaded_properties)
 {
-    if (!m_pseudo_element_data && !style.has_value())
+    if (pseudo_element.has_value()) {
+        if (pseudo_element.value() >= CSS::Selector::PseudoElement::Type::KnownPseudoElementCount)
+            return;
+        ensure_pseudo_element(pseudo_element.value()).cascaded_properties = cascaded_properties;
+    } else {
+        m_cascaded_properties = cascaded_properties;
+    }
+}
+
+void Element::set_computed_properties(GC::Ptr<CSS::ComputedProperties> style)
+{
+    m_computed_properties = style;
+    computed_properties_changed();
+}
+
+void Element::set_pseudo_element_computed_properties(CSS::Selector::PseudoElement::Type pseudo_element, GC::Ptr<CSS::ComputedProperties> style)
+{
+    if (!m_pseudo_element_data && !style)
         return;
-    ensure_pseudo_element(pseudo_element).computed_css_values = move(style);
+
+    if (!CSS::Selector::PseudoElement::is_known_pseudo_element_type(pseudo_element)) {
+        return;
+    }
+
+    ensure_pseudo_element(pseudo_element).computed_properties = style;
 }
 
-Optional<CSS::StyleProperties&> Element::pseudo_element_computed_css_values(CSS::Selector::PseudoElement::Type type)
+GC::Ptr<CSS::ComputedProperties> Element::pseudo_element_computed_properties(CSS::Selector::PseudoElement::Type type)
 {
     auto pseudo_element = get_pseudo_element(type);
     if (pseudo_element.has_value())
-        return pseudo_element->computed_css_values;
+        return pseudo_element->computed_properties;
     return {};
 }
 
@@ -2246,6 +2398,11 @@ Optional<Element::PseudoElement&> Element::get_pseudo_element(CSS::Selector::Pse
 {
     if (!m_pseudo_element_data)
         return {};
+
+    if (!CSS::Selector::PseudoElement::is_known_pseudo_element_type(type)) {
+        return {};
+    }
+
     return m_pseudo_element_data->at(to_underlying(type));
 }
 
@@ -2253,6 +2410,9 @@ Element::PseudoElement& Element::ensure_pseudo_element(CSS::Selector::PseudoElem
 {
     if (!m_pseudo_element_data)
         m_pseudo_element_data = make<PseudoElementData>();
+
+    VERIFY(CSS::Selector::PseudoElement::is_known_pseudo_element_type(type));
+
     return m_pseudo_element_data->at(to_underlying(type));
 }
 
@@ -2262,6 +2422,11 @@ void Element::set_custom_properties(Optional<CSS::Selector::PseudoElement::Type>
         m_custom_properties = move(custom_properties);
         return;
     }
+
+    if (!CSS::Selector::PseudoElement::is_known_pseudo_element_type(pseudo_element.value())) {
+        return;
+    }
+
     ensure_pseudo_element(pseudo_element.value()).custom_properties = move(custom_properties);
 }
 
@@ -2269,6 +2434,9 @@ HashMap<FlyString, CSS::StyleProperty> const& Element::custom_properties(Optiona
 {
     if (!pseudo_element.has_value())
         return m_custom_properties;
+
+    VERIFY(CSS::Selector::PseudoElement::is_known_pseudo_element_type(pseudo_element.value()));
+
     return ensure_pseudo_element(pseudo_element.value()).custom_properties;
 }
 
@@ -2394,7 +2562,7 @@ bool Element::check_visibility(Optional<CheckVisibilityOptions> options)
 
     // 2. If an ancestor of this in the flat tree has content-visibility: hidden, return false.
     for (auto* element = parent_element(); element; element = element->parent_element()) {
-        if (element->computed_css_values()->content_visibility() == CSS::ContentVisibility::Hidden)
+        if (element->computed_properties()->content_visibility() == CSS::ContentVisibility::Hidden)
             return false;
     }
 
@@ -2405,14 +2573,14 @@ bool Element::check_visibility(Optional<CheckVisibilityOptions> options)
     // 3. If either the opacityProperty or the checkOpacity dictionary members of options are true, and this, or an ancestor of this in the flat tree, has a computed opacity value of 0, return false.
     if (options->opacity_property || options->check_opacity) {
         for (auto* element = this; element; element = element->parent_element()) {
-            if (element->computed_css_values()->opacity() == 0.0f)
+            if (element->computed_properties()->opacity() == 0.0f)
                 return false;
         }
     }
 
     // 4. If either the visibilityProperty or the checkVisibilityCSS dictionary members of options are true, and this is invisible, return false.
     if (options->visibility_property || options->check_visibility_css) {
-        if (computed_css_values()->visibility() == CSS::Visibility::Hidden)
+        if (computed_properties()->visibility() == CSS::Visibility::Hidden)
             return false;
     }
 
@@ -2421,7 +2589,7 @@ bool Element::check_visibility(Optional<CheckVisibilityOptions> options)
     auto const skipped_contents_due_to_content_visibility_auto = false;
     if (options->content_visibility_auto && skipped_contents_due_to_content_visibility_auto) {
         for (auto* element = this; element; element = element->parent_element()) {
-            if (element->computed_css_values()->content_visibility() == CSS::ContentVisibility::Auto)
+            if (element->computed_properties()->content_visibility() == CSS::ContentVisibility::Auto)
                 return false;
         }
     }
@@ -2740,7 +2908,12 @@ void Element::attribute_changed(FlyString const& local_name, Optional<String> co
             // https://drafts.csswg.org/cssom/#ref-for-cssstyledeclaration-updating-flag
             if (m_inline_style && m_inline_style->is_updating())
                 return;
-            m_inline_style = parse_css_style_attribute(CSS::Parser::ParsingContext(document()), *value, *this);
+            if (!m_inline_style) {
+                m_inline_style = parse_css_style_attribute(CSS::Parser::ParsingContext(document()), *value, *this);
+            } else {
+                // NOTE: ElementInlineCSSStyleDeclaration::set_css_text should never throw an exception.
+                m_inline_style->set_declarations_from_text(*value);
+            }
             set_needs_style_update(true);
         }
     } else if (local_name == HTML::AttributeNames::dir) {
@@ -2815,7 +2988,7 @@ CSS::CountersSet& Element::ensure_counters_set()
 }
 
 // https://drafts.csswg.org/css-lists-3/#auto-numbering
-void Element::resolve_counters(CSS::StyleProperties& style)
+void Element::resolve_counters(CSS::ComputedProperties& style)
 {
     // Resolving counter values on a given element is a multi-step process:
 

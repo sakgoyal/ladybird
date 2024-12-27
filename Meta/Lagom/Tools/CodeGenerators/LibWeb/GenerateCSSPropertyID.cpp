@@ -219,7 +219,7 @@ Optional<PropertyID> property_id_from_string(StringView);
 [[nodiscard]] FlyString const& string_from_property_id(PropertyID);
 [[nodiscard]] FlyString const& camel_case_string_from_property_id(PropertyID);
 bool is_inherited_property(PropertyID);
-NonnullRefPtr<CSSStyleValue> property_initial_value(JS::Realm&, PropertyID);
+NonnullRefPtr<CSSStyleValue> property_initial_value(PropertyID);
 
 enum class ValueType {
     Angle,
@@ -402,6 +402,7 @@ ErrorOr<void> generate_implementation_file(JsonObject& properties, Core::File& f
 #include <LibWeb/CSS/Enums.h>
 #include <LibWeb/CSS/Parser/Parser.h>
 #include <LibWeb/CSS/PropertyID.h>
+#include <LibWeb/CSS/PropertyName.h>
 #include <LibWeb/CSS/CSSStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PercentageStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TimeStyleValue.h>
@@ -436,6 +437,9 @@ Optional<PropertyID> property_id_from_camel_case_string(StringView string)
 
 Optional<PropertyID> property_id_from_string(StringView string)
 {
+    if (is_a_custom_property_name_string(string))
+        return PropertyID::Custom;
+
     if (Infra::is_ascii_case_insensitive_match(string, "all"sv))
         return PropertyID::All;
 )~~~");
@@ -569,6 +573,7 @@ bool is_animatable_property(PropertyID property_id)
 
     properties.for_each_member([&](auto& name, auto& value) {
         VERIFY(value.is_object());
+        VERIFY(!name.is_empty() && !is_ascii_digit(name[0])); // Ensure `PropertyKey`s are not Numbers.
         if (is_legacy_alias(value.as_object()))
             return;
 
@@ -590,7 +595,7 @@ bool is_animatable_property(PropertyID property_id)
 
 bool is_inherited_property(PropertyID property_id)
 {
-    if (property_id >= first_inherited_shorthand_property_id && property_id <= last_inherited_longhand_property_id)
+    if (property_id >= first_inherited_shorthand_property_id && property_id <= last_inherited_shorthand_property_id)
         return true;
     if (property_id >= first_inherited_longhand_property_id && property_id <= last_inherited_longhand_property_id)
         return true;
@@ -657,7 +662,7 @@ bool property_affects_stacking_context(PropertyID property_id)
     }
 }
 
-NonnullRefPtr<CSSStyleValue> property_initial_value(JS::Realm& context_realm, PropertyID property_id)
+NonnullRefPtr<CSSStyleValue> property_initial_value(PropertyID property_id)
 {
     static Array<RefPtr<CSSStyleValue>, to_underlying(last_property_id) + 1> initial_values;
     if (auto initial_value = initial_values[to_underlying(property_id)])
@@ -667,7 +672,7 @@ NonnullRefPtr<CSSStyleValue> property_initial_value(JS::Realm& context_realm, Pr
     // This ensures the shorthands will always be able to get the initial values of their longhands.
     // This also now allows a longhand have its own longhand (like background-position-x).
 
-    Parser::ParsingContext parsing_context(context_realm);
+    Parser::ParsingContext parsing_context;
     switch (property_id) {
 )~~~");
 

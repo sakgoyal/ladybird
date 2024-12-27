@@ -4,8 +4,7 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, timeZone);
+        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, "UTC");
         const plainDateTime = zonedDateTime.toPlainDateTime();
         expect(plainDateTime).toBeInstanceOf(Temporal.PlainDateTime);
         expect(plainDateTime.year).toBe(2021);

@@ -116,6 +116,7 @@ void Window::visit_edges(JS::Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
     WindowOrWorkerGlobalScopeMixin::visit_edges(visitor);
+    UniversalGlobalScopeMixin::visit_edges(visitor);
 
     visitor.visit(m_associated_document);
     visitor.visit(m_current_event);
@@ -127,8 +128,6 @@ void Window::visit_edges(JS::Cell::Visitor& visitor)
     visitor.visit(m_animation_frame_callback_driver);
     visitor.visit(m_pdf_viewer_plugin_objects);
     visitor.visit(m_pdf_viewer_mime_type_objects);
-    visitor.visit(m_count_queuing_strategy_size_function);
-    visitor.visit(m_byte_length_queuing_strategy_size_function);
     visitor.visit(m_close_watcher_manager);
 }
 
@@ -147,12 +146,40 @@ WebIDL::ExceptionOr<GC::Ptr<WindowProxy>> Window::window_open_steps(StringView u
     if (target_navigable == nullptr)
         return nullptr;
 
-    // 14. If noopener is true or windowType is "new with no opener", then return null.
+    // 17. If noopener is true or windowType is "new with no opener", then return null.
     if (no_opener == TokenizedFeature::NoOpener::Yes || window_type == Navigable::WindowType::NewWithNoOpener)
         return nullptr;
 
-    // 15. Return targetNavigable's active WindowProxy.
+    // 18. Return targetNavigable's active WindowProxy.
     return target_navigable->active_window_proxy();
+}
+
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#get-noopener-for-window-open
+static TokenizedFeature::NoOpener get_noopener_for_window_open(DOM::Document const& source_document, TokenizedFeature::Map const& tokenized_features, Optional<URL::URL> const& url)
+{
+    // 1. If url is not null and url's blob URL entry is not null:
+    if (url.has_value() && url->blob_url_entry().has_value()) {
+        // 1. Let blobOrigin be url's blob URL entry's environment's origin.
+        auto blob_origin = url->blob_url_entry()->environment_origin;
+
+        // 2. Let topLevelOrigin be sourceDocument's relevant settings object's top-level origin.
+        auto top_level_origin = source_document.relevant_settings_object().top_level_origin;
+
+        // 3. If blobOrigin is not same site with topLevelOrigin, then return true.
+        if (!blob_origin.is_same_site(top_level_origin))
+            return TokenizedFeature::NoOpener::Yes;
+    }
+
+    // 2. Let noopener be false.
+    auto noopener = TokenizedFeature::NoOpener::No;
+
+    // 3. If tokenizedFeatures["noopener"] exists, then set noopener to the result of parsing tokenizedFeatures["noopener"] as a boolean feature.
+    if (auto value = tokenized_features.get("noopener"sv); value.has_value()) {
+        noopener = parse_boolean_feature<TokenizedFeature::NoOpener>(*value);
+    }
+
+    // 4. Return noopener.
+    return noopener;
 }
 
 // https://html.spec.whatwg.org/multipage/window-object.html#window-open-steps
@@ -162,114 +189,99 @@ WebIDL::ExceptionOr<Window::OpenedWindow> Window::window_open_steps_internal(Str
     if (main_thread_event_loop().termination_nesting_level() != 0)
         return OpenedWindow {};
 
-    // FIXME: Spec-issue: https://github.com/whatwg/html/issues/10681
-    // We need to check for an invalid URL before running the 'rules for choosing a navigable' otherwise
-    // and invalid URL will result in a window being created before an exception is thrown.
-    //
-    // 12.3. Let urlRecord be the URL record about:blank.
-    auto url_record = URL::URL("about:blank"sv);
-    // 12.4. If url is not the empty string, then set urlRecord to the result of encoding-parsing a URL given url, relative to the entry settings object.
-    if (!url.is_empty()) {
-        url_record = entry_settings_object().parse_url(url);
-        // 12.5. If urlRecord is failure, then throw a "SyntaxError" DOMException.
-        if (!url_record.is_valid())
-            return WebIDL::SyntaxError::create(realm(), MUST(String::formatted("Invalid URL '{}'", url)));
-    }
-
     // 2. Let sourceDocument be the entry global object's associated Document.
     auto& source_document = verify_cast<Window>(entry_global_object()).associated_document();
 
-    // 3. If target is the empty string, then set target to "_blank".
+    // 3. Let urlRecord be null.
+    Optional<URL::URL> url_record;
+
+    // 4. If url is not the empty string, then:
+    if (!url.is_empty()) {
+        // 1. Set urlRecord to the result of encoding-parsing a URL given url, relative to sourceDocument.
+        url_record = source_document.encoding_parse_url(url);
+
+        // 2. If urlRecord is failure, then throw a "SyntaxError" DOMException.
+        if (!url_record->is_valid())
+            return WebIDL::SyntaxError::create(realm(), MUST(String::formatted("Invalid URL '{}'", url)));
+    }
+
+    // 5. If target is the empty string, then set target to "_blank".
     if (target.is_empty())
         target = "_blank"sv;
 
-    // 4. Let tokenizedFeatures be the result of tokenizing features.
+    // 6. Let tokenizedFeatures be the result of tokenizing features.
     auto tokenized_features = tokenize_open_features(features);
 
-    // 5. Let noopener and noreferrer be false.
-    auto no_opener = TokenizedFeature::NoOpener::No;
+    // 7. Let noreferrer be false.
     auto no_referrer = TokenizedFeature::NoReferrer::No;
 
-    // 6. If tokenizedFeatures["noopener"] exists, then:
-    if (auto no_opener_feature = tokenized_features.get("noopener"sv); no_opener_feature.has_value()) {
-        // 1. Set noopener to the result of parsing tokenizedFeatures["noopener"] as a boolean feature.
-        no_opener = parse_boolean_feature<TokenizedFeature::NoOpener>(*no_opener_feature);
-
-        // 2. Remove tokenizedFeatures["noopener"].
-        tokenized_features.remove("noopener"sv);
-    }
-
-    // 7. If tokenizedFeatures["noreferrer"] exists, then:
+    // 8. If tokenizedFeatures["noreferrer"] exists, then set noreferrer to the result of parsing tokenizedFeatures["noreferrer"] as a boolean feature.
     if (auto no_referrer_feature = tokenized_features.get("noreferrer"sv); no_referrer_feature.has_value()) {
-        // 1. Set noreferrer to the result of parsing tokenizedFeatures["noreferrer"] as a boolean feature.
         no_referrer = parse_boolean_feature<TokenizedFeature::NoReferrer>(*no_referrer_feature);
-
-        // 2. Remove tokenizedFeatures["noreferrer"].
-        tokenized_features.remove("noreferrer"sv);
     }
 
-    // 8. Let referrerPolicy be the empty string.
+    // 9. Let noopener be the result of getting noopener for window open with sourceDocument, tokenizedFeatures, and urlRecord.
+    auto no_opener = get_noopener_for_window_open(source_document, tokenized_features, url_record);
+
+    // 10. Remove tokenizedFeatures["noopener"] and tokenizedFeatures["noreferrer"].
+    tokenized_features.remove("noopener"sv);
+    tokenized_features.remove("noreferrer"sv);
+
+    // 11. Let referrerPolicy be the empty string.
     auto referrer_policy = ReferrerPolicy::ReferrerPolicy::EmptyString;
 
-    // 9. If noreferrer is true, then set noopener to true and set referrerPolicy to "no-referrer".
+    // 12. If noreferrer is true, then set noopener to true and set referrerPolicy to "no-referrer".
     if (no_referrer == TokenizedFeature::NoReferrer::Yes) {
         no_opener = TokenizedFeature::NoOpener::Yes;
         referrer_policy = ReferrerPolicy::ReferrerPolicy::NoReferrer;
     }
 
-    // 10. Let targetNavigable and windowType be the result of applying the rules for choosing a navigable given target, sourceDocument's node navigable, and noopener.
+    // 13. Let targetNavigable and windowType be the result of applying the rules for choosing a navigable given target, sourceDocument's node navigable, and noopener.
     VERIFY(source_document.navigable());
     auto [target_navigable, window_type] = source_document.navigable()->choose_a_navigable(target, no_opener, ActivateTab::Yes, tokenized_features);
 
-    // 11. If targetNavigable is null, then return null.
+    // 14. If targetNavigable is null, then return null.
     if (target_navigable == nullptr)
         return OpenedWindow {};
 
-    // 12. If windowType is either "new and unrestricted" or "new with no opener", then:
+    // 15. If windowType is either "new and unrestricted" or "new with no opener", then:
     if (window_type == Navigable::WindowType::NewAndUnrestricted || window_type == Navigable::WindowType::NewWithNoOpener) {
-        // 1. Set the target browsing context's is popup to the result of checking if a popup window is requested, given tokenizedFeatures.
-        target_navigable->set_is_popup(check_if_a_popup_window_is_requested(tokenized_features));
+        // 1. Set targetNavigable's active browsing context's is popup to the result of checking if a popup window is requested, given tokenizedFeatures.
+        target_navigable->active_browsing_context()->set_is_popup(check_if_a_popup_window_is_requested(tokenized_features));
 
         // 2. Set up browsing context features for target browsing context given tokenizedFeatures. [CSSOMVIEW]
         // NOTE: This is implemented in choose_a_navigable when creating the top level traversable.
 
-        // NOTE: See spec issue above
-        // 3. Let urlRecord be the URL record about:blank.
-        // 4. If url is not the empty string, then set urlRecord to the result of encoding-parsing a URL given url, relative to the entry settings object.
-        // 5. If urlRecord is failure, then throw a "SyntaxError" DOMException.
+        // 3. If urlRecord is null, then set urlRecord to a URL record representing about:blank.
+        if (!url_record.has_value())
+            url_record = URL::URL("about:blank"sv);
 
-        // 6. If urlRecord matches about:blank, then perform the URL and history update steps given targetNavigable's active document and urlRecord.
-        if (url_matches_about_blank(url_record)) {
+        // 4. If urlRecord matches about:blank, then perform the URL and history update steps given targetNavigable's active document and urlRecord.
+        if (url_matches_about_blank(url_record.value())) {
             // AD-HOC: Mark the initial about:blank for the new window as load complete
             // FIXME: We do this other places too when creating a new about:blank document. Perhaps it's worth a spec issue?
             HTML::HTMLParser::the_end(*target_navigable->active_document());
 
-            perform_url_and_history_update_steps(*target_navigable->active_document(), url_record);
+            perform_url_and_history_update_steps(*target_navigable->active_document(), url_record.release_value());
         }
 
-        // 7. Otherwise, navigate targetNavigable to urlRecord using sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
+        // 5. Otherwise, navigate targetNavigable to urlRecord using sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
         else {
-            TRY(target_navigable->navigate({ .url = url_record, .source_document = source_document, .exceptions_enabled = true, .referrer_policy = referrer_policy }));
+            TRY(target_navigable->navigate({ .url = url_record.release_value(), .source_document = source_document, .exceptions_enabled = true, .referrer_policy = referrer_policy }));
         }
     }
-
-    // 13. Otherwise:
+    // 16. Otherwise:
     else {
-        // 1. If url is not the empty string, then:
-        if (!url.is_empty()) {
-            // NOTE: See spec issue above
-            // 1. Let urlRecord be the result of encoding-parsing a URL url, relative to the entry settings object.
-            // 2. If urlRecord is failure, then throw a "SyntaxError" DOMException.
-
-            // 3. Navigate targetNavigable to urlRecord using sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
-            TRY(target_navigable->navigate({ .url = url_record, .source_document = source_document, .exceptions_enabled = true, .referrer_policy = referrer_policy }));
-        }
+        // 1. If urlRecord is not null, then navigate targetNavigable to urlRecord using sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
+        if (url_record.has_value())
+            TRY(target_navigable->navigate({ .url = url_record.release_value(), .source_document = source_document, .exceptions_enabled = true, .referrer_policy = referrer_policy }));
 
         // 2. If noopener is false, then set targetNavigable's active browsing context's opener browsing context to sourceDocument's browsing context.
         if (no_opener == TokenizedFeature::NoOpener::No)
             target_navigable->active_browsing_context()->set_opener_browsing_context(source_document.browsing_context());
     }
 
+    // NOTE: Steps 17 and 18 are implemented in window_open_steps().
     return OpenedWindow { target_navigable, no_opener, window_type };
 }
 
@@ -514,7 +526,7 @@ void Window::consume_history_action_user_activation()
     auto navigables = top->active_document()->inclusive_descendant_navigables();
 
     // 4. Let windows be the list of Window objects constructed by taking the active window of each item in navigables.
-    GC::MarkedVector<GC::Ptr<Window>> windows(heap());
+    GC::RootVector<GC::Ptr<Window>> windows(heap());
     for (auto& n : navigables)
         windows.append(n->active_window());
 
@@ -539,7 +551,7 @@ void Window::consume_user_activation()
     auto navigables = top->active_document()->inclusive_descendant_navigables();
 
     // 4. Let windows be the list of Window objects constructed by taking the active window of each item in navigables.
-    GC::MarkedVector<GC::Ptr<Window>> windows(heap());
+    GC::RootVector<GC::Ptr<Window>> windows(heap());
     for (auto& n : navigables)
         windows.append(n->active_window());
 
@@ -669,52 +681,6 @@ Vector<GC::Ref<MimeType>> Window::pdf_viewer_mime_type_objects()
     }
 
     return m_pdf_viewer_mime_type_objects;
-}
-
-// https://streams.spec.whatwg.org/#count-queuing-strategy-size-function
-GC::Ref<WebIDL::CallbackType> Window::count_queuing_strategy_size_function()
-{
-    auto& realm = this->realm();
-
-    if (!m_count_queuing_strategy_size_function) {
-        // 1. Let steps be the following steps:
-        auto steps = [](auto const&) {
-            // 1. Return 1.
-            return 1.0;
-        };
-
-        // 2. Let F be ! CreateBuiltinFunction(steps, 0, "size", « », globalObject’s relevant Realm).
-        auto function = JS::NativeFunction::create(realm, move(steps), 0, "size", &realm);
-
-        // 3. Set globalObject’s count queuing strategy size function to a Function that represents a reference to F, with callback context equal to globalObject’s relevant settings object.
-        m_count_queuing_strategy_size_function = realm.create<WebIDL::CallbackType>(*function, relevant_settings_object(*this));
-    }
-
-    return GC::Ref { *m_count_queuing_strategy_size_function };
-}
-
-// https://streams.spec.whatwg.org/#byte-length-queuing-strategy-size-function
-GC::Ref<WebIDL::CallbackType> Window::byte_length_queuing_strategy_size_function()
-{
-    auto& realm = this->realm();
-
-    if (!m_byte_length_queuing_strategy_size_function) {
-        // 1. Let steps be the following steps, given chunk:
-        auto steps = [](JS::VM& vm) {
-            auto chunk = vm.argument(0);
-
-            // 1. Return ? GetV(chunk, "byteLength").
-            return chunk.get(vm, vm.names.byteLength);
-        };
-
-        // 2. Let F be ! CreateBuiltinFunction(steps, 1, "size", « », globalObject’s relevant Realm).
-        auto function = JS::NativeFunction::create(realm, move(steps), 1, "size", &realm);
-
-        // 3. Set globalObject’s byte length queuing strategy size function to a Function that represents a reference to F, with callback context equal to globalObject’s relevant settings object.
-        m_byte_length_queuing_strategy_size_function = realm.create<WebIDL::CallbackType>(*function, relevant_settings_object(*this));
-    }
-
-    return GC::Ref { *m_byte_length_queuing_strategy_size_function };
 }
 
 static bool s_inspector_object_exposed = false;
@@ -889,6 +855,18 @@ GC::Ref<History> Window::history() const
     return associated_document().history();
 }
 
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-stop
+void Window::stop()
+{
+    // 1. If this's navigable is null, then return.
+    auto navigable = this->navigable();
+    if (!navigable)
+        return;
+
+    // 2. Stop loading this's navigable.
+    navigable->stop_loading();
+}
+
 // https://html.spec.whatwg.org/multipage/interaction.html#dom-window-focus
 void Window::focus()
 {
@@ -968,8 +946,7 @@ WebIDL::ExceptionOr<void> Window::set_opener(JS::Value value)
 
     // 2. If the given value is non-null, then perform ? DefinePropertyOrThrow(this, "opener", { [[Value]]: the given value, [[Writable]]: true, [[Enumerable]]: true, [[Configurable]]: true }).
     if (!value.is_null()) {
-        static JS::PropertyKey opener_property_key { "opener", JS::PropertyKey::StringMayBeNumber::No };
-        TRY(define_property_or_throw(opener_property_key, { .value = value, .writable = true, .enumerable = true, .configurable = true }));
+        TRY(define_property_or_throw(vm().names.opener, { .value = value, .writable = true, .enumerable = true, .configurable = true }));
     }
 
     return {};
@@ -1133,7 +1110,7 @@ WebIDL::ExceptionOr<void> Window::window_post_message_steps(JS::Value message, W
         // with the origin attribute initialized to origin and the source attribute initialized to source, and then return.
         if (deserialize_record_or_error.is_exception()) {
             MessageEventInit message_event_init {};
-            message_event_init.origin = MUST(String::from_byte_string(origin));
+            message_event_init.origin = origin;
             message_event_init.source = GC::make_root(source);
 
             auto message_error_event = MessageEvent::create(target_realm, EventNames::messageerror, message_event_init);
@@ -1159,7 +1136,7 @@ WebIDL::ExceptionOr<void> Window::window_post_message_steps(JS::Value message, W
         //    the source attribute initialized to source, the data attribute initialized to messageClone, and the ports attribute
         //    initialized to newPorts.
         MessageEventInit message_event_init {};
-        message_event_init.origin = MUST(String::from_byte_string(origin));
+        message_event_init.origin = origin;
         message_event_init.source = GC::make_root(source);
         message_event_init.data = message_clone;
         message_event_init.ports = move(new_ports);

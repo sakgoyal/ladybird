@@ -7,7 +7,6 @@
 
 #pragma once
 
-#include <LibGfx/DeprecatedPath.h>
 #include <LibGfx/PaintStyle.h>
 #include <LibWeb/DOM/Node.h>
 #include <LibWeb/SVG/AttributeParser.h>
@@ -30,12 +29,15 @@ class SVGGraphicsElement : public SVGElement {
     WEB_PLATFORM_OBJECT(SVGGraphicsElement, SVGElement);
 
 public:
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 
     virtual void attribute_changed(FlyString const& name, Optional<String> const& old_value, Optional<String> const& value, Optional<FlyString> const& namespace_) override;
 
     Optional<Gfx::Color> fill_color() const;
     Optional<Gfx::Color> stroke_color() const;
+    Vector<float> stroke_dasharray() const;
+    Optional<float> stroke_dashoffset() const;
     Optional<float> stroke_width() const;
     Optional<float> fill_opacity() const;
     Optional<CSS::StrokeLinecap> stroke_linecap() const;
@@ -94,6 +96,7 @@ protected:
 
 private:
     virtual bool is_svg_graphics_element() const final { return true; }
+    float resolve_relative_to_viewport_size(CSS::LengthPercentage const& length_percentage) const;
 };
 
 Gfx::AffineTransform transform_from_transform_list(ReadonlySpan<Transform> transform_list);

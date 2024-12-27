@@ -21,6 +21,8 @@
 
 namespace Web::Internals {
 
+static u16 s_echo_server_port { 0 };
+
 GC_DEFINE_ALLOCATOR(Internals);
 
 Internals::Internals(JS::Realm& realm)
@@ -49,6 +51,11 @@ Page& Internals::internals_page() const
 void Internals::signal_text_test_is_done(String const& text)
 {
     internals_page().client().page_did_finish_text_test(text);
+}
+
+void Internals::set_test_timeout(double milliseconds)
+{
+    internals_page().client().page_did_set_test_timeout(milliseconds);
 }
 
 void Internals::gc()
@@ -120,6 +127,18 @@ void Internals::click(double x, double y, UIEvents::MouseButton button)
     auto position = page.css_to_device_point({ x, y });
     page.handle_mousedown(position, position, button, 0, 0);
     page.handle_mouseup(position, position, button, 0, 0);
+}
+
+void Internals::mouse_down(double x, double y)
+{
+    mouse_down(x, y, UIEvents::MouseButton::Primary);
+}
+
+void Internals::mouse_down(double x, double y, UIEvents::MouseButton button)
+{
+    auto& page = internals_page();
+    auto position = page.css_to_device_point({ x, y });
+    page.handle_mousedown(position, position, button, 0, 0);
 }
 
 void Internals::move_pointer_to(double x, double y)
@@ -201,10 +220,33 @@ void Internals::expire_cookies_with_time_offset(WebIDL::LongLong seconds)
     internals_page().client().page_did_expire_cookies_with_time_offset(AK::Duration::from_seconds(seconds));
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static
+String Internals::get_computed_role(DOM::Element& element)
+{
+    if (auto role = element.role_or_default(); role.has_value())
+        return MUST(String::from_utf8(ARIA::role_name(role.value())));
+    return String {};
+}
+
 String Internals::get_computed_label(DOM::Element& element)
 {
     auto& active_document = internals_window().associated_document();
     return MUST(element.accessible_name(active_document));
+}
+
+u16 Internals::get_echo_server_port()
+{
+    return s_echo_server_port;
+}
+
+void Internals::set_echo_server_port(u16 const port)
+{
+    s_echo_server_port = port;
+}
+
+bool Internals::headless()
+{
+    return internals_page().client().is_headless();
 }
 
 }

@@ -111,6 +111,12 @@ bool FormattingContext::creates_block_formatting_context(Box const& box)
 
     // FIXME: column-span: all should always create a new formatting context, even when the column-span: all element isn't contained by a multicol container (Spec change, Chrome bug).
 
+    // https://html.spec.whatwg.org/#the-fieldset-and-legend-elements
+    if (box.is_fieldset_box())
+        // The fieldset element, when it generates a CSS box, is expected to act as follows:
+        // The element is expected to establish a new block formatting context.
+        return true;
+
     return false;
 }
 
@@ -618,7 +624,7 @@ CSSPixels FormattingContext::tentative_height_for_replaced_element(Box const& bo
         return 150;
 
     // FIXME: Handle cases when available_space is not definite.
-    return calculate_inner_height(box, available_space.height, computed_height);
+    return calculate_inner_height(box, available_space, computed_height);
 }
 
 CSSPixels FormattingContext::compute_height_for_replaced_element(Box const& box, AvailableSpace const& available_space) const
@@ -639,7 +645,10 @@ CSSPixels FormattingContext::compute_height_for_replaced_element(Box const& box,
     // use the algorithm under 'Minimum and maximum widths'
     // https://www.w3.org/TR/CSS22/visudet.html#min-max-widths
     // to find the used width and height.
-    if (computed_width.is_auto() && computed_height.is_auto() && box.has_preferred_aspect_ratio()) {
+    if ((computed_width.is_auto() && computed_height.is_auto() && box.has_preferred_aspect_ratio())
+        // NOTE: This is a special case where calling tentative_width_for_replaced_element() would call us right back,
+        //       and we'd end up in an infinite loop. So we need to handle this case separately.
+        && !(!box.has_natural_width() && box.has_natural_height())) {
         CSSPixels w = tentative_width_for_replaced_element(box, computed_width, available_space);
         CSSPixels h = used_height;
         used_height = solve_replaced_size_constraint(w, h, box, available_space).height();
@@ -948,12 +957,12 @@ void FormattingContext::compute_height_for_absolutely_positioned_non_replaced_el
         auto const& computed_max_height = box.computed_values().max_height();
         auto constrained_height = unconstrained_height;
         if (!computed_max_height.is_none()) {
-            auto inner_max_height = calculate_inner_height(box, available_space.height, computed_max_height);
+            auto inner_max_height = calculate_inner_height(box, available_space, computed_max_height);
             if (inner_max_height < constrained_height.to_px(box))
                 constrained_height = CSS::Length::make_px(inner_max_height);
         }
         if (!computed_min_height.is_auto()) {
-            auto inner_min_height = calculate_inner_height(box, available_space.height, computed_min_height);
+            auto inner_min_height = calculate_inner_height(box, available_space, computed_min_height);
             if (inner_min_height > constrained_height.to_px(box))
                 constrained_height = CSS::Length::make_px(inner_min_height);
         }
@@ -1142,7 +1151,7 @@ void FormattingContext::compute_height_for_absolutely_positioned_non_replaced_el
             return CSS::Length::make_px(compute_table_box_height_inside_table_wrapper(box, available_space));
         if (should_treat_height_as_auto(box, available_space))
             return CSS::Length::make_auto();
-        return CSS::Length::make_px(calculate_inner_height(box, available_space.height, box.computed_values().height()));
+        return CSS::Length::make_px(calculate_inner_height(box, available_space, box.computed_values().height()));
     }());
 
     used_height = apply_min_max_height_constraints(used_height);
@@ -1217,10 +1226,15 @@ void FormattingContext::layout_absolutely_positioned_element(Box const& box, Ava
 
     // If the box width and/or height is fixed and/or or resolved from inset properties,
     // mark the size as being definite (since layout was not required to resolve it, per CSS-SIZING-3).
-    if (box.computed_values().inset().left().is_length() && box.computed_values().inset().right().is_length()) {
+    auto is_length_but_not_auto = [](auto& length_percentage) {
+        return length_percentage.is_length() && !length_percentage.is_auto();
+    };
+    if (is_length_but_not_auto(box.computed_values().inset().left())
+        && is_length_but_not_auto(box.computed_values().inset().right())) {
         box_state.set_has_definite_width(true);
     }
-    if (box.computed_values().inset().top().is_length() && box.computed_values().inset().bottom().is_length()) {
+    if (is_length_but_not_auto(box.computed_values().inset().top())
+        && is_length_but_not_auto(box.computed_values().inset().bottom())) {
         box_state.set_has_definite_height(true);
     }
 
@@ -1608,11 +1622,23 @@ CSSPixels FormattingContext::calculate_inner_width(Layout::Box const& box, Avail
     return width.to_px(box, width_of_containing_block);
 }
 
-CSSPixels FormattingContext::calculate_inner_height(Layout::Box const& box, AvailableSize const& available_height, CSS::Size const& height) const
+CSSPixels FormattingContext::calculate_inner_height(Layout::Box const& box, AvailableSpace const& available_space, CSS::Size const& height) const
 {
     VERIFY(!height.is_auto());
-    auto height_of_containing_block = available_height.to_px_or_zero();
+
+    if (height.is_fit_content()) {
+        return calculate_fit_content_height(box, available_space);
+    }
+    if (height.is_max_content()) {
+        return calculate_max_content_height(box, available_space.width.to_px_or_zero());
+    }
+    if (height.is_min_content()) {
+        return calculate_min_content_height(box, available_space.width.to_px_or_zero());
+    }
+
+    auto height_of_containing_block = available_space.height.to_px_or_zero();
     auto& computed_values = box.computed_values();
+
     if (computed_values.box_sizing() == CSS::BoxSizing::BorderBox) {
         auto const& state = m_state.get(box);
         auto inner_height = height.to_px(box, height_of_containing_block)
@@ -1676,7 +1702,7 @@ CSSPixels FormattingContext::calculate_stretch_fit_height(Box const& box, Availa
         - box_state.border_bottom;
 }
 
-bool FormattingContext::should_treat_width_as_auto(Box const& box, AvailableSpace const& available_space)
+bool FormattingContext::should_treat_width_as_auto(Box const& box, AvailableSpace const& available_space) const
 {
     auto const& computed_width = box.computed_values().width();
     if (computed_width.is_auto())
@@ -1687,33 +1713,40 @@ bool FormattingContext::should_treat_width_as_auto(Box const& box, AvailableSpac
         if (available_space.width.is_indefinite())
             return true;
     }
-    // AD-HOC: If the box has a preferred aspect ratio and no natural height,
-    //         we treat the width as auto, since it can't be resolved through the ratio.
-    if (computed_width.is_min_content() || computed_width.is_max_content() || computed_width.is_fit_content()) {
-        if (box.has_preferred_aspect_ratio() && !box.has_natural_height())
+    // AD-HOC: If the box has a preferred aspect ratio and an intrinsic keyword for width...
+    if (box.has_preferred_aspect_ratio()
+        && (computed_width.is_min_content() || computed_width.is_max_content() || computed_width.is_fit_content())) {
+        // If the box has no natural height to resolve the aspect ratio, we treat the width as auto.
+        if (!box.has_natural_height())
+            return true;
+        // If the box has definite height, we can resolve the width through the aspect ratio.
+        if (m_state.get(box).has_definite_height())
             return true;
     }
     return false;
 }
 
-bool FormattingContext::should_treat_height_as_auto(Box const& box, AvailableSpace const& available_space)
+bool FormattingContext::should_treat_height_as_auto(Box const& box, AvailableSpace const& available_space) const
 {
     auto computed_height = box.computed_values().height();
     if (computed_height.is_auto())
         return true;
 
-    // https://www.w3.org/TR/css-sizing-3/#valdef-width-min-content
-    // https://www.w3.org/TR/css-sizing-3/#valdef-width-max-content
-    // https://www.w3.org/TR/css-sizing-3/#valdef-width-fit-content
-    // For a box’s block size, unless otherwise specified, this is equivalent to its automatic size.
-    // FIXME: If height is not the block axis size, then we should be concerned with the width instead.
-    if (computed_height.is_min_content() || computed_height.is_max_content() || computed_height.is_fit_content())
-        return true;
-
-    if (box.computed_values().height().contains_percentage()) {
+    if (computed_height.contains_percentage()) {
         if (available_space.height.is_max_content())
             return true;
         if (available_space.height.is_indefinite())
+            return true;
+    }
+
+    // AD-HOC: If the box has a preferred aspect ratio and an intrinsic keyword for height...
+    if (box.has_preferred_aspect_ratio()
+        && (computed_height.is_min_content() || computed_height.is_max_content() || computed_height.is_fit_content())) {
+        // If the box has no natural width to resolve the aspect ratio, we treat the height as auto.
+        if (!box.has_natural_width())
+            return true;
+        // If the box has definite width, we can resolve the height through the aspect ratio.
+        if (m_state.get(box).has_definite_width())
             return true;
     }
     return false;
@@ -1932,6 +1965,12 @@ bool FormattingContext::should_treat_max_height_as_none(Box const& box, Availabl
         if (!m_state.get(*box.non_anonymous_containing_block()).has_definite_height())
             return true;
     }
+    if (max_height.is_fit_content() && available_height.is_intrinsic_sizing_constraint())
+        return true;
+    if (max_height.is_max_content() && available_height.is_max_content())
+        return true;
+    if (max_height.is_min_content() && available_height.is_min_content())
+        return true;
     return false;
 }
 

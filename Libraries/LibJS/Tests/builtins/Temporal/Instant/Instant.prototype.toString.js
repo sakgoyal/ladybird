@@ -10,7 +10,7 @@ describe("correct behavior", () => {
 
     test("timeZone option", () => {
         const instant = new Temporal.Instant(1625614921123456789n);
-        const options = { timeZone: new Temporal.TimeZone("+01:30") };
+        const options = { timeZone: "+01:30" };
         expect(instant.toString(options)).toBe("2021-07-07T01:12:01.123456789+01:30");
     });
 
@@ -66,7 +66,7 @@ describe("errors", () => {
     test("custom time zone doesn't have a getOffsetNanosecondsFor function", () => {
         const instant = new Temporal.Instant(0n);
         expect(() => {
-            instant.toString({ timeZone: {} });
-        }).toThrowWithMessage(TypeError, "getOffsetNanosecondsFor is undefined");
+            instant.toString({ timeZone: null });
+        }).toThrowWithMessage(TypeError, "Invalid time zone name 'null");
     });
 });

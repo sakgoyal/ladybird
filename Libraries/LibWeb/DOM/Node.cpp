@@ -2,6 +2,7 @@
  * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2022, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2021, Luke Wilde <lukew@serenityos.org>
+ * Copyright (c) 2024, Jelle Raaijmakers <jelle@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -11,7 +12,6 @@
 #include <LibGC/DeferGC.h>
 #include <LibJS/Runtime/FunctionObject.h>
 #include <LibRegex/Regex.h>
-#include <LibURL/Origin.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/Bindings/NodePrototype.h>
 #include <LibWeb/DOM/Attr.h>
@@ -32,23 +32,32 @@
 #include <LibWeb/DOM/Range.h>
 #include <LibWeb/DOM/ShadowRoot.h>
 #include <LibWeb/DOM/StaticNodeList.h>
+#include <LibWeb/DOM/XMLDocument.h>
 #include <LibWeb/HTML/CustomElements/CustomElementReactionNames.h>
 #include <LibWeb/HTML/HTMLAnchorElement.h>
+#include <LibWeb/HTML/HTMLDocument.h>
+#include <LibWeb/HTML/HTMLFieldSetElement.h>
 #include <LibWeb/HTML/HTMLImageElement.h>
 #include <LibWeb/HTML/HTMLInputElement.h>
+#include <LibWeb/HTML/HTMLLegendElement.h>
 #include <LibWeb/HTML/HTMLSelectElement.h>
 #include <LibWeb/HTML/HTMLSlotElement.h>
 #include <LibWeb/HTML/HTMLStyleElement.h>
+#include <LibWeb/HTML/HTMLTableElement.h>
+#include <LibWeb/HTML/HTMLTextAreaElement.h>
 #include <LibWeb/HTML/Navigable.h>
 #include <LibWeb/HTML/NavigableContainer.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/Infra/CharacterTypes.h>
 #include <LibWeb/Layout/Node.h>
 #include <LibWeb/Layout/TextNode.h>
-#include <LibWeb/Layout/Viewport.h>
+#include <LibWeb/MathML/MathMLElement.h>
 #include <LibWeb/Namespace.h>
 #include <LibWeb/Painting/Paintable.h>
 #include <LibWeb/Painting/PaintableBox.h>
+#include <LibWeb/SVG/SVGElement.h>
+#include <LibWeb/SVG/SVGTitleElement.h>
+#include <LibWeb/XLink/AttributeNames.h>
 
 namespace Web::DOM {
 
@@ -118,7 +127,7 @@ void Node::visit_edges(Cell::Visitor& visitor)
 String Node::base_uri() const
 {
     // Return this’s node document’s document base URL, serialized.
-    return MUST(document().base_url().to_string());
+    return document().base_url().to_string();
 }
 
 const HTML::HTMLAnchorElement* Node::enclosing_link_element() const
@@ -233,10 +242,7 @@ WebIDL::ExceptionOr<void> Node::normalize()
         Vector<Text*> nodes;
 
         auto* current_node = node.previous_sibling();
-        while (current_node) {
-            if (!current_node->is_text())
-                break;
-
+        while (current_node && current_node->is_exclusive_text()) {
             nodes.append(static_cast<Text*>(current_node));
             current_node = current_node->previous_sibling();
         }
@@ -245,10 +251,7 @@ WebIDL::ExceptionOr<void> Node::normalize()
         nodes.reverse();
 
         current_node = node.next_sibling();
-        while (current_node) {
-            if (!current_node->is_text())
-                break;
-
+        while (current_node && current_node->is_exclusive_text()) {
             nodes.append(static_cast<Text*>(current_node));
             current_node = current_node->next_sibling();
         }
@@ -289,7 +292,7 @@ WebIDL::ExceptionOr<void> Node::normalize()
         auto* current_node = node.next_sibling();
 
         // 6. While currentNode is an exclusive Text node:
-        while (current_node && is<Text>(*current_node)) {
+        while (current_node && current_node->is_exclusive_text()) {
             // 1. For each live range whose start node is currentNode, add length to its start offset and set its start node to node.
             for (auto& range : Range::live_ranges()) {
                 if (range->start_container() == current_node)
@@ -670,7 +673,7 @@ void Node::insert_before(GC::Ref<Node> node, GC::Ptr<Node> child, bool suppress_
                 // 1. If inclusiveDescendant is custom, then enqueue a custom element callback reaction with inclusiveDescendant,
                 //    callback name "connectedCallback", and an empty argument list.
                 if (element.is_custom()) {
-                    GC::MarkedVector<JS::Value> empty_arguments { vm().heap() };
+                    GC::RootVector<JS::Value> empty_arguments { vm().heap() };
                     element.enqueue_a_custom_element_callback_reaction(HTML::CustomElementReactionNames::connectedCallback, move(empty_arguments));
                 }
 
@@ -688,11 +691,34 @@ void Node::insert_before(GC::Ref<Node> node, GC::Ptr<Node> child, bool suppress_
 
     // 8. If suppress observers flag is unset, then queue a tree mutation record for parent with nodes, « », previousSibling, and child.
     if (!suppress_observers) {
-        queue_tree_mutation_record(move(nodes), {}, previous_sibling.ptr(), child.ptr());
+        queue_tree_mutation_record(nodes, {}, previous_sibling.ptr(), child.ptr());
     }
 
     // 9. Run the children changed steps for parent.
     children_changed();
+
+    // 10. Let staticNodeList be a list of nodes, initially « ».
+    // Spec-Note: We collect all nodes before calling the post-connection steps on any one of them, instead of calling
+    //            the post-connection steps while we’re traversing the node tree. This is because the post-connection
+    //            steps can modify the tree’s structure, making live traversal unsafe, possibly leading to the
+    //            post-connection steps being called multiple times on the same node.
+    GC::RootVector<GC::Ref<Node>> static_node_list(heap());
+
+    // 11. For each node of nodes, in tree order:
+    for (auto& node : nodes) {
+        // 1. For each shadow-including inclusive descendant inclusiveDescendant of node, in shadow-including tree
+        //    order, append inclusiveDescendant to staticNodeList.
+        node->for_each_shadow_including_inclusive_descendant([&static_node_list](Node& inclusive_descendant) {
+            static_node_list.append(inclusive_descendant);
+            return TraversalDecision::Continue;
+        });
+    }
+
+    // 12. For each node of staticNodeList, if node is connected, then run the post-connection steps with node.
+    for (auto& node : static_node_list) {
+        if (node->is_connected())
+            node->post_connection();
+    }
 
     if (is_connected()) {
         // FIXME: This will need to become smarter when we implement the :has() selector.
@@ -856,7 +882,7 @@ void Node::remove(bool suppress_observers)
         auto& element = static_cast<DOM::Element&>(*this);
 
         if (element.is_custom() && is_parent_connected) {
-            GC::MarkedVector<JS::Value> empty_arguments { vm().heap() };
+            GC::RootVector<JS::Value> empty_arguments { vm().heap() };
             element.enqueue_a_custom_element_callback_reaction(HTML::CustomElementReactionNames::disconnectedCallback, move(empty_arguments));
         }
     }
@@ -872,7 +898,7 @@ void Node::remove(bool suppress_observers)
             auto& element = static_cast<DOM::Element&>(descendant);
 
             if (element.is_custom() && is_parent_connected) {
-                GC::MarkedVector<JS::Value> empty_arguments { vm().heap() };
+                GC::RootVector<JS::Value> empty_arguments { vm().heap() };
                 element.enqueue_a_custom_element_callback_reaction(HTML::CustomElementReactionNames::disconnectedCallback, move(empty_arguments));
             }
         }
@@ -949,7 +975,7 @@ WebIDL::ExceptionOr<GC::Ref<Node>> Node::replace_child(GC::Ref<Node> node, GC::R
         } else if (is<DocumentType>(*node)) {
             // DocumentType
             // parent has a doctype child that is not child, or an element is preceding child.
-            if (first_child_of_type<DocumentType>() != node || child->has_preceding_node_of_type_in_tree_order<Element>())
+            if (first_child_of_type<DocumentType>() != child || child->has_preceding_node_of_type_in_tree_order<Element>())
                 return WebIDL::HierarchyRequestError::create(realm(), "Invalid node type for insertion"_string);
         }
     }
@@ -984,8 +1010,13 @@ WebIDL::ExceptionOr<GC::Ref<Node>> Node::replace_child(GC::Ref<Node> node, GC::R
     else
         nodes.append(GC::make_root(*node));
 
-    // 13. Insert node into parent before referenceChild with the suppress observers flag set.
-    insert_before(node, reference_child, true);
+    // AD-HOC: Since removing the child may have executed arbitrary code, we have to verify
+    //         the sanity of inserting `node` before `reference_child` again, as well as
+    //         `child` not being reinserted elsewhere.
+    if (!reference_child || (reference_child->parent() == this && !child->parent_node())) {
+        // 13. Insert node into parent before referenceChild with the suppress observers flag set.
+        insert_before(node, reference_child, true);
+    }
 
     // 14. Queue a tree mutation record for parent with nodes, removedNodes, previousSibling, and referenceChild.
     queue_tree_mutation_record(move(nodes), move(removed_nodes), previous_sibling.ptr(), reference_child.ptr());
@@ -1021,7 +1052,16 @@ WebIDL::ExceptionOr<GC::Ref<Node>> Node::clone_node(Document* document, bool clo
     else if (is<Document>(this)) {
         // Document
         auto document_ = verify_cast<Document>(this);
-        auto document_copy = Document::create(this->realm(), document_->url());
+        auto document_copy = [&] -> GC::Ref<Document> {
+            switch (document_->document_type()) {
+            case Document::Type::XML:
+                return XMLDocument::create(realm(), document_->url());
+            case Document::Type::HTML:
+                return HTML::HTMLDocument::create(realm(), document_->url());
+            default:
+                return Document::create(realm(), document_->url());
+            }
+        }();
 
         // Set copy’s encoding, content type, URL, origin, type, and mode to those of node.
         document_copy->set_encoding(document_->encoding());
@@ -1046,15 +1086,21 @@ WebIDL::ExceptionOr<GC::Ref<Node>> Node::clone_node(Document* document, bool clo
         // Set copy’s namespace, namespace prefix, local name, and value to those of node.
         auto& attr = static_cast<Attr&>(*this);
         copy = attr.clone(*document);
-    }
-    // NOTE: is<Text>() currently returns true only for text nodes, not for descendant types of Text.
-    else if (is<Text>(this) || is<CDATASection>(this)) {
+    } else if (is<Text>(this)) {
         // Text
         auto& text = static_cast<Text&>(*this);
 
         // Set copy’s data to that of node.
-        auto text_copy = realm().create<Text>(*document, text.data());
-        copy = move(text_copy);
+        copy = [&]() -> GC::Ref<Text> {
+            switch (type()) {
+            case NodeType::TEXT_NODE:
+                return realm().create<Text>(*document, text.data());
+            case NodeType::CDATA_SECTION_NODE:
+                return realm().create<CDATASection>(*document, text.data());
+            default:
+                VERIFY_NOT_REACHED();
+            }
+        }();
     } else if (is<Comment>(this)) {
         // Comment
         auto comment = verify_cast<Comment>(this);
@@ -1139,9 +1185,48 @@ void Node::set_document(Badge<Document>, Document& document)
     }
 }
 
+// https://w3c.github.io/editing/docs/execCommand/#editable
 bool Node::is_editable() const
 {
-    return parent() && parent()->is_editable();
+    // Something is editable if it is a node; it is not an editing host;
+    if (is_editing_host())
+        return false;
+
+    // it does not have a contenteditable attribute set to the false state;
+    if (is<HTML::HTMLElement>(this) && static_cast<HTML::HTMLElement const&>(*this).content_editable_state() == HTML::ContentEditableState::False)
+        return false;
+
+    // its parent is an editing host or editable;
+    if (!parent() || !parent()->is_editable_or_editing_host())
+        return false;
+
+    // and either it is an HTML element,
+    if (is<HTML::HTMLElement>(this))
+        return true;
+
+    // or it is an svg or math element,
+    if (is<SVG::SVGElement>(this) || is<MathML::MathMLElement>(this))
+        return true;
+
+    // or it is not an Element and its parent is an HTML element.
+    return !is<Element>(this) && is<HTML::HTMLElement>(parent());
+}
+
+// https://html.spec.whatwg.org/multipage/interaction.html#editing-host
+bool Node::is_editing_host() const
+{
+    // NOTE: Both conditions below require this to be an HTML element.
+    if (!is<HTML::HTMLElement>(this))
+        return false;
+
+    // An editing host is either an HTML element with its contenteditable attribute in the true state or
+    // plaintext-only state,
+    auto state = static_cast<HTML::HTMLElement const&>(*this).content_editable_state();
+    if (state == HTML::ContentEditableState::True || state == HTML::ContentEditableState::PlaintextOnly)
+        return true;
+
+    // or a child HTML element of a Document whose design mode enabled is true.
+    return is<Document>(parent()) && static_cast<Document const&>(*parent()).design_mode_enabled_state();
 }
 
 void Node::set_layout_node(Badge<Layout::Node>, GC::Ref<Layout::Node> layout_node)
@@ -1164,6 +1249,22 @@ EventTarget* Node::get_parent(Event const&)
     return parent();
 }
 
+void Node::set_needs_inherited_style_update(bool value)
+{
+    if (m_needs_inherited_style_update == value)
+        return;
+    m_needs_inherited_style_update = value;
+
+    if (m_needs_inherited_style_update) {
+        for (auto* ancestor = parent_or_shadow_host(); ancestor; ancestor = ancestor->parent_or_shadow_host()) {
+            if (ancestor->m_child_needs_style_update)
+                break;
+            ancestor->m_child_needs_style_update = true;
+        }
+        document().schedule_style_update();
+    }
+}
+
 void Node::set_needs_style_update(bool value)
 {
     if (m_needs_style_update == value)
@@ -1178,6 +1279,10 @@ void Node::set_needs_style_update(bool value)
         }
         document().schedule_style_update();
     }
+}
+
+void Node::post_connection()
+{
 }
 
 void Node::inserted()
@@ -1407,6 +1512,18 @@ void Node::serialize_tree_as_json(JsonObjectSerializer<StringBuilder>& object) c
                 content_document->serialize_tree_as_json(content_document_object);
                 MUST(content_document_object.finish());
                 MUST(children.finish());
+            }
+        }
+
+        if (paintable_box()) {
+            if (paintable_box()->is_scrollable()) {
+                MUST(object.add("scrollable"sv, true));
+            }
+            if (!paintable_box()->is_visible()) {
+                MUST(object.add("invisible"sv, true));
+            }
+            if (paintable_box()->has_stacking_context()) {
+                MUST(object.add("stackingContext"sv, true));
             }
         }
     } else if (is_text()) {
@@ -1692,20 +1809,19 @@ bool Node::is_equal_node(Node const* other_node) const
     }
 
     // A and B have the same number of children.
-    size_t this_child_count = child_count();
-    size_t other_child_count = other_node->child_count();
-    if (this_child_count != other_child_count)
+    if (child_count() != other_node->child_count())
         return false;
 
     // Each child of A equals the child of B at the identical index.
-    // FIXME: This can be made nicer. child_at_index() is O(n).
-    for (size_t i = 0; i < this_child_count; ++i) {
-        auto* this_child = child_at_index(i);
-        auto* other_child = other_node->child_at_index(i);
-        VERIFY(this_child);
+    auto* this_child = first_child();
+    auto* other_child = other_node->first_child();
+    while (this_child) {
         VERIFY(other_child);
         if (!this_child->is_equal_node(other_child))
             return false;
+
+        this_child = this_child->next_sibling();
+        other_child = other_child->next_sibling();
     }
 
     return true;
@@ -2186,7 +2302,8 @@ void Node::build_accessibility_tree(AccessibilityTreeNode& parent)
 ErrorOr<String> Node::name_or_description(NameOrDescription target, Document const& document, HashTable<UniqueNodeID>& visited_nodes, IsDescendant is_descendant) const
 {
     // The text alternative for a given element is computed as follows:
-    // 1. Set the root node to the given element, the current node to the root node, and the total accumulated text to the empty string (""). If the root node's role prohibits naming, return the empty string ("").
+    // 1. Set the root node to the given element, the current node to the root node, and the total accumulated text to the
+    //    empty string (""). If the root node's role prohibits naming, return the empty string ("").
     auto const* root_node = this;
     auto const* current_node = root_node;
     StringBuilder total_accumulated_text;
@@ -2194,19 +2311,47 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
 
     if (is_element()) {
         auto const* element = static_cast<DOM::Element const*>(this);
-        auto role = element->role_or_default();
+        auto role = element->role_from_role_attribute_value();
+        // Per https://w3c.github.io/html-aam/#el-aside and https://w3c.github.io/html-aam/#el-section, computing a
+        // default role for an aside element or section element requires first computing its accessible name — that is,
+        // calling into this name_or_description code. But if we then try to determine a default role for the aside
+        // element or section element here, that’d then end up calling right back into this name_or_description code —
+        // which would cause the calls to loop infinitely. So to avoid that, we only compute a default role here if this
+        // isn’t an aside element or section element.
+        // https://github.com/w3c/aria/issues/2391
+        if (!role.has_value() && element->local_name() != HTML::TagNames::aside && element->local_name() != HTML::TagNames::section)
+            role = element->default_role();
+
         // 2. Compute the text alternative for the current node:
-        // A. If the current node is hidden and is not directly referenced by aria-labelledby or aria-describedby, nor directly referenced by a native host language text alternative element (e.g. label in HTML) or attribute, return the empty string.
-        // FIXME: Check for references
-        if (element->aria_hidden() == "true")
-            return String {};
+
+        // A. Hidden Not Referenced: If the current node is hidden and is:
+        // i. Not part of an aria-labelledby or aria-describedby traversal, where the node directly referenced by that
+        //    relation was hidden.
+        // ii. Nor part of a native host language text alternative element (e.g. label in HTML) or attribute traversal,
+        //     where the root of that traversal was hidden.
+        // Return the empty string.
+        //
+        // NOTE: Nodes with CSS properties display:none, visibility:hidden, visibility:collapse or content-visibility:hidden:
+        //       They are considered hidden, as they match the guidelines "not perceivable" and "explicitly hidden".
+        //
+        // AD-HOC: We don’t implement this step here — because strictly implementing this would cause us to return early
+        // whenever encountering a node (element, actually) that “is hidden and is not directly referenced by
+        // aria-labelledby or aria-describedby”, without traversing down through that element’s subtree to see if it has
+        // (1) any descendant elements that are directly referenced and/or (2) any un-hidden nodes. So we instead (in
+        // substep G below) traverse upward through ancestor nodes of every text node, and check in that way to do the
+        // equivalent of what this step seems to have been intended to do.
+        // https://github.com/w3c/aria/issues/2387
+
         // B. Otherwise:
-        // - if computing a name, and the current node has an aria-labelledby attribute that contains at least one valid IDREF, and the current node is not already part of an aria-labelledby traversal,
-        //   process its IDREFs in the order they occur:
-        // - or, if computing a description, and the current node has an aria-describedby attribute that contains at least one valid IDREF, and the current node is not already part of an aria-describedby traversal,
-        //   process its IDREFs in the order they occur:
+        // - if computing a name, and the current node has an aria-labelledby attribute that contains at least one valid
+        //   IDREF, and the current node is not already part of an aria-labelledby traversal, process its IDREFs in the
+        //   order they occur:
+        // - or, if computing a description, and the current node has an aria-describedby attribute that contains at least
+        //   one valid IDREF, and the current node is not already part of an aria-describedby traversal, process its IDREFs
+        //   in the order they occur:
         auto aria_labelled_by = element->aria_labelled_by();
         auto aria_described_by = element->aria_described_by();
+
         if ((target == NameOrDescription::Name && aria_labelled_by.has_value() && Node::first_valid_id(*aria_labelled_by, document).has_value())
             || (target == NameOrDescription::Description && aria_described_by.has_value() && Node::first_valid_id(*aria_described_by, document).has_value())) {
 
@@ -2219,14 +2364,23 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
             } else {
                 id_list = aria_described_by->bytes_as_string_view().split_view_if(Infra::is_ascii_whitespace);
             }
+
             // ii. For each IDREF:
             for (auto const& id_ref : id_list) {
                 auto node = document.get_element_by_id(MUST(FlyString::from_utf8(id_ref)));
                 if (!node)
                     continue;
-
+                // AD-HOC: The “For each IDREF” substep in the spec doesn’t seem to explicitly require the following
+                // check for an aria-label value; but the “div group explicitly labelledby self and heading” subtest at
+                // https://wpt.fyi/results/accname/name/comp_labelledby.html won’t pass unless we do this check.
+                // https://github.com/w3c/aria/issues/2388
+                if (target == NameOrDescription::Name && node->aria_label().has_value() && !node->aria_label()->is_empty() && !node->aria_label()->bytes_as_string_view().is_whitespace()) {
+                    total_accumulated_text.append(' ');
+                    total_accumulated_text.append(node->aria_label().value());
+                }
                 if (visited_nodes.contains(node->unique_id()))
                     continue;
+
                 // a. Set the current node to the node referenced by the IDREF.
                 current_node = node;
                 // b. Compute the text alternative of the current node beginning with step 2. Set the result to that text alternative.
@@ -2235,38 +2389,75 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                 total_accumulated_text.append(' ');
                 total_accumulated_text.append(result);
             }
+
             // iii. Return the accumulated text.
+            // AD-HOC: This substep in the spec doesn’t seem to explicitly require the following check for an aria-label
+            // value; but the “button's hidden referenced name (visibility:hidden) with hidden aria-labelledby traversal
+            // falls back to aria-label” subtest at https://wpt.fyi/results/accname/name/comp_labelledby.html won’t pass
+            // unless we do this check.
+            // https://github.com/w3c/aria/issues/2388
+            if (total_accumulated_text.string_view().is_whitespace() && target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace())
+                return element->aria_label().release_value();
             return total_accumulated_text.to_string();
         }
-        // C. Embedded Control: Otherwise, if the current node is a control embedded
-        // within the label (e.g. any element directly referenced by aria-labelledby) for
-        // another widget, where the user can adjust the embedded control's value, then
-        // return the embedded control as part of the text alternative in the following
-        // manner:
+
+        // D. AriaLabel: Otherwise, if the current node has an aria-label attribute whose value is not undefined, not
+        //    the empty string, nor, when trimmed of whitespace, is not the empty string:
+        //
+        // AD-HOC: We’ve reordered substeps C and D from https://w3c.github.io/accname/#step2 — because
+        // the more-specific per-HTML-element requirements at https://w3c.github.io/html-aam/#accname-computation
+        // necessitate doing so, and the “input with label for association is superceded by aria-label” subtest at
+        // https://wpt.fyi/results/accname/name/comp_label.html won’t pass unless we do this reordering.
+        // Spec PR: https://github.com/w3c/aria/pull/2377
+        if (target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace()) {
+            // TODO: - If traversal of the current node is due to recursion and the current node is an embedded control as defined in step 2E, ignore aria-label and skip to rule 2E.
+            // https://github.com/w3c/aria/pull/2385 and https://github.com/w3c/accname/issues/173
+            if (!element->is_html_slot_element())
+                return element->aria_label().value();
+        }
+
+        // C. Embedded Control: Otherwise, if the current node is a control embedded within the label (e.g. any element
+        //    directly referenced by aria-labelledby) for another widget, where the user can adjust the embedded control's
+        //    value, then return the embedded control as part of the text alternative in the following manner:
         GC::Ptr<DOM::NodeList> labels;
         if (is<HTML::HTMLElement>(this))
             labels = (const_cast<HTML::HTMLElement&>(static_cast<HTML::HTMLElement const&>(*current_node))).labels();
         if (labels != nullptr && labels->length() > 0) {
             StringBuilder builder;
             for (u32 i = 0; i < labels->length(); i++) {
+                if (!builder.is_empty())
+                    builder.append(" "sv);
                 auto nodes = labels->item(i)->children_as_vector();
                 for (auto const& node : nodes) {
+                    // AD-HOC: https://wpt.fyi/results/accname/name/comp_host_language_label.html has “encapsulation”
+                    // tests, from which can be induced a requirement that when computing the accessible name for a
+                    // <label>-ed form control (“embedded control”), then any content (text content or attribute values)
+                    // from the control itself that would otherwise be included in the accessible-name computation for
+                    // it ancestor <label> must instead be skipped and not included. The HTML-AAM spec seems to maybe
+                    // be trying to achieve that result by expressing specific steps for each particular type of form
+                    // control. But what all that reduces/optimizes/simplifies down to is just, “skip over self”.
+                    // https://github.com/w3c/aria/issues/2389
+                    if (node == this)
+                        continue;
+
                     if (node->is_element()) {
                         auto const& element = static_cast<DOM::Element const&>(*node);
                         auto role = element.role_or_default();
+
                         if (role == ARIA::Role::textbox) {
                             // i. Textbox: If the embedded control has role textbox, return its value.
                             if (is<HTML::HTMLInputElement>(*node)) {
                                 auto const& element = static_cast<HTML::HTMLInputElement const&>(*node);
-                                if (element.has_attribute("value"_string))
+                                if (element.has_attribute(HTML::AttributeNames::value))
                                     builder.append(element.value());
                             } else
                                 builder.append(node->text_content().value());
                         } else if (role == ARIA::Role::combobox) {
-                            // ii. Combobox/Listbox: If the embedded control has role combobox or listbox, return the text alternative of the chosen option.
+                            // ii. Combobox/Listbox: If the embedded control has role combobox or listbox, return the text
+                            //     alternative of the chosen option.
                             if (is<HTML::HTMLInputElement>(*node)) {
                                 auto const& element = static_cast<HTML::HTMLInputElement const&>(*node);
-                                if (element.has_attribute("value"_string))
+                                if (element.has_attribute(HTML::AttributeNames::value))
                                     builder.append(element.value());
                             } else if (is<HTML::HTMLSelectElement>(*node)) {
                                 auto const& element = static_cast<HTML::HTMLSelectElement const&>(*node);
@@ -2274,7 +2465,8 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                             } else
                                 builder.append(node->text_content().value());
                         } else if (role == ARIA::Role::listbox) {
-                            // ii. Combobox/Listbox: If the embedded control has role combobox or listbox, return the text alternative of the chosen option.
+                            // ii. Combobox/Listbox: If the embedded control has role combobox or listbox, return the text
+                            //     alternative of the chosen option.
                             if (is<HTML::HTMLSelectElement>(*node)) {
                                 auto const& element = static_cast<HTML::HTMLSelectElement const&>(*node);
                                 builder.append(element.value());
@@ -2289,17 +2481,20 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                                 }
                             }
                         } else if (role == ARIA::Role::spinbutton || role == ARIA::Role::slider) {
+                            auto aria_valuenow = element.aria_value_now();
+                            auto aria_valuetext = element.aria_value_text();
+
                             // iii. Range: If the embedded control has role range (e.g., a spinbutton or slider):
                             // a. If the aria-valuetext property is present, return its value,
-                            if (element.has_attribute("aria-valuetext"_string))
-                                builder.append(element.get_attribute("aria-valuetext"_string).value());
+                            if (aria_valuetext.has_value())
+                                builder.append(aria_valuetext.value());
                             // b. Otherwise, if the aria-valuenow property is present, return its value
-                            else if (element.has_attribute("aria-valuenow"_string))
-                                builder.append(element.get_attribute("aria-valuenow"_string).value());
+                            else if (aria_valuenow.has_value())
+                                builder.append(aria_valuenow.value());
                             // c. Otherwise, use the value as specified by a host language attribute.
                             else if (is<HTML::HTMLInputElement>(*node)) {
                                 auto const& element = static_cast<HTML::HTMLInputElement const&>(*node);
-                                if (element.has_attribute("value"_string))
+                                if (element.has_attribute(HTML::AttributeNames::value))
                                     builder.append(element.value());
                             }
                         }
@@ -2312,77 +2507,144 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
             return builder.to_string();
         }
 
-        // D. AriaLabel: Otherwise, if the current node has an aria-label attribute whose
-        // value is not undefined, not the empty string, nor, when trimmed of whitespace,
-        // is not the empty string:
-        if (target == NameOrDescription::Name && element->aria_label().has_value() && !element->aria_label()->is_empty() && !element->aria_label()->bytes_as_string_view().is_whitespace()) {
-            // TODO: - If traversal of the current node is due to recursion and the current node is an embedded control as defined in step 2E, ignore aria-label and skip to rule 2E.
-            // - Otherwise, return the value of aria-label.
-            return element->aria_label().value();
-        }
-
         // E. Host Language Label: Otherwise, if the current node's native markup provides an attribute (e.g. alt) or
-        // element (e.g. HTML label or SVG title) that defines a text alternative, return that alternative in the form
-        // of a flat string as defined by the host language, unless the element is marked as presentational
-        // (role="presentation" or role="none").
-        if (role != ARIA::Role::presentation && role != ARIA::Role::none && is<HTML::HTMLImageElement>(*element)) {
-            return element->alternative_text().release_value();
-            // TODO: Add handling for SVGTitleElement, and also confirm (through existing WPT test cases) whether
-            // HTMLLabelElement is already handled (by the code for step C. “Embedded Control” above) in conformance
-            // with the spec requirements — and if not, then add handling for it here.
+        //    element (e.g. HTML label or SVG title) that defines a text alternative, return that alternative in the form
+        //    of a flat string as defined by the host language.
+        // TODO: Confirm (through existing WPT test cases) whether HTMLLabelElement is already handled (by the code for
+        // step C. “Embedded Control” above) in conformance with the spec requirements — and if not, then add handling.
+        //
+        // https://w3c.github.io/html-aam/#img-element-accessible-name-computation
+        // use alt attribute, even if its value is the empty string.
+        // See also https://wpt.fyi/results/accname/name/comp_tooltip.tentative.html.
+        if (is<HTML::HTMLImageElement>(*element) && element->has_attribute(HTML::AttributeNames::alt))
+            return element->get_attribute(HTML::AttributeNames::alt).value();
+
+        // https://w3c.github.io/svg-aam/#mapping_additional_nd
+        Optional<String> title_element_text;
+        if (element->is_svg_element()) {
+            // If the current node has at least one direct child title element, select the appropriate title based on
+            // the language rules for the SVG specification, and return the title text alternative as a flat string.
+            element->for_each_child_of_type<SVG::SVGTitleElement>([&](SVG::SVGTitleElement const& title) mutable {
+                title_element_text = title.text_content();
+                return IterationDecision::Break;
+            });
+            if (title_element_text.has_value())
+                return title_element_text.release_value();
+
+            // If the current node is a link, and there was no child title element, but it has an xlink:title attribute,
+            // return the value of that attribute.
+            if (auto title_attribute = element->get_attribute_ns(Namespace::XLink, XLink::AttributeNames::title); title_attribute.has_value())
+                return title_attribute.release_value();
         }
 
-        // F. Otherwise, if the current node's role allows name from content, or if the current node is referenced by aria-labelledby, aria-describedby, or is a native host language text alternative element (e.g. label in HTML), or is a descendant of a native host language text alternative element:
-        if ((role.has_value() && ARIA::allows_name_from_content(role.value())) || is_descendant == IsDescendant::Yes) {
+        // https://w3c.github.io/html-aam/#table-element-accessible-name-computation
+        // 2. If the accessible name is still empty, then: if the table element has a child that is a caption element,
+        //    then use the subtree of the first such element.
+        if (is<HTML::HTMLTableElement>(*element))
+            if (auto& table = (const_cast<HTML::HTMLTableElement&>(static_cast<HTML::HTMLTableElement const&>(*element))); table.caption())
+                return table.caption()->text_content().release_value();
+
+        // https://w3c.github.io/html-aam/#fieldset-element-accessible-name-computation
+        // 2. If the accessible name is still empty, then: if the fieldset element has a child that is a legend element,
+        //    then use the subtree of the first such element.
+        if (is<HTML::HTMLFieldSetElement>(*element)) {
+            Optional<String> legend;
+            auto& fieldset = (const_cast<HTML::HTMLFieldSetElement&>(static_cast<HTML::HTMLFieldSetElement const&>(*element)));
+            fieldset.for_each_child_of_type<HTML::HTMLLegendElement>([&](HTML::HTMLLegendElement const& element) mutable {
+                legend = element.text_content().release_value();
+                return IterationDecision::Break;
+            });
+            if (legend.has_value())
+                return legend.release_value();
+        }
+
+        if (is<HTML::HTMLInputElement>(*element)) {
+            auto& input = (const_cast<HTML::HTMLInputElement&>(static_cast<HTML::HTMLInputElement const&>(*element)));
+            // https://w3c.github.io/html-aam/#input-type-button-input-type-submit-and-input-type-reset-accessible-name-computation
+            // 3. Otherwise use the value attribute.
+            if (input.type_state() == HTML::HTMLInputElement::TypeAttributeState::Button
+                || input.type_state() == HTML::HTMLInputElement::TypeAttributeState::SubmitButton
+                || input.type_state() == HTML::HTMLInputElement::TypeAttributeState::ResetButton)
+                if (auto value = input.get_attribute(HTML::AttributeNames::value); value.has_value())
+                    return value.release_value();
+
+            // https://w3c.github.io/html-aam/#input-type-image-accessible-name-computation
+            // 3. Otherwise use alt attribute if present and its value is not the empty string.
+            if (input.type_state() == HTML::HTMLInputElement::TypeAttributeState::ImageButton)
+                if (auto alt = element->get_attribute(HTML::AttributeNames::alt); alt.has_value())
+                    return alt.release_value();
+        }
+
+        // F. Name From Content: Otherwise, if the current node's role allows name from content, or if the current node
+        //    is referenced by aria-labelledby, aria-describedby, or is a native host language text alternative element
+        //    (e.g. label in HTML), or is a descendant of a native host language text alternative element:
+        if ((role.has_value() && ARIA::allows_name_from_content(role.value())) || element->is_referenced() || is_descendant == IsDescendant::Yes) {
             // i. Set the accumulated text to the empty string.
             total_accumulated_text.clear();
-            // ii. Name From Generated Content: Check for CSS generated textual content associated with the current node and include
-            // it in the accumulated text. The CSS ::before and ::after pseudo elements [CSS2] can provide textual content for
-            // elements that have a content model.
+
+            // ii. Name From Generated Content: Check for CSS generated textual content associated with the current node
+            //     and include it in the accumulated text. The CSS ::before and ::after pseudo elements [CSS2] can provide
+            //     textual content for elements that have a content model.
             // a. For ::before pseudo elements, User agents MUST prepend CSS textual content, without a space, to the textual
-            // content of the current node.
-            // b. For ::after pseudo elements, User agents MUST append CSS textual content, without a space, to the textual content
-            // of the current node. NOTE: The code for handling the ::after pseudo elements case is further below,
-            // following the “iii. For each child node of the current node” code.
+            //    content of the current node.
+            // b. For ::after pseudo elements, User agents MUST append CSS textual content, without a space, to the textual
+            //    content of the current node. NOTE: The code for handling the ::after pseudo elements case is further below,
+            //    following the “iii. For each child node of the current node” code.
             if (auto before = element->get_pseudo_element_node(CSS::Selector::PseudoElement::Type::Before)) {
                 if (before->computed_values().content().alt_text.has_value())
                     total_accumulated_text.append(before->computed_values().content().alt_text.release_value());
                 else
                     total_accumulated_text.append(before->computed_values().content().data);
             }
-            // iii. For each child node of the current node:
-            element->for_each_child([&total_accumulated_text, current_node, target, &document, &visited_nodes](
-                                        DOM::Node const& child_node) mutable {
-                if (!child_node.is_element() && !child_node.is_text())
-                    return IterationDecision::Continue;
+
+            // iii. Determine Child Nodes: Determine the rendered child nodes of the current node:
+            // iii. Determine Child Nodes: Determine the rendered child nodes of the current node:
+            // c. [Otherwise,] set the rendered child nodes to be the child nodes of the current node.
+            auto child_nodes = current_node->children_as_vector();
+
+            // a. If the current node has an attached shadow root, set the rendered child nodes to be the child nodes of
+            //    the shadow root.
+            if (element->is_shadow_host() && element->shadow_root() && element->shadow_root()->is_connected())
+                child_nodes = element->shadow_root()->children_as_vector();
+
+            // b. Otherwise, if the current node is a slot with assigned nodes, set the rendered child nodes to be the
+            //    assigned nodes of the current node.
+            if (element->is_html_slot_element()) {
+                total_accumulated_text.append(element->text_content().value());
+                child_nodes = static_cast<HTML::HTMLSlotElement const*>(element)->assigned_nodes();
+            }
+
+            // iv. Name From Each Child: For each rendered child node of the current node
+            for (auto& child_node : child_nodes) {
+                if (!child_node->is_element() && !child_node->is_text())
+                    continue;
                 bool should_add_space = true;
                 const_cast<DOM::Document&>(document).update_layout();
-                auto const* layout_node = child_node.layout_node();
+                auto const* layout_node = child_node->layout_node();
                 if (layout_node) {
                     auto display = layout_node->display();
                     if (display.is_inline_outside() && display.is_flow_inside()) {
                         should_add_space = false;
                     }
                 }
-
-                if (visited_nodes.contains(child_node.unique_id()))
-                    return IterationDecision::Continue;
+                if (visited_nodes.contains(child_node->unique_id()))
+                    continue;
 
                 // a. Set the current node to the child node.
-                current_node = &child_node;
+                current_node = child_node;
 
                 // b. Compute the text alternative of the current node beginning with step 2. Set the result to that text alternative.
                 auto result = MUST(current_node->name_or_description(target, document, visited_nodes, IsDescendant::Yes));
 
-                // Append a space character and the result of each step above to the total accumulated text.
+                // J. Append a space character and the result of each step above to the total accumulated text.
                 // AD-HOC: Doing the space-adding here is in a different order from what the spec states.
                 if (should_add_space)
                     total_accumulated_text.append(' ');
+
                 // c. Append the result to the accumulated text.
                 total_accumulated_text.append(result);
+            }
 
-                return IterationDecision::Continue;
-            });
             // NOTE: See step ii.b above.
             if (auto after = element->get_pseudo_element_node(CSS::Selector::PseudoElement::Type::After)) {
                 if (after->computed_values().content().alt_text.has_value())
@@ -2390,25 +2652,44 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
                 else
                     total_accumulated_text.append(after->computed_values().content().data);
             }
+
             // v. Return the accumulated text if it is not the empty string ("").
             if (!total_accumulated_text.is_empty())
                 return total_accumulated_text.to_string();
-            // Important: Each node in the subtree is consulted only once. If text has been collected from a descendant, but is referenced by another IDREF in some descendant node, then that second, or subsequent, reference is not followed. This is done to avoid infinite loops.
+
+            // Important: Each node in the subtree is consulted only once. If text has been collected from a descendant,
+            // but is referenced by another IDREF in some descendant node, then that second, or subsequent, reference is
+            // not followed. This is done to avoid infinite loops.
         }
     }
 
     // G. Text Node: Otherwise, if the current node is a Text Node, return its textual contents.
-    if (is_text()) {
+    //
+    // AD-HOC: The spec doesn’t require ascending through the parent node and ancestor nodes of every text node we
+    // reach — the way we’re doing there. But we implement it this way because the spec algorithm as written doesn’t
+    // appear to achieve what it seems to be intended to achieve. Specifically, the spec algorithm as written doesn’t
+    // cause traversal through element subtrees in way that’s necessary to check for descendants that are referenced by
+    // aria-labelledby or aria-describedby and/or un-hidden. See the comment for substep A above.
+    if (is_text() && (!parent_element() || (parent_element()->is_referenced() || !parent_element()->is_hidden() || !parent_element()->has_hidden_ancestor() || parent_element()->has_referenced_and_hidden_ancestor()))) {
         if (layout_node() && layout_node()->is_text_node())
             return verify_cast<Layout::TextNode>(layout_node())->text_for_rendering();
-        return text_content().value();
+        return text_content().release_value();
     }
 
-    // TODO: H. Otherwise, if the current node is a descendant of an element whose Accessible Name or Accessible Description is being computed, and contains descendants, proceed to 2F.i.
+    // H. Otherwise, if the current node is a descendant of an element whose Accessible Name or Accessible Description
+    //    is being computed, and contains descendants, proceed to 2F.i.
+    //
+    // AD-HOC: We don’t implement this step here — because is essentially unreachable code in the spec algorithm.
+    // We could never get here without descending through every subtree of an element whose Accessible Name or
+    // Accessible Description is being computed. And in our implementation of substep F about, we’re anyway already
+    // recursively descending through all the child nodes of every element whose Accessible Name or Accessible
+    // Description is being computed, in a way that never leads to this substep H every being hit.
 
     // I. Otherwise, if the current node has a Tooltip attribute, return its value.
+    //
     // https://www.w3.org/TR/accname-1.2/#dfn-tooltip-attribute
-    // Any host language attribute that would result in a user agent generating a tooltip such as in response to a mouse hover in desktop user agents.
+    // Any host language attribute that would result in a user agent generating a tooltip such as in response to a mouse
+    // hover in desktop user agents.
     // FIXME: Support SVG tooltips and CSS tooltips
     if (is<HTML::HTMLElement>(this)) {
         auto const* element = static_cast<HTML::HTMLElement const*>(this);
@@ -2416,7 +2697,9 @@ ErrorOr<String> Node::name_or_description(NameOrDescription target, Document con
         if (tooltip.has_value() && !tooltip->is_empty())
             return tooltip.release_value();
     }
-    // After all steps are completed, the total accumulated text is used as the accessible name or accessible description of the element that initiated the computation.
+
+    // 3. After all steps are completed, the total accumulated text is used as the accessible name or accessible description
+    //    of the element that initiated the computation.
     return total_accumulated_text.to_string();
 }
 

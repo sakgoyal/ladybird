@@ -1,19 +1,8 @@
 describe("correct behavior", () => {
     test("basic functionality", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, timeZone);
         expect(zonedDateTime.eraYear).toBeUndefined();
-    });
-
-    test("calendar with custom eraYear function", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const calendar = {
-            eraYear() {
-                return 123;
-            },
-        };
-        const zonedDateTime = new Temporal.ZonedDateTime(1625614921000000000n, timeZone, calendar);
-        expect(zonedDateTime.eraYear).toBe(123);
     });
 });
 

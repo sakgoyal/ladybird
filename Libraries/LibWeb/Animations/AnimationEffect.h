@@ -65,7 +65,7 @@ class AnimationEffect : public Bindings::PlatformObject {
     GC_DECLARE_ALLOCATOR(AnimationEffect);
 
 public:
-    static RefPtr<CSS::CSSStyleValue const> parse_easing_string(JS::Realm& realm, StringView value);
+    static RefPtr<CSS::CSSStyleValue const> parse_easing_string(StringView value);
 
     EffectTiming get_timing() const;
     ComputedEffectTiming get_computed_timing() const;
@@ -118,6 +118,7 @@ public:
     bool is_in_the_active_phase() const;
     bool is_in_the_idle_phase() const;
 
+    // Keep this enum up to date with CSSTransition::Phase.
     enum class Phase {
         Before,
         Active,
@@ -143,7 +144,7 @@ public:
     virtual DOM::Element* target() const { return {}; }
     virtual bool is_keyframe_effect() const { return false; }
 
-    virtual void update_style_properties() = 0;
+    virtual void update_computed_properties() = 0;
 
 protected:
     AnimationEffect(JS::Realm&);

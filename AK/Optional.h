@@ -71,14 +71,17 @@ public:
         return static_cast<Self const&>(*this).has_value() ? __builtin_launder(reinterpret_cast<T const*>(&static_cast<Self const&>(*this).value())) : nullptr;
     }
 
-    [[nodiscard]] ALWAYS_INLINE T value_or(T const& fallback) const&
+    template<typename O = T, typename Fallback = O>
+    [[nodiscard]] ALWAYS_INLINE O value_or(Fallback const& fallback) const&
     {
         if (static_cast<Self const&>(*this).has_value())
             return static_cast<Self const&>(*this).value();
         return fallback;
     }
 
-    [[nodiscard]] ALWAYS_INLINE T value_or(T&& fallback) &&
+    template<typename O = T, typename Fallback = O>
+    requires(!IsLvalueReference<O> && !IsRvalueReference<O>)
+    [[nodiscard]] ALWAYS_INLINE O value_or(Fallback&& fallback) &&
     {
         if (static_cast<Self&>(*this).has_value())
             return move(static_cast<Self&>(*this).value());
@@ -210,7 +213,7 @@ public:
     }
 
     template<typename U>
-    requires(IsConstructible<T, U const&> && !IsSpecializationOf<T, Optional> && !IsSpecializationOf<U, Optional>) ALWAYS_INLINE explicit Optional(Optional<U> const& other)
+    requires(IsConstructible<T, U const&> && !IsSpecializationOf<T, Optional> && !IsSpecializationOf<U, Optional> && (!IsLvalueReference<U> || IsTriviallyCopyConstructible<U>)) ALWAYS_INLINE explicit Optional(Optional<U> const& other)
         : m_has_value(other.has_value())
     {
         if (other.has_value())
@@ -218,7 +221,7 @@ public:
     }
 
     template<typename U>
-    requires(IsConstructible<T, U &&> && !IsSpecializationOf<T, Optional> && !IsSpecializationOf<U, Optional>) ALWAYS_INLINE explicit Optional(Optional<U>&& other)
+    requires(IsConstructible<T, U &&> && !IsSpecializationOf<T, Optional> && !IsSpecializationOf<U, Optional> && (!IsLvalueReference<U> || IsTriviallyMoveConstructible<U>)) ALWAYS_INLINE explicit Optional(Optional<U>&& other)
         : m_has_value(other.has_value())
     {
         if (other.has_value())
@@ -336,6 +339,9 @@ private:
 
 template<typename T>
 requires(IsLvalueReference<T>) class [[nodiscard]] Optional<T> {
+    AK_MAKE_DEFAULT_COPYABLE(Optional);
+    AK_MAKE_DEFAULT_MOVABLE(Optional);
+
     template<typename>
     friend class Optional;
 
@@ -369,17 +375,6 @@ public:
     {
     }
 
-    ALWAYS_INLINE Optional(Optional const& other)
-        : m_pointer(other.m_pointer)
-    {
-    }
-
-    ALWAYS_INLINE Optional(Optional&& other)
-        : m_pointer(other.m_pointer)
-    {
-        other.m_pointer = nullptr;
-    }
-
     template<typename U>
     ALWAYS_INLINE Optional(Optional<U>& other)
     requires(CanBePlacedInOptional<U>)
@@ -400,25 +395,6 @@ public:
         : m_pointer(other.ptr())
     {
         other.m_pointer = nullptr;
-    }
-
-    ALWAYS_INLINE Optional& operator=(Optional& other)
-    {
-        m_pointer = other.m_pointer;
-        return *this;
-    }
-
-    ALWAYS_INLINE Optional& operator=(Optional const& other)
-    {
-        m_pointer = other.m_pointer;
-        return *this;
-    }
-
-    ALWAYS_INLINE Optional& operator=(Optional&& other)
-    {
-        m_pointer = other.m_pointer;
-        other.m_pointer = nullptr;
-        return *this;
     }
 
     template<typename U>
@@ -446,15 +422,21 @@ public:
         return *this;
     }
 
-    // Note: Disallows assignment from a temporary as this does not do any lifetime extension.
     template<typename U>
     requires(!IsSame<OptionalNone, RemoveCVReference<U>>)
-    ALWAYS_INLINE Optional& operator=(U&& value)
-    requires(CanBePlacedInOptional<U> && IsLvalueReference<U>)
+    ALWAYS_INLINE Optional& operator=(U& value)
+    requires(CanBePlacedInOptional<U>)
     {
         m_pointer = &value;
         return *this;
     }
+
+    // Note: Disallows assignment from a temporary as this does not do any lifetime extension.
+    template<typename U>
+    requires(!IsSame<OptionalNone, RemoveCVReference<U>>)
+    ALWAYS_INLINE consteval Optional& operator=(RemoveReference<U> const&& value)
+    requires(CanBePlacedInOptional<U>)
+    = delete;
 
     ALWAYS_INLINE void clear()
     {
@@ -524,12 +506,27 @@ public:
     ALWAYS_INLINE RawPtr<AddConst<RemoveReference<T>>> operator->() const { return &value(); }
     ALWAYS_INLINE RawPtr<RemoveReference<T>> operator->() { return &value(); }
 
-    // Conversion operators from Optional<T&> -> Optional<T>
+    // Conversion operators from Optional<T&> -> Optional<T>, implicit when T is trivially copyable.
     ALWAYS_INLINE operator Optional<RemoveCVReference<T>>() const
+    requires(IsTriviallyCopyable<RemoveCVReference<T>>)
     {
         if (has_value())
             return Optional<RemoveCVReference<T>>(value());
         return {};
+    }
+
+    // Conversion operators from Optional<T&> -> Optional<T>, explicit when T is not trivially copyable, since this is usually a mistake.
+    ALWAYS_INLINE explicit operator Optional<RemoveCVReference<T>>() const
+    requires(!IsTriviallyCopyable<RemoveCVReference<T>>)
+    {
+        if (has_value())
+            return Optional<RemoveCVReference<T>>(value());
+        return {};
+    }
+
+    ALWAYS_INLINE constexpr Optional<RemoveCVReference<T>> copy() const
+    {
+        return static_cast<Optional<RemoveCVReference<T>>>(*this);
     }
 
     template<typename Callback>

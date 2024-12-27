@@ -12,7 +12,6 @@
 #include <AK/Format.h>
 #include <AK/Forward.h>
 #include <AK/Math.h>
-#include <AK/SIMD.h>
 #include <AK/StdLibExtras.h>
 #include <LibIPC/Forward.h>
 
@@ -132,49 +131,25 @@ public:
     static constexpr Color from_hsla(float h_degrees, float s, float l, float a)
     {
         // Algorithm from https://www.w3.org/TR/css-color-3/#hsl-color
-        float h = clamp(h_degrees / 360.0f, 0.0f, 1.0f);
+
+        float h = fmodf(h_degrees, 360.0f);
+        if (h < 0.0)
+            h += 360.0f;
+
         s = clamp(s, 0.0f, 1.0f);
         l = clamp(l, 0.0f, 1.0f);
         a = clamp(a, 0.0f, 1.0f);
 
-        // HOW TO RETURN hue.to.rgb(m1, m2, h):
-        auto hue_to_rgb = [](float m1, float m2, float h) -> float {
-            // IF h<0: PUT h+1 IN h
-            if (h < 0.0f)
-                h = h + 1.0f;
-            // IF h>1: PUT h-1 IN h
-            if (h > 1.0f)
-                h = h - 1.0f;
-            // IF h*6<1: RETURN m1+(m2-m1)*h*6
-            if (h * 6.0f < 1.0f)
-                return m1 + (m2 - m1) * h * 6.0f;
-            // IF h*2<1: RETURN m2
-            if (h * 2.0f < 1.0f)
-                return m2;
-            // IF h*3<2: RETURN m1+(m2-m1)*(2/3-h)*6
-            if (h * 3.0f < 2.0f)
-                return m1 + (m2 - m1) * (2.0f / 3.0f - h) * 6.0f;
-            // RETURN m1
-            return m1;
+        auto to_rgb = [](float h, float s, float l, float offset) {
+            float k = fmodf(offset + h / 30.0f, 12.0f);
+            float a = s * min(l, 1.0f - l);
+            return l - a * max(-1.0f, min(min(k - 3.0f, 9.0f - k), 1.0f));
         };
 
-        // SELECT:
-        // l<=0.5: PUT l*(s+1) IN m2
-        float m2;
-        if (l <= 0.5f)
-            m2 = l * (s + 1.0f);
-        // ELSE: PUT l+s-l*s IN m2
-        else
-            m2 = l + s - l * s;
-        // PUT l*2-m2 IN m1
-        float m1 = l * 2.0f - m2;
-        // PUT hue.to.rgb(m1, m2, h+1/3) IN r
-        float r = hue_to_rgb(m1, m2, h + 1.0f / 3.0f);
-        // PUT hue.to.rgb(m1, m2, h    ) IN g
-        float g = hue_to_rgb(m1, m2, h);
-        // PUT hue.to.rgb(m1, m2, h-1/3) IN b
-        float b = hue_to_rgb(m1, m2, h - 1.0f / 3.0f);
-        // RETURN (r, g, b)
+        float r = to_rgb(h, s, l, 0.0f);
+        float g = to_rgb(h, s, l, 8.0f);
+        float b = to_rgb(h, s, l, 4.0f);
+
         u8 r_u8 = clamp(lroundf(r * 255.0f), 0, 255);
         u8 g_u8 = clamp(lroundf(g * 255.0f), 0, 255);
         u8 b_u8 = clamp(lroundf(b * 255.0f), 0, 255);
@@ -182,10 +157,14 @@ public:
         return Color(r_u8, g_u8, b_u8, a_u8);
     }
 
+    static Color from_a98rgb(float r, float g, float b, float alpha = 1.0f);
+    static Color from_display_p3(float r, float g, float b, float alpha = 1.0f);
     static Color from_lab(float L, float a, float b, float alpha = 1.0f);
+    static Color from_linear_srgb(float r, float g, float b, float alpha = 1.0f);
+    static Color from_pro_photo_rgb(float r, float g, float b, float alpha = 1.0f);
+    static Color from_rec2020(float r, float g, float b, float alpha = 1.0f);
     static Color from_xyz50(float x, float y, float z, float alpha = 1.0f);
     static Color from_xyz65(float x, float y, float z, float alpha = 1.0f);
-    static Color from_linear_srgb(float x, float y, float z, float alpha = 1.0f);
 
     // https://bottosson.github.io/posts/oklab/
     static constexpr Color from_oklab(float L, float a, float b, float alpha = 1.0f)
@@ -397,7 +376,8 @@ public:
 
     constexpr Color with_opacity(float opacity) const
     {
-        return with_alpha(alpha() * opacity);
+        VERIFY(opacity >= 0 && opacity <= 1);
+        return with_alpha(static_cast<u8>(round(alpha() * opacity)));
     }
 
     constexpr Color darkened(float amount = 0.5f) const
@@ -546,9 +526,9 @@ public:
             break;
         }
 
-        u8 out_r = (u8)(r * 255);
-        u8 out_g = (u8)(g * 255);
-        u8 out_b = (u8)(b * 255);
+        auto out_r = static_cast<u8>(round(r * 255));
+        auto out_g = static_cast<u8>(round(g * 255));
+        auto out_b = static_cast<u8>(round(b * 255));
         return Color(out_r, out_g, out_b);
     }
 

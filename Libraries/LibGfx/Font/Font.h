@@ -7,15 +7,10 @@
 
 #pragma once
 
-#include <AK/Bitmap.h>
-#include <AK/ByteReader.h>
 #include <AK/RefCounted.h>
 #include <AK/RefPtr.h>
 #include <AK/String.h>
 #include <AK/Types.h>
-#include <LibCore/MappedFile.h>
-#include <LibGfx/Bitmap.h>
-#include <LibGfx/Size.h>
 
 struct hb_font_t;
 
@@ -85,7 +80,7 @@ public:
     virtual float width(StringView) const = 0;
     virtual float width(Utf8View const&) const = 0;
 
-    virtual FlyString family() const = 0;
+    virtual FlyString const& family() const = 0;
 
     virtual NonnullRefPtr<Font> with_size(float point_size) const = 0;
 

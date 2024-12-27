@@ -5,22 +5,11 @@ describe("correct behavior", () => {
 
     test("basic functionality", () => {
         const object = {};
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, {}, object);
-        expect(zonedDateTime.calendar).toBe(object);
-
-        const calendar = new Temporal.Calendar("iso8601");
-        const withCalendarZonedDateTime = zonedDateTime.withCalendar(calendar);
-        expect(withCalendarZonedDateTime.calendar).toBe(calendar);
-    });
-
-    test("from calendar string", () => {
-        const object = {};
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, {}, object);
-        expect(zonedDateTime.calendar).toBe(object);
+        const zonedDateTime = new Temporal.ZonedDateTime(1n, "UTC", "gregory");
+        expect(zonedDateTime.calendarId).toBe("gregory");
 
         const withCalendarZonedDateTime = zonedDateTime.withCalendar("iso8601");
-        expect(withCalendarZonedDateTime.calendar).toBeInstanceOf(Temporal.Calendar);
-        expect(withCalendarZonedDateTime.calendar.id).toBe("iso8601");
+        expect(withCalendarZonedDateTime.calendarId).toBe("iso8601");
     });
 });
 
@@ -32,7 +21,7 @@ describe("errors", () => {
     });
 
     test("from invalid calendar identifier", () => {
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, {}, {});
+        const zonedDateTime = new Temporal.ZonedDateTime(1n, "UTC", "iso8601");
 
         expect(() => {
             zonedDateTime.withCalendar("iso8602foobar");

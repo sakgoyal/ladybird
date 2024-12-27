@@ -7,16 +7,12 @@
 
 #pragma once
 
-#include <AK/ByteString.h>
-#include <AK/CharacterTypes.h>
 #include <AK/Forward.h>
-#include <AK/Utf32View.h>
 #include <AK/Utf8View.h>
 #include <AK/Vector.h>
 #include <LibGfx/Font/Font.h>
-#include <LibGfx/FontCascadeList.h>
 #include <LibGfx/Forward.h>
-#include <LibGfx/Rect.h>
+#include <LibGfx/Point.h>
 
 namespace Gfx {
 
@@ -29,6 +25,13 @@ struct DrawGlyph {
         position.translate_by(delta);
     }
 };
+
+typedef struct ShapeFeature {
+    char tag[4];
+    u32 value;
+} ShapeFeature;
+
+using ShapeFeatures = Vector<ShapeFeature, 4>;
 
 class GlyphRun : public RefCounted<GlyphRun> {
 public:
@@ -64,7 +67,7 @@ private:
     float m_width { 0 };
 };
 
-RefPtr<GlyphRun> shape_text(FloatPoint baseline_start, float letter_spacing, Utf8View string, Gfx::Font const& font, GlyphRun::TextType);
-float measure_text_width(Utf8View const& string, Gfx::Font const& font);
+RefPtr<GlyphRun> shape_text(FloatPoint baseline_start, float letter_spacing, Utf8View string, Gfx::Font const& font, GlyphRun::TextType, ShapeFeatures const& features);
+float measure_text_width(Utf8View const& string, Gfx::Font const& font, ShapeFeatures const& features);
 
 }

@@ -89,6 +89,29 @@ describe("correct behavior", () => {
             }
         }
     });
+
+    test("relative to plain date", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        ["2000-01-01", "2000-01-01T00:00", "2000-01-01T00:00[u-ca=iso8601]"].forEach(relativeTo => {
+            const result = duration.round({ largestUnit: "months", relativeTo });
+            expect(result.months).toBe(1);
+        });
+    });
+
+    test("relative to zoned date time", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        [
+            "2000-01-01[UTC]",
+            "2000-01-01T00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC][u-ca=iso8601]",
+        ].forEach(relativeTo => {
+            const result = duration.round({ largestUnit: "months", relativeTo });
+            expect(result.months).toBe(1);
+        });
+    });
 });
 
 describe("errors", () => {
@@ -142,7 +165,10 @@ describe("errors", () => {
         }).toThrowWithMessage(RangeError, "0 is not a valid value for option roundingIncrement");
         expect(() => {
             duration.round({ smallestUnit: "second", roundingIncrement: Infinity });
-        }).toThrowWithMessage(RangeError, "inf is not a valid value for option roundingIncrement");
+        }).toThrowWithMessage(
+            RangeError,
+            "Infinity is not a valid value for option roundingIncrement"
+        );
     });
 
     test("must provide one or both of smallestUnit or largestUnit", () => {
@@ -156,10 +182,15 @@ describe("errors", () => {
         const duration = new Temporal.Duration(1);
         expect(() => {
             duration.round({ largestUnit: "second" });
-        }).toThrowWithMessage(
-            RangeError,
-            "A starting point is required for balancing calendar units"
-        );
+        }).toThrowWithMessage(RangeError, "Largest unit must not be year");
+    });
+
+    test("relativeTo with invalid date", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        expect(() => {
+            duration.round({ smallestUnit: "minutes", relativeTo: "-271821-04-19" });
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     // Spec Issue: https://github.com/tc39/proposal-temporal/issues/2124
@@ -168,29 +199,6 @@ describe("errors", () => {
         const duration = new Temporal.Duration(1);
         expect(() => {
             duration.round({ largestUnit: "year" });
-        }).toThrowWithMessage(
-            RangeError,
-            "A starting point is required for balancing calendar units"
-        );
-    });
-
-    test("invalid calendar throws range exception when performing round", () => {
-        const duration = Temporal.Duration.from({ nanoseconds: 0 });
-
-        const calendar = new (class extends Temporal.Calendar {
-            dateAdd(date, duration, options) {
-                return date;
-            }
-        })("iso8601");
-
-        expect(() => {
-            duration.round({
-                relativeTo: new Temporal.PlainDate(1997, 5, 10, calendar),
-                smallestUnit: "years",
-            });
-        }).toThrowWithMessage(
-            RangeError,
-            "Invalid calendar, dateAdd() function returned result implying a year is zero days long"
-        );
+        }).toThrowWithMessage(RangeError, "Largest unit must not be year");
     });
 });

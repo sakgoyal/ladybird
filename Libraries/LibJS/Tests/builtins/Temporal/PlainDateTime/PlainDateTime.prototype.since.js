@@ -76,21 +76,9 @@ describe("errors", () => {
     });
 
     test("cannot compare dates from different calendars", () => {
-        const calendarOne = {
-            toString() {
-                return "calendarOne";
-            },
-        };
-
-        const calendarTwo = {
-            toString() {
-                return "calendarTwo";
-            },
-        };
-
         const args = [1970, 1, 1, 0, 0, 0, 0, 0, 0];
-        const plainDateTimeOne = new Temporal.PlainDateTime(...args, calendarOne);
-        const plainDateTimeTwo = new Temporal.PlainDateTime(...args, calendarTwo);
+        const plainDateTimeOne = new Temporal.PlainDateTime(...args, "iso8601");
+        const plainDateTimeTwo = new Temporal.PlainDateTime(...args, "gregory");
 
         expect(() => {
             plainDateTimeOne.since(plainDateTimeTwo);

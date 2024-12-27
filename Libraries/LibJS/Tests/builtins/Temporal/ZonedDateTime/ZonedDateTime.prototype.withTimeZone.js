@@ -4,23 +4,11 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const object = {};
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, object);
-        expect(zonedDateTime.timeZone).toBe(object);
-
-        const timeZone = new Temporal.TimeZone("UTC");
-        const withTimeZoneZonedDateTime = zonedDateTime.withTimeZone(timeZone);
-        expect(withTimeZoneZonedDateTime.timeZone).toBe(timeZone);
-    });
-
-    test("from time zone string", () => {
-        const object = {};
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, object);
-        expect(zonedDateTime.timeZone).toBe(object);
+        const zonedDateTime = new Temporal.ZonedDateTime(1n, "America/New_York");
+        expect(zonedDateTime.timeZoneId).toBe("America/New_York");
 
         const withTimeZoneZonedDateTime = zonedDateTime.withTimeZone("UTC");
-        expect(withTimeZoneZonedDateTime.timeZone).toBeInstanceOf(Temporal.TimeZone);
-        expect(withTimeZoneZonedDateTime.timeZone.id).toBe("UTC");
+        expect(withTimeZoneZonedDateTime.timeZoneId).toBe("UTC");
     });
 });
 
@@ -32,7 +20,7 @@ describe("errors", () => {
     });
 
     test("from invalid time zone string", () => {
-        const zonedDateTime = new Temporal.ZonedDateTime(1n, {});
+        const zonedDateTime = new Temporal.ZonedDateTime(1n, "UTC");
 
         expect(() => {
             zonedDateTime.withTimeZone("UTCfoobar");

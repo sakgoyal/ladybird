@@ -8,8 +8,8 @@
 
 #include <LibJS/Runtime/TypedArray.h>
 #include <LibWeb/Bindings/DOMMatrixReadOnlyPrototype.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/Parser/Parser.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/CSS/StyleValues/ShorthandStyleValue.h>
 #include <LibWeb/Geometry/DOMMatrix.h>
 #include <LibWeb/Geometry/DOMMatrixReadOnly.h>
@@ -946,11 +946,10 @@ WebIDL::ExceptionOr<ParsedMatrix> parse_dom_matrix_init_string(JS::Realm& realm,
     // 2. Parse transformList into parsedValue given the grammar for the CSS transform property.
     // The result will be a <transform-list>, the keyword none, or failure.
     // If parsedValue is failure, or any <transform-function> has <length> values without absolute length units, or any keyword other than none is used, then return failure. [CSS3-SYNTAX] [CSS3-TRANSFORMS]
-    auto parsing_context = CSS::Parser::ParsingContext { realm };
-    auto transform_style_value = parse_css_value(parsing_context, transform_list, CSS::PropertyID::Transform);
+    auto transform_style_value = parse_css_value(CSS::Parser::ParsingContext {}, transform_list, CSS::PropertyID::Transform);
     if (!transform_style_value)
         return WebIDL::SyntaxError::create(realm, "Failed to parse CSS transform string."_string);
-    auto parsed_value = CSS::StyleProperties::transformations_for_style_value(*transform_style_value);
+    auto parsed_value = CSS::ComputedProperties::transformations_for_style_value(*transform_style_value);
 
     // 3. If parsedValue is none, set parsedValue to a <transform-list> containing a single identity matrix.
     // NOTE: parsed_value is empty on none so for loop in 6 won't modify matrix

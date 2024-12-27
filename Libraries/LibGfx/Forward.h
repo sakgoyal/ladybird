@@ -22,15 +22,13 @@ class ScaledFont;
 template<typename T>
 class Line;
 
-class AntiAliasingPainter;
-class DeprecatedPainter;
 class Painter;
 class PaintingSurface;
 class Palette;
 class PaletteImpl;
-class DeprecatedPath;
 class Path;
 class ShareableBitmap;
+class SkiaBackendContext;
 struct SystemTheme;
 
 template<typename T>

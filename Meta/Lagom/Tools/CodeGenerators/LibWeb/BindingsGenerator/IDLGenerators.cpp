@@ -45,6 +45,7 @@ static bool is_platform_object(Type const& type)
         "CanvasGradient"sv,
         "CanvasPattern"sv,
         "CanvasRenderingContext2D"sv,
+        "ClipboardItem"sv,
         "CloseWatcher"sv,
         "CryptoKey"sv,
         "DataTransfer"sv,
@@ -59,6 +60,11 @@ static bool is_platform_object(Type const& type)
         "FontFace"sv,
         "FormData"sv,
         "HTMLCollection"sv,
+        "IDBCursor"sv,
+        "IDBIndex"sv,
+        "IDBKeyRange"sv,
+        "IDBObjectStore"sv,
+        "IDBTransaction"sv,
         "ImageBitmap"sv,
         "ImageData"sv,
         "Instance"sv,
@@ -91,6 +97,7 @@ static bool is_platform_object(Type const& type)
         "SVGTransform"sv,
         "ShadowRoot"sv,
         "SourceBuffer"sv,
+        "Storage"sv,
         "Table"sv,
         "Text"sv,
         "TextMetrics"sv,
@@ -100,8 +107,23 @@ static bool is_platform_object(Type const& type)
         "VTTRegion"sv,
         "VideoTrack"sv,
         "VideoTrackList"sv,
+        "WebGL2RenderingContext"sv,
+        "WebGLActiveInfo"sv,
+        "WebGLBuffer"sv,
+        "WebGLFramebuffer"sv,
+        "WebGLObject"sv,
+        "WebGLProgram"sv,
+        "WebGLRenderbuffer"sv,
         "WebGLRenderingContext"sv,
+        "WebGLSampler"sv,
+        "WebGLShader"sv,
+        "WebGLShaderPrecisionFormat"sv,
+        "WebGLSync"sv,
+        "WebGLTexture"sv,
+        "WebGLUniformLocation"sv,
+        "WebGLVertexArrayObject"sv,
         "Window"sv,
+        "WindowProxy"sv,
         "WritableStream"sv,
     };
     if (type.name().ends_with("Element"sv))
@@ -136,8 +158,8 @@ static StringView sequence_storage_type_to_cpp_storage_type_name(SequenceStorage
     switch (sequence_storage_type) {
     case SequenceStorageType::Vector:
         return "Vector"sv;
-    case SequenceStorageType::MarkedVector:
-        return "GC::MarkedVector"sv;
+    case SequenceStorageType::RootVector:
+        return "GC::RootVector"sv;
     default:
         VERIFY_NOT_REACHED();
     }
@@ -171,13 +193,13 @@ static ByteString union_type_to_variant(UnionType const& union_type, Interface c
 CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
 {
     if (is_platform_object(type) || type.name() == "WindowProxy"sv)
-        return { .name = ByteString::formatted("GC::Root<{}>", type.name()), .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = ByteString::formatted("GC::Root<{}>", type.name()), .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (is_javascript_builtin(type))
-        return { .name = ByteString::formatted("GC::Root<JS::{}>", type.name()), .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = ByteString::formatted("GC::Root<JS::{}>", type.name()), .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (interface.callback_functions.contains(type.name()))
-        return { .name = "GC::Root<WebIDL::CallbackType>", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "GC::Root<WebIDL::CallbackType>", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.is_string())
         return { .name = "String", .sequence_storage_type = SequenceStorageType::Vector };
@@ -210,22 +232,25 @@ CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
         return { .name = "WebIDL::Long", .sequence_storage_type = SequenceStorageType::Vector };
 
     if (type.name() == "any" || type.name() == "undefined")
-        return { .name = "JS::Value", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "JS::Value", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name() == "object")
         return { .name = "GC::Root<JS::Object>", .sequence_storage_type = SequenceStorageType::Vector };
 
     if (type.name() == "BufferSource")
-        return { .name = "GC::Root<WebIDL::BufferSource>", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "GC::Root<WebIDL::BufferSource>", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name() == "ArrayBufferView")
-        return { .name = "GC::Root<WebIDL::ArrayBufferView>", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "GC::Root<WebIDL::ArrayBufferView>", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name() == "File")
-        return { .name = "GC::Root<FileAPI::File>", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "GC::Root<FileAPI::File>", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name() == "Function")
-        return { .name = "GC::Ref<WebIDL::CallbackType>", .sequence_storage_type = SequenceStorageType::MarkedVector };
+        return { .name = "GC::Ref<WebIDL::CallbackType>", .sequence_storage_type = SequenceStorageType::RootVector };
+
+    if (type.name() == "Promise")
+        return { .name = "GC::Root<WebIDL::Promise>", .sequence_storage_type = SequenceStorageType::RootVector };
 
     if (type.name() == "sequence") {
         auto& parameterized_type = verify_cast<ParameterizedType>(type);
@@ -233,7 +258,7 @@ CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
         auto sequence_cpp_type = idl_type_name_to_cpp_type(sequence_type, interface);
         auto storage_type_name = sequence_storage_type_to_cpp_storage_type_name(sequence_cpp_type.sequence_storage_type);
 
-        if (sequence_cpp_type.sequence_storage_type == SequenceStorageType::MarkedVector)
+        if (sequence_cpp_type.sequence_storage_type == SequenceStorageType::RootVector)
             return { .name = storage_type_name, .sequence_storage_type = SequenceStorageType::Vector };
 
         return { .name = ByteString::formatted("{}<{}>", storage_type_name, sequence_cpp_type.name), .sequence_storage_type = SequenceStorageType::Vector };
@@ -270,7 +295,7 @@ CppType idl_type_name_to_cpp_type(Type const& type, Interface const& interface)
 
 static ByteString make_input_acceptable_cpp(ByteString const& input)
 {
-    if (input.is_one_of("class", "template", "for", "default", "char", "namespace", "delete", "inline", "register")) {
+    if (input.is_one_of("class", "template", "for", "default", "char", "namespace", "delete", "inline", "register", "switch", "mutable")) {
         StringBuilder builder;
         builder.append(input);
         builder.append('_');
@@ -341,10 +366,13 @@ static void emit_includes_for_all_imports(auto& interface, auto& generator, bool
 template<typename ParameterType>
 static void generate_to_string(SourceGenerator& scoped_generator, ParameterType const& parameter, bool variadic, bool optional, Optional<ByteString> const& optional_default_value)
 {
-    if (parameter.type->name() == "USVString")
-        scoped_generator.set("to_string", "to_well_formed_string"sv);
-    else
+    if (parameter.type->name() == "USVString") {
+        scoped_generator.set("to_string", "to_usv_string"sv);
+    } else if (parameter.type->name() == "ByteString") {
+        scoped_generator.set("to_string", "to_byte_string"sv);
+    } else {
         scoped_generator.set("to_string", "to_string"sv);
+    }
 
     if (variadic) {
         scoped_generator.append(R"~~~(
@@ -354,7 +382,7 @@ static void generate_to_string(SourceGenerator& scoped_generator, ParameterType 
         @cpp_name@.ensure_capacity(vm.argument_count() - @js_suffix@);
 
         for (size_t i = @js_suffix@; i < vm.argument_count(); ++i) {
-            auto to_string_result = TRY(vm.argument(i).@to_string@(vm));
+            auto to_string_result = TRY(WebIDL::@to_string@(vm, vm.argument(i)));
             @cpp_name@.unchecked_append(move(to_string_result));
         }
     }
@@ -364,14 +392,14 @@ static void generate_to_string(SourceGenerator& scoped_generator, ParameterType 
             scoped_generator.append(R"~~~(
     @string_type@ @cpp_name@;
     if (!@legacy_null_to_empty_string@ || !@js_name@@js_suffix@.is_null()) {
-        @cpp_name@ = TRY(@js_name@@js_suffix@.@to_string@(vm));
+        @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
     }
 )~~~");
         } else {
             scoped_generator.append(R"~~~(
     Optional<@string_type@> @cpp_name@;
     if (!@js_name@@js_suffix@.is_nullish())
-        @cpp_name@ = TRY(@js_name@@js_suffix@.@to_string@(vm));
+        @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
 )~~~");
         }
     } else {
@@ -386,11 +414,19 @@ static void generate_to_string(SourceGenerator& scoped_generator, ParameterType 
 )~~~");
         }
 
-        scoped_generator.append(R"~~~(
+        if (parameter.type->is_nullable()) {
+            scoped_generator.append(R"~~~(
+    if (!@js_name@@js_suffix@.is_undefined()) {
+        if (!@js_name@@js_suffix@.is_null())
+            @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
+    })~~~");
+        } else {
+            scoped_generator.append(R"~~~(
     if (!@js_name@@js_suffix@.is_undefined()) {
         if (!@legacy_null_to_empty_string@ || !@js_name@@js_suffix@.is_null())
-            @cpp_name@ = TRY(@js_name@@js_suffix@.@to_string@(vm));
+            @cpp_name@ = TRY(WebIDL::@to_string@(vm, @js_name@@js_suffix@));
     })~~~");
+        }
         if (!may_be_null) {
             scoped_generator.append(R"~~~( else {
         @cpp_name@ = MUST(@string_type@::from_utf8(@parameter.optional_default_value@sv));
@@ -553,7 +589,7 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
         if (!@js_name@@js_suffix@.is_object())
             return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObject, @js_name@@js_suffix@.to_string_without_side_effects());
 
-        auto callback_type = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_settings_object());
+        auto callback_type = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_realm());
         @cpp_name@ = TRY(throw_dom_exception_if_needed(vm, [&] { return @cpp_type@::create(realm, *callback_type); }));
     }
 )~~~");
@@ -562,7 +598,7 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
     if (!@js_name@@js_suffix@.is_object())
         return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObject, @js_name@@js_suffix@.to_string_without_side_effects());
 
-    auto callback_type = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_settings_object());
+    auto callback_type = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_realm());
     auto @cpp_name@ = adopt_ref(*new @cpp_type@(callback_type));
 )~~~");
         }
@@ -721,11 +757,26 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
 
     } else if (parameter.type->name() == "ArrayBufferView") {
         scoped_generator.append(R"~~~(
-    if (!@js_name@@js_suffix@.is_object() || !(is<JS::TypedArrayBase>(@js_name@@js_suffix@.as_object()) || is<JS::DataView>(@js_name@@js_suffix@.as_object())))
-        return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObjectOfType, "@parameter.type.name@");
-
-    auto @cpp_name@ = GC::make_root(realm.create<WebIDL::ArrayBufferView>(@js_name@@js_suffix@.as_object()));
+    GC::Root<WebIDL::ArrayBufferView> @cpp_name@;
 )~~~");
+        if (parameter.type->is_nullable()) {
+            scoped_generator.append(R"~~~(
+    if (!@js_name@@js_suffix@.is_null() && !@js_name@@js_suffix@.is_undefined()) {
+)~~~");
+        }
+
+        scoped_generator.append(R"~~~(
+        if (!@js_name@@js_suffix@.is_object() || !(is<JS::TypedArrayBase>(@js_name@@js_suffix@.as_object()) || is<JS::DataView>(@js_name@@js_suffix@.as_object())))
+            return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObjectOfType, "@parameter.type.name@");
+
+        @cpp_name@ = GC::make_root(realm.create<WebIDL::ArrayBufferView>(@js_name@@js_suffix@.as_object()));
+)~~~");
+
+        if (parameter.type->is_nullable()) {
+            scoped_generator.append(R"~~~(
+    }
+)~~~");
+        }
         if (optional) {
             scoped_generator.append(R"~~~(
         }
@@ -734,7 +785,7 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
     } else if (parameter.type->name() == "any") {
         if (variadic) {
             scoped_generator.append(R"~~~(
-    GC::MarkedVector<JS::Value> @cpp_name@ { vm.heap() };
+    GC::RootVector<JS::Value> @cpp_name@ { vm.heap() };
 
     if (vm.argument_count() > @js_suffix@) {
         @cpp_name@.ensure_capacity(vm.argument_count() - @js_suffix@);
@@ -915,16 +966,16 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
         return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAFunction, @js_name@@js_suffix@.to_string_without_side_effects());
 )~~~");
         }
-        // 2. Return the IDL callback function type value that represents a reference to the same object that V represents, with the incumbent settings object as the callback context.
+        // 2. Return the IDL callback function type value that represents a reference to the same object that V represents, with the incumbent realm as the callback context.
         if (parameter.type->is_nullable() || callback_function.is_legacy_treat_non_object_as_null) {
             callback_function_generator.append(R"~~~(
     GC::Ptr<WebIDL::CallbackType> @cpp_name@;
     if (@js_name@@js_suffix@.is_object())
-        @cpp_name@ = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_settings_object(), @operation_returns_promise@);
+        @cpp_name@ = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_realm(), @operation_returns_promise@);
 )~~~");
         } else {
             callback_function_generator.append(R"~~~(
-    auto @cpp_name@ = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_settings_object(), @operation_returns_promise@);
+    auto @cpp_name@ = vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_object(), HTML::incumbent_realm(), @operation_returns_promise@);
 )~~~");
         }
     } else if (parameter.type->name() == "sequence") {
@@ -1281,7 +1332,7 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
         if (includes_callable) {
             union_generator.append(R"~~~(
             if (@js_name@@js_suffix@_object.is_function())
-                return vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_function(), HTML::incumbent_settings_object());
+                return vm.heap().allocate<WebIDL::CallbackType>(@js_name@@js_suffix@.as_function(), HTML::incumbent_realm());
 )~~~");
         }
 
@@ -1506,14 +1557,20 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
     @union_type@ @cpp_name@ = TRY(@js_name@@js_suffix@_to_variant(@js_name@@js_suffix@));
 )~~~");
             } else {
-                if (!optional_default_value.has_value() || optional_default_value == "null"sv) {
+                if (!optional_default_value.has_value()) {
                     union_generator.append(R"~~~(
+    Optional<@union_type@> @cpp_name@;
+    if (!@js_name@@js_suffix@.is_undefined())
+        @cpp_name@ = TRY(@js_name@@js_suffix@_to_variant(@js_name@@js_suffix@));
+)~~~");
+                } else {
+                    if (optional_default_value == "null"sv) {
+                        union_generator.append(R"~~~(
     Optional<@union_type@> @cpp_name@;
     if (!@js_name@@js_suffix@.is_nullish())
         @cpp_name@ = TRY(@js_name@@js_suffix@_to_variant(@js_name@@js_suffix@));
 )~~~");
-                } else {
-                    if (optional_default_value == "\"\"") {
+                    } else if (optional_default_value == "\"\"") {
                         union_generator.append(R"~~~(
     @union_type@ @cpp_name@ = @js_name@@js_suffix@.is_undefined() ? String {} : TRY(@js_name@@js_suffix@_to_variant(@js_name@@js_suffix@));
 )~~~");
@@ -1589,7 +1646,7 @@ static void generate_arguments(SourceGenerator& generator, Vector<IDL::Parameter
         auto parameter_name = make_input_acceptable_cpp(parameter.name.to_snakecase());
 
         if (parameter.variadic) {
-            // GC::MarkedVector is non-copyable, and the implementations likely want ownership of the
+            // GC::RootVector is non-copyable, and the implementations likely want ownership of the
             // list, so we move() it into the parameter list.
             parameter_names.append(ByteString::formatted("move({})", parameter_name));
         } else {
@@ -1719,7 +1776,7 @@ static void generate_wrap_statement(SourceGenerator& generator, ByteString const
         @result_expression@ JS::js_null();
     } else {
 )~~~");
-        } else if (type.is_primitive() || interface.enumerations.contains(type.name())) {
+        } else if (type.is_primitive() || interface.enumerations.contains(type.name()) || interface.dictionaries.contains(type.name())) {
             scoped_generator.append(R"~~~(
     if (!@value@.has_value()) {
         @result_expression@ JS::js_null();
@@ -1767,7 +1824,7 @@ static void generate_wrap_statement(SourceGenerator& generator, ByteString const
 
         // If the type is a platform object we currently return a Vector<GC::Root<T>> from the
         // C++ implementation, thus allowing us to unwrap the element (a handle) like below.
-        // This might need to change if we switch to a MarkedVector.
+        // This might need to change if we switch to a RootVector.
         if (is_platform_object(sequence_generic_type.parameters().first())) {
             scoped_generator.append(R"~~~(
             auto* wrapped_element@recursion_depth@ = &(*element@recursion_depth@);
@@ -1905,7 +1962,7 @@ static void generate_wrap_statement(SourceGenerator& generator, ByteString const
                 dictionary_generator.append(R"~~~(
     JS::Value @wrapped_value_name@;
 )~~~");
-                generate_wrap_statement(dictionary_generator, ByteString::formatted("{}.{}", value, member.name.to_snakecase()), member.type, interface, ByteString::formatted("{} =", wrapped_value_name), WrappingReference::No, recursion_depth + 1);
+                generate_wrap_statement(dictionary_generator, ByteString::formatted("{}{}{}", value, type.is_nullable() ? "->" : ".", member.name.to_snakecase()), member.type, interface, ByteString::formatted("{} =", wrapped_value_name), WrappingReference::No, recursion_depth + 1);
 
                 dictionary_generator.append(R"~~~(
     MUST(dictionary_object@recursion_depth@->create_data_property("@member_key@", @wrapped_value_name@));
@@ -1992,6 +2049,14 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@function.name:snakecase@@overload_suffi
     [[maybe_unused]] auto& realm = *vm.current_realm();
 )~~~");
 
+    // NOTE: Create a wrapper lambda so that if the function steps return an exception, we can return that in a rejected promise.
+    if (function.return_type->name() == "Promise"sv) {
+        function_generator.append(R"~~~(
+    auto steps = [&realm, &vm]() -> JS::ThrowCompletionOr<GC::Ref<WebIDL::Promise>> {
+        (void)realm;
+)~~~");
+    }
+
     if (is_static_function == StaticFunction::No) {
         function_generator.append(R"~~~(
     auto* impl = TRY(impl_from(vm));
@@ -2050,6 +2115,26 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@function.name:snakecase@@overload_suffi
 
         function_generator.append(R"~~~(
     [[maybe_unused]] auto retval = TRY(throw_dom_exception_if_needed(vm, [&] { return @interface_fully_qualified_name@::@function.cpp_name@(@.arguments@); }));
+)~~~");
+    }
+
+    if (function.return_type->name() == "Promise"sv) {
+        // https://webidl.spec.whatwg.org/#dfn-create-operation-function
+        // If we had an exception running the steps and are meant to return a Promise, wrap that exception in a rejected promise.
+        function_generator.append(R"~~~(
+        return retval;
+    };
+
+    auto maybe_retval = steps();
+
+    // And then, if an exception E was thrown:
+    // 1. If op has a return type that is a promise type, then return ! Call(%Promise.reject%, %Promise%, «E»).
+    // 2. Otherwise, end these steps and allow the exception to propagate.
+    // NOTE: We know that this is a Promise return type statically by the IDL.
+    if (maybe_retval.is_throw_completion())
+        return WebIDL::create_rejected_promise(realm, maybe_retval.error_value())->promise();
+
+    auto retval = maybe_retval.release_value();
 )~~~");
     }
 
@@ -2443,22 +2528,23 @@ static void generate_html_constructor(SourceGenerator& generator, IDL::Construct
     constructor_generator.append(R"~~~(
     auto& window = verify_cast<HTML::Window>(HTML::current_principal_global_object());
 
-    // 1. Let registry be the current global object's CustomElementRegistry object.
+    // 1. Let registry be current global object's custom element registry.
     auto registry = TRY(throw_dom_exception_if_needed(vm, [&] { return window.custom_elements(); }));
 
     // 2. If NewTarget is equal to the active function object, then throw a TypeError.
     if (&new_target == vm.active_function_object())
         return vm.throw_completion<JS::TypeError>("Cannot directly construct an HTML element, it must be inherited"sv);
 
-    // 3. Let definition be the entry in registry with constructor equal to NewTarget. If there is no such definition, then throw a TypeError.
+    // 3. Let definition be the item in registry's custom element definition set with constructor equal to NewTarget.
+    //    If there is no such item, then throw a TypeError.
     auto definition = registry->get_definition_from_new_target(new_target);
     if (!definition)
         return vm.throw_completion<JS::TypeError>("There is no custom element definition assigned to the given constructor"sv);
 
-    // 4. Let is value be null.
+    // 4. Let isValue be null.
     Optional<String> is_value;
 
-    // 5. If definition's local name is equal to definition's name (i.e., definition is for an autonomous custom element), then:
+    // 5. If definition's local name is equal to definition's name (i.e., definition is for an autonomous custom element):
     if (definition->local_name() == definition->name()) {
         // 1. If the active function object is not HTMLElement, then throw a TypeError.
 )~~~");
@@ -2485,11 +2571,11 @@ static void generate_html_constructor(SourceGenerator& generator, IDL::Construct
         if (!valid_local_names.contains_slow(definition->local_name()))
             return vm.throw_completion<JS::TypeError>(MUST(String::formatted("Local name '{}' of customized built-in element is not a valid local name for @name@"sv, definition->local_name())));
 
-        // 3. Set is value to definition's name.
+        // 3. Set isValue to definition's name.
         is_value = definition->name();
     }
 
-    // 7. If definition's construction stack is empty, then:
+    // 7. If definition's construction stack is empty:
     if (definition->construction_stack().is_empty()) {
         // 1. Let element be the result of internally creating a new object implementing the interface to which the active function object corresponds, given the current Realm Record and NewTarget.
         // 2. Set element's node document to the current global object's associated Document.
@@ -2519,7 +2605,7 @@ static void generate_html_constructor(SourceGenerator& generator, IDL::Construct
 
         // 6. Set element's custom element state to "custom".
         // 7. Set element's custom element definition to definition.
-        // 8. Set element's is value to is value.
+        // 8. Set element's is value to isValue.
         element->setup_custom_element_from_constructor(*definition, is_value);
 
         // 9. Return element.
@@ -2549,7 +2635,7 @@ static void generate_html_constructor(SourceGenerator& generator, IDL::Construct
         return JS::throw_completion(WebIDL::InvalidStateError::create(realm, "Custom element has already been constructed"_string));
 
     // 12. Perform ? element.[[SetPrototypeOf]](prototype).
-    auto actual_element = element.get<GC::Root<DOM::Element>>();
+    auto actual_element = element.get<GC::Ref<DOM::Element>>();
     TRY(actual_element->internal_set_prototype_of(&prototype.as_object()));
 
     // 13. Replace the last entry in definition's construction stack with an already constructed marker.
@@ -3548,7 +3634,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.getter_callback@)
         }
     }
 
-    if (!has_keyword && !did_set_to_missing_value) 
+    if (!has_keyword && !did_set_to_missing_value)
         retval = "@invalid_enum_default_value@"_string;
     )~~~");
 
@@ -3704,9 +3790,9 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.getter_callback@)
     if (!content_attribute_value.has_value())
         return JS::PrimitiveString::create(vm, String {});
 
-    auto url_string = impl->document().parse_url(*content_attribute_value);
-    if (url_string.is_valid())
-        return JS::PrimitiveString::create(vm, MUST(url_string.to_string()));
+    auto url_string = impl->document().encoding_parse_and_serialize_url(*content_attribute_value);
+    if (url_string.has_value())
+        return JS::PrimitiveString::create(vm, url_string.release_value());
 )~~~");
                 }
 
@@ -3716,6 +3802,54 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.getter_callback@)
     if (content_attribute_value.has_value())
         retval = MUST(Infra::convert_to_scalar_value_string(*content_attribute_value));
 )~~~");
+            }
+            // If a reflected IDL attribute has the type T?, where T is either Element
+            // FIXME: or an interface that inherits from Element,
+            // then with attr being the reflected content attribute name:
+            else if (attribute.type->is_nullable() && attribute.type->name() == "Element") {
+                // The getter steps are to return the result of running this's get the attr-associated element.
+                attribute_generator.append(R"~~~(
+    auto retval = GC::Ptr<Element> {};                
+)~~~");
+
+                // 1. Let element be the result of running reflectedTarget's get the element.
+                // 2. Let contentAttributeValue be the result of running reflectedTarget's get the content attribute.
+                attribute_generator.append(R"~~~(
+    auto contentAttributeValue = impl->attribute(HTML::AttributeNames::@attribute.reflect_name@);
+)~~~");
+                // 3. If reflectedTarget's explicitly set attr-element is not null:
+                //      1. If reflectedTarget's explicitly set attr-element is a descendant of any of element's shadow-including ancestors, then return reflectedTarget's explicitly set attr-element.
+                //      2. Return null.
+                attribute_generator.append(R"~~~(
+    auto const explicitly_set_attr = TRY(throw_dom_exception_if_needed(vm, [&] { return impl->get_@attribute.cpp_name@(); }));
+    if (explicitly_set_attr) {
+        if (&impl->shadow_including_root() == &explicitly_set_attr->shadow_including_root()) {
+            retval = explicitly_set_attr;
+        } else {
+            retval = GC::Ptr<Element> {};
+        }
+    }
+)~~~");
+                // 4. Otherwise, if contentAttributeValue is not null, return the first element candidate, in tree order, that meets the following criteria:
+                //      candidate's root is the same as element's root;
+                //      candidate's ID is contentAttributeValue; and
+                //      FIXME: candidate implements T.
+                // If no such element exists, then return null.
+                // 5. Return null.
+
+                // FIXME: This works when T is Element but will need adjustment when we handle subtypes too
+                attribute_generator.append(R"~~~(
+    else if (contentAttributeValue.has_value()) {
+        impl->root().for_each_in_inclusive_subtree_of_type<DOM::Element>([&](auto& candidate) {
+            if (candidate.attribute(HTML::AttributeNames::id) == contentAttributeValue.value()) {
+                retval = &candidate;
+                return TraversalDecision::Break;
+            }
+            return TraversalDecision::Continue;
+        });
+    }
+)~~~");
+
             } else {
                 attribute_generator.append(R"~~~(
     auto retval = impl->get_attribute_value(HTML::AttributeNames::@attribute.reflect_name@);
@@ -3773,6 +3907,8 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
     WebIDL::log_trace(vm, "@class_name@::@attribute.setter_callback@");
     [[maybe_unused]] auto& realm = *vm.current_realm();
     auto* impl = TRY(impl_from(vm));
+    if (vm.argument_count() < 1)
+        return vm.throw_completion<JS::TypeError>(JS::ErrorType::BadArgCountOne, "@namespaced_name@ setter");
 
     auto value = vm.argument(0);
 )~~~");
@@ -3797,9 +3933,50 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
     else
         MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String {}));
 )~~~");
+                } else if (attribute.type->name() == "unsigned long") {
+                    // The setter steps are:
+                    // FIXME: 1. If the reflected IDL attribute is limited to only positive numbers and the given value is 0, then throw an "IndexSizeError" DOMException.
+                    // 2. Let minimum be 0.
+                    // FIXME: 3. If the reflected IDL attribute is limited to only positive numbers or limited to only positive numbers with fallback, then set minimum to 1.
+                    // 4. Let newValue be minimum.
+                    // FIXME: 5. If the reflected IDL attribute has a default value, then set newValue to defaultValue.
+                    // 6. If the given value is in the range minimum to 2147483647, inclusive, then set newValue to it.
+                    // 7. Run this's set the content attribute with newValue converted to the shortest possible string representing the number as a valid non-negative integer.
+                    attribute_generator.append(R"~~~(
+    u32 minimum = 0;
+    u32 new_value = minimum;
+    if (cpp_value >= minimum && cpp_value <= 2147483647)
+        new_value = cpp_value;
+    MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String::number(new_value)));
+)~~~");
                 } else if (attribute.type->is_integer() && !attribute.type->is_nullable()) {
                     attribute_generator.append(R"~~~(
     MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String::number(cpp_value)));
+)~~~");
+                }
+                // If a reflected IDL attribute has the type T?, where T is either Element
+                // FIXME: or an interface that inherits from Element,
+                // then with attr being the reflected content attribute name:
+                else if (attribute.type->is_nullable() && attribute.type->name() == "Element") {
+                    // The setter steps are:
+                    // 1. If the given value is null, then:
+                    //      1. Set this's explicitly set attr-element to null.
+                    //      2. Run this's delete the content attribute.
+                    //      3. Return.
+                    attribute_generator.append(R"~~~(
+    if (!cpp_value) {
+        TRY(throw_dom_exception_if_needed(vm, [&] { return impl->set_@attribute.cpp_name@(nullptr); }));
+        impl->remove_attribute(HTML::AttributeNames::@attribute.reflect_name@);
+        return JS::js_undefined();
+    }
+)~~~");
+                    // 2. Run this's set the content attribute with the empty string.
+                    attribute_generator.append(R"~~~(
+    MUST(impl->set_attribute(HTML::AttributeNames::@attribute.reflect_name@, String {}));
+)~~~");
+                    // 3. Set this's explicitly set attr-element to a weak reference to the given value.
+                    attribute_generator.append(R"~~~(
+    TRY(throw_dom_exception_if_needed(vm, [&] { return impl->set_@attribute.cpp_name@(cpp_value); }));
 )~~~");
                 } else if (attribute.type->is_nullable()) {
                     attribute_generator.append(R"~~~(
@@ -3859,6 +4036,8 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
 {
     WebIDL::log_trace(vm, "@class_name@::@attribute.setter_callback@");
     auto this_value = vm.this_value();
+    if (vm.argument_count() < 1)
+        return vm.throw_completion<JS::TypeError>(JS::ErrorType::BadArgCountOne, "@namespaced_name@ setter");
     GC::Ptr<Window> window;
     if (this_value.is_object()) {
         if (is<WindowProxy>(this_value.as_object())) {
@@ -3886,6 +4065,8 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
     auto this_value = vm.this_value();
     if (!this_value.is_object() || !is<@fully_qualified_name@>(this_value.as_object()))
         return vm.throw_completion<JS::TypeError>(JS::ErrorType::NotAnObjectOfType, "@namespaced_name@");
+    if (vm.argument_count() < 1)
+        return vm.throw_completion<JS::TypeError>(JS::ErrorType::BadArgCountOne, "@namespaced_name@ setter");
     TRY(this_value.as_object().internal_define_own_property("@attribute.name@", JS::PropertyDescriptor { .value = vm.argument(0), .writable = true }));
     return JS::js_undefined();
 }
@@ -3893,16 +4074,19 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
             }
         } else if (auto put_forwards_identifier = attribute.extended_attributes.get("PutForwards"sv); put_forwards_identifier.has_value()) {
             attribute_generator.set("put_forwards_identifier"sv, *put_forwards_identifier);
+            VERIFY(!put_forwards_identifier->is_empty() && !is_ascii_digit(put_forwards_identifier->byte_at(0))); // Ensure `PropertyKey`s are not Numbers.
 
             attribute_generator.append(R"~~~(
 JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.setter_callback@)
 {
     WebIDL::log_trace(vm, "@class_name@::@attribute.setter_callback@");
     auto* impl = TRY(impl_from(vm));
+    if (vm.argument_count() < 1)
+        return vm.throw_completion<JS::TypeError>(JS::ErrorType::BadArgCountOne, "@namespaced_name@ setter");
     auto value = vm.argument(0);
 
     auto receiver = TRY(throw_dom_exception_if_needed(vm, [&]() { return impl->@attribute.cpp_name@(); }));
-    TRY(receiver->set(JS::PropertyKey { "@put_forwards_identifier@" }, value, JS::Object::ShouldThrowExceptions::Yes));
+    TRY(receiver->set(JS::PropertyKey { "@put_forwards_identifier@", JS::PropertyKey::StringMayBeNumber::No }, value, JS::Object::ShouldThrowExceptions::Yes));
 
     return JS::js_undefined();
 }
@@ -3990,7 +4174,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::for_each)
         generate_variable_statement(iterator_generator, "wrapped_key", interface.pair_iterator_types->get<0>(), "key", interface);
         generate_variable_statement(iterator_generator, "wrapped_value", interface.pair_iterator_types->get<1>(), "value", interface);
         iterator_generator.append(R"~~~(
-        TRY(call(vm, callback.as_function(), vm.argument(1), wrapped_value, wrapped_key, this_value));
+        TRY(JS::call(vm, callback.as_function(), vm.argument(1), wrapped_value, wrapped_key, this_value));
         return {};
     }));
 
@@ -4068,7 +4252,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::for_each)
 
     for (auto& entry : *set) {
         auto value = entry.key;
-        TRY(call(vm, callback.as_function(), vm.argument(1), value, value, impl));
+        TRY(JS::call(vm, callback.as_function(), vm.argument(1), value, value, impl));
     }
 
     return JS::js_undefined();
@@ -4221,43 +4405,44 @@ private:
 static void generate_using_namespace_definitions(SourceGenerator& generator)
 {
     generator.append(R"~~~(
-    // FIXME: This is a total hack until we can figure out the namespace for a given type somehow.
-    using namespace Web::Animations;
-    using namespace Web::Clipboard;
-    using namespace Web::Crypto;
-    using namespace Web::CSS;
-    using namespace Web::DOM;
-    using namespace Web::DOMParsing;
-    using namespace Web::DOMURL;
-    using namespace Web::Encoding;
-    using namespace Web::EntriesAPI;
-    using namespace Web::EventTiming;
-    using namespace Web::Fetch;
-    using namespace Web::FileAPI;
-    using namespace Web::Geometry;
-    using namespace Web::HighResolutionTime;
-    using namespace Web::HTML;
-    using namespace Web::IndexedDB;
-    using namespace Web::Internals;
-    using namespace Web::IntersectionObserver;
-    using namespace Web::MediaCapabilitiesAPI;
-    using namespace Web::MediaSourceExtensions;
-    using namespace Web::NavigationTiming;
-    using namespace Web::PerformanceTimeline;
-    using namespace Web::RequestIdleCallback;
-    using namespace Web::ResizeObserver;
-    using namespace Web::Selection;
-    using namespace Web::StorageAPI;
-    using namespace Web::Streams;
-    using namespace Web::SVG;
-    using namespace Web::UIEvents;
-    using namespace Web::UserTiming;
-    using namespace Web::WebAssembly;
-    using namespace Web::WebAudio;
-    using namespace Web::WebGL;
-    using namespace Web::WebIDL;
-    using namespace Web::WebVTT;
-    using namespace Web::XHR;
+// FIXME: This is a total hack until we can figure out the namespace for a given type somehow.
+using namespace Web::Animations;
+using namespace Web::Clipboard;
+using namespace Web::Crypto;
+using namespace Web::CSS;
+using namespace Web::DOM;
+using namespace Web::DOMParsing;
+using namespace Web::DOMURL;
+using namespace Web::Encoding;
+using namespace Web::EntriesAPI;
+using namespace Web::EventTiming;
+using namespace Web::Fetch;
+using namespace Web::FileAPI;
+using namespace Web::Geometry;
+using namespace Web::HighResolutionTime;
+using namespace Web::HTML;
+using namespace Web::IndexedDB;
+using namespace Web::Internals;
+using namespace Web::IntersectionObserver;
+using namespace Web::MediaCapabilitiesAPI;
+using namespace Web::MediaSourceExtensions;
+using namespace Web::NavigationTiming;
+using namespace Web::PerformanceTimeline;
+using namespace Web::RequestIdleCallback;
+using namespace Web::ResizeObserver;
+using namespace Web::Selection;
+using namespace Web::ServiceWorker;
+using namespace Web::StorageAPI;
+using namespace Web::Streams;
+using namespace Web::SVG;
+using namespace Web::UIEvents;
+using namespace Web::UserTiming;
+using namespace Web::WebAssembly;
+using namespace Web::WebAudio;
+using namespace Web::WebGL;
+using namespace Web::WebIDL;
+using namespace Web::WebVTT;
+using namespace Web::XHR;
 )~~~"sv);
 }
 
@@ -4481,6 +4666,8 @@ void generate_constructor_implementation(IDL::Interface const& interface, String
     generator.set("prototype_class", interface.prototype_class);
     generator.set("constructor_class", interface.constructor_class);
     generator.set("fully_qualified_name", interface.fully_qualified_name);
+    generator.set("parent_name", interface.parent_name);
+    generator.set("prototype_base_class", interface.prototype_base_class);
 
     generator.append(R"~~~(
 #include <LibIDL/Types.h>
@@ -4489,6 +4676,7 @@ void generate_constructor_implementation(IDL::Interface const& interface, String
 #include <LibJS/Runtime/DataView.h>
 #include <LibJS/Runtime/GlobalObject.h>
 #include <LibJS/Runtime/Iterator.h>
+#include <LibJS/Runtime/PromiseConstructor.h>
 #include <LibJS/Runtime/ValueInlines.h>
 #include <LibJS/Runtime/TypedArray.h>
 #include <LibWeb/Bindings/@constructor_class@.h>
@@ -4502,6 +4690,10 @@ void generate_constructor_implementation(IDL::Interface const& interface, String
 #include <LibWeb/WebIDL/OverloadResolution.h>
 #include <LibWeb/WebIDL/Tracing.h>
 #include <LibWeb/WebIDL/Types.h>
+
+#if __has_include(<LibWeb/Bindings/@prototype_base_class@.h>)
+#    include <LibWeb/Bindings/@prototype_base_class@.h>
+#endif
 
 )~~~");
 
@@ -4554,6 +4746,15 @@ void @constructor_class@::initialize(JS::Realm& realm)
     [[maybe_unused]] u8 default_attributes = JS::Attribute::Enumerable;
 
     Base::initialize(realm);
+)~~~");
+
+    if (interface.prototype_base_class != "ObjectPrototype") {
+        generator.append(R"~~~(
+    set_prototype(&ensure_web_constructor<@prototype_base_class@>(realm, "@parent_name@"_fly_string));
+)~~~");
+    }
+
+    generator.append(R"~~~(
     define_direct_property(vm.names.prototype, &ensure_web_prototype<@prototype_class@>(realm, "@namespaced_name@"_fly_string), 0);
     define_direct_property(vm.names.length, JS::Value(@constructor.length@), JS::Attribute::Configurable);
 

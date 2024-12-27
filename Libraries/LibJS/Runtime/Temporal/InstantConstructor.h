@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021-2022, Linus Groh <linusg@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -27,9 +28,7 @@ private:
     virtual bool has_constructor() const override { return true; }
 
     JS_DECLARE_NATIVE_FUNCTION(from);
-    JS_DECLARE_NATIVE_FUNCTION(from_epoch_seconds);
     JS_DECLARE_NATIVE_FUNCTION(from_epoch_milliseconds);
-    JS_DECLARE_NATIVE_FUNCTION(from_epoch_microseconds);
     JS_DECLARE_NATIVE_FUNCTION(from_epoch_nanoseconds);
     JS_DECLARE_NATIVE_FUNCTION(compare);
 };

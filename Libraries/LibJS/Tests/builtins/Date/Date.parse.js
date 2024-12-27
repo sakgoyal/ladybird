@@ -41,6 +41,7 @@ test("basic functionality", () => {
     expect(Date.parse("01 February 2013")).toBe(1359698400000);
     expect(Date.parse("Tuesday, October 29, 2024, 18:00 UTC")).toBe(1730224800000);
     expect(Date.parse("November 19 2024 00:00:00 +0900")).toBe(1731942000000);
+    expect(Date.parse("Wed Nov 20 2024")).toBe(1732082400000);
 
     // FIXME: Create a scoped time zone helper when bytecode supports the `using` declaration.
     setTimeZone(originalTimeZone);
@@ -66,6 +67,12 @@ test("basic functionality", () => {
 test("time clip", () => {
     expect(Date.parse("+999999")).toBeNaN();
     expect(Date.parse("-999999")).toBeNaN();
+
+    const belowMinDate = "-271821-04-19T23:59:59.999Z";
+    expect(belowMinDate).toBeNaN();
+
+    const aboveMaxDate = "+275760-09-13T00:00:00.001Z";
+    expect(aboveMaxDate).toBeNaN();
 });
 
 test("extra micro seconds extension", () => {

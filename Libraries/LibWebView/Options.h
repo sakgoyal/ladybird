@@ -45,6 +45,18 @@ enum class EnableAutoplay {
     Yes,
 };
 
+struct SystemDNS { };
+struct DNSOverTLS {
+    ByteString server_address;
+    u16 port;
+};
+struct DNSOverUDP {
+    ByteString server_address;
+    u16 port;
+};
+
+using DNSSettings = Variant<SystemDNS, DNSOverTLS, DNSOverUDP>;
+
 struct ChromeOptions {
     Vector<URL::URL> urls;
     Vector<ByteString> raw_urls;
@@ -58,6 +70,7 @@ struct ChromeOptions {
     Optional<ProcessType> debug_helper_process {};
     Optional<ProcessType> profile_helper_process {};
     Optional<ByteString> webdriver_content_ipc_path {};
+    DNSSettings dns_settings { SystemDNS {} };
 };
 
 enum class IsLayoutTestMode {
@@ -100,6 +113,11 @@ enum class CollectGarbageOnEveryAllocation {
     Yes,
 };
 
+enum class IsHeadless {
+    No,
+    Yes,
+};
+
 struct WebContentOptions {
     String command_line;
     String executable_path;
@@ -114,6 +132,8 @@ struct WebContentOptions {
     ForceFontconfig force_fontconfig { ForceFontconfig::No };
     EnableAutoplay enable_autoplay { EnableAutoplay::No };
     CollectGarbageOnEveryAllocation collect_garbage_on_every_allocation { CollectGarbageOnEveryAllocation::No };
+    Optional<u16> echo_server_port {};
+    IsHeadless is_headless { IsHeadless::No };
 };
 
 }

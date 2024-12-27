@@ -11,11 +11,11 @@
 #include <AK/SegmentedVector.h>
 #include <AK/Utf8View.h>
 #include <AK/Vector.h>
-#include <LibGfx/AntiAliasingPainter.h>
 #include <LibGfx/Color.h>
 #include <LibGfx/Forward.h>
 #include <LibGfx/Gradients.h>
 #include <LibGfx/ImmutableBitmap.h>
+#include <LibGfx/LineStyle.h>
 #include <LibGfx/PaintStyle.h>
 #include <LibGfx/PaintingSurface.h>
 #include <LibGfx/Palette.h>
@@ -26,6 +26,7 @@
 #include <LibGfx/Size.h>
 #include <LibGfx/TextAlignment.h>
 #include <LibGfx/TextLayout.h>
+#include <LibWeb/CSS/ComputedValues.h>
 #include <LibWeb/CSS/Enums.h>
 #include <LibWeb/Painting/BorderRadiiData.h>
 #include <LibWeb/Painting/BorderRadiusCornerClipper.h>
@@ -117,7 +118,6 @@ struct StackingContextTransform {
 
 struct PushStackingContext {
     float opacity;
-    CSS::ResolvedFilter filter;
     // The bounding box of the source paintable (pre-transform).
     Gfx::IntRect source_paintable_rect;
     // A translation to be applied after the stacking context has been transformed.
@@ -164,12 +164,12 @@ struct PaintTextShadow {
     double glyph_run_scale { 1 };
     Gfx::IntRect shadow_bounding_rect;
     Gfx::IntRect text_rect;
-    Gfx::IntPoint draw_location;
+    Gfx::FloatPoint draw_location;
     int blur_radius;
     Color color;
 
-    [[nodiscard]] Gfx::IntRect bounding_rect() const { return { draw_location, shadow_bounding_rect.size() }; }
-    void translate_by(Gfx::IntPoint const& offset) { draw_location.translate_by(offset); }
+    [[nodiscard]] Gfx::IntRect bounding_rect() const { return { draw_location.to_type<int>(), shadow_bounding_rect.size() }; }
+    void translate_by(Gfx::IntPoint const& offset) { draw_location.translate_by(offset.to_type<float>()); }
 };
 
 struct FillRectWithRoundedCorners {
@@ -215,6 +215,11 @@ struct FillPathUsingPaintStyle {
 };
 
 struct StrokePathUsingColor {
+    Gfx::Path::CapStyle cap_style;
+    Gfx::Path::JoinStyle join_style;
+    float miter_limit;
+    Vector<float> dash_array;
+    float dash_offset;
     Gfx::IntRect path_bounding_rect;
     Gfx::Path path;
     Color color;
@@ -231,6 +236,11 @@ struct StrokePathUsingColor {
 };
 
 struct StrokePathUsingPaintStyle {
+    Gfx::Path::CapStyle cap_style;
+    Gfx::Path::JoinStyle join_style;
+    float miter_limit;
+    Vector<float> dash_array;
+    float dash_offset;
     Gfx::IntRect path_bounding_rect;
     Gfx::Path path;
     PaintStyle paint_style;
@@ -290,7 +300,7 @@ struct DrawLine {
 struct ApplyBackdropFilter {
     Gfx::IntRect backdrop_region;
     BorderRadiiData border_radii_data;
-    CSS::ResolvedFilter backdrop_filter;
+    Vector<Gfx::Filter> backdrop_filter;
 
     [[nodiscard]] Gfx::IntRect bounding_rect() const { return backdrop_region; }
 
@@ -397,6 +407,10 @@ struct ApplyOpacity {
     float opacity;
 };
 
+struct ApplyFilters {
+    Vector<Gfx::Filter> filter;
+};
+
 struct ApplyTransform {
     Gfx::FloatPoint origin;
     Gfx::FloatMatrix4x4 matrix;
@@ -452,6 +466,7 @@ using Command = Variant<
     PaintNestedDisplayList,
     PaintScrollBar,
     ApplyOpacity,
+    ApplyFilters,
     ApplyTransform,
     ApplyMaskBitmap>;
 

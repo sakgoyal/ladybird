@@ -1,11 +1,6 @@
-Summary
-
 Harness status: OK
-
-Rerun
 
 Found 1 tests
 
-1 Fail
-Details
-Result	Test Name	MessageFail	grid-template followed by !important	
+1 Pass
+Pass	grid-template followed by !important

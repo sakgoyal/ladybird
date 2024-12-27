@@ -174,8 +174,7 @@ WebIDL::CallbackType* FontFaceSet::onloadingerror()
 static WebIDL::ExceptionOr<GC::Ref<JS::Set>> find_matching_font_faces(JS::Realm& realm, FontFaceSet& font_face_set, String const& font, String const&)
 {
     // 1. Parse font using the CSS value syntax of the font property. If a syntax error occurs, return a syntax error.
-    auto parser = CSS::Parser::Parser::create(CSS::Parser::ParsingContext(realm), font);
-    auto property = parser.parse_as_css_value(PropertyID::Font);
+    auto property = parse_css_value(CSS::Parser::ParsingContext(), font, PropertyID::Font);
     if (!property)
         return WebIDL::SyntaxError::create(realm, "Unable to parse font"_string);
 
@@ -242,7 +241,7 @@ JS::ThrowCompletionOr<GC::Ref<WebIDL::Promise>> FontFaceSet::load(String const& 
         auto result = find_matching_font_faces(realm, font_face_set, font, text);
         if (result.is_error()) {
             HTML::TemporaryExecutionContext execution_context { realm, HTML::TemporaryExecutionContext::CallbacksEnabled::Yes };
-            WebIDL::reject_promise(realm, promise, Bindings::dom_exception_to_throw_completion(realm.vm(), result.release_error()).release_value().value());
+            WebIDL::reject_promise(realm, promise, Bindings::exception_to_throw_completion(realm.vm(), result.release_error()).release_value().value());
             return;
         }
 
@@ -250,7 +249,7 @@ JS::ThrowCompletionOr<GC::Ref<WebIDL::Promise>> FontFaceSet::load(String const& 
 
         // 4. Queue a task to run the following steps synchronously:
         HTML::queue_a_task(HTML::Task::Source::FontLoading, nullptr, nullptr, GC::create_function(realm.heap(), [&realm, promise, matched_font_faces] {
-            GC::MarkedVector<GC::Ref<WebIDL::Promise>> promises(realm.heap());
+            GC::RootVector<GC::Ref<WebIDL::Promise>> promises(realm.heap());
 
             // 1. For all of the font faces in the font face list, call their load() method.
             for (auto font_face_value : *matched_font_faces) {

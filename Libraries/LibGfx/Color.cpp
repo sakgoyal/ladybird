@@ -13,7 +13,6 @@
 #include <AK/Swift.h>
 #include <AK/Vector.h>
 #include <LibGfx/Color.h>
-#include <LibGfx/SystemTheme.h>
 #include <LibIPC/Decoder.h>
 #include <LibIPC/Encoder.h>
 #include <ctype.h>
@@ -399,7 +398,9 @@ Vector<Color> Color::tints(u32 steps, float max) const
 Color Color::from_linear_srgb(float red, float green, float blue, float alpha)
 {
     auto linear_to_srgb = [](float c) {
-        return c >= 0.0031308f ? 1.055f * pow(c, 0.4166666f) - 0.055f : 12.92f * c;
+        if (c <= 0.04045 / 12.92)
+            return c * 12.92;
+        return pow(c, 10. / 24) * 1.055 - 0.055;
     };
 
     red = linear_to_srgb(red) * 255.f;
@@ -413,24 +414,112 @@ Color Color::from_linear_srgb(float red, float green, float blue, float alpha)
         clamp(lroundf(alpha * 255.f), 0, 255));
 }
 
+// https://www.w3.org/TR/css-color-4/#predefined-a98-rgb
+Color Color::from_a98rgb(float r, float g, float b, float alpha)
+{
+    auto to_linear = [](float c) {
+        return pow(c, 563. / 256);
+    };
+
+    auto linear_r = to_linear(r);
+    auto linear_g = to_linear(g);
+    auto linear_b = to_linear(b);
+
+    float x = 0.57666904 * linear_r + 0.18555824 * linear_g + 0.18822865 * linear_b;
+    float y = 0.29734498 * linear_r + 0.62736357 * linear_g + 0.07529146 * linear_b;
+    float z = 0.02703136 * linear_r + 0.07068885 * linear_g + 0.99133754 * linear_b;
+
+    return from_xyz65(x, y, z, alpha);
+}
+
+// https://www.w3.org/TR/css-color-4/#predefined-a98-rgb
+Color Color::from_display_p3(float r, float g, float b, float alpha)
+{
+    auto to_linear = [](float c) {
+        if (c < 0.04045)
+            return c / 12.92;
+        return pow((c + 0.055) / (1.055), 2.4);
+    };
+
+    auto linear_r = to_linear(r);
+    auto linear_g = to_linear(g);
+    auto linear_b = to_linear(b);
+
+    float x = 0.48657095 * linear_r + 0.26566769 * linear_g + 0.19821729 * linear_b;
+    float y = 0.22897456 * linear_r + 0.69173852 * linear_g + 0.07928691 * linear_b;
+    float z = 0.00000000 * linear_r + 0.04511338 * linear_g + 1.04394437 * linear_b;
+
+    return from_xyz65(x, y, z, alpha);
+}
+
+// https://www.w3.org/TR/css-color-4/#predefined-prophoto-rgb
+Color Color::from_pro_photo_rgb(float r, float g, float b, float alpha)
+{
+    auto to_linear = [](float c) -> float {
+        u8 sign = c < 0 ? -1 : 1;
+        float absolute = abs(c);
+
+        if (absolute <= 16. / 252)
+            return c / 16;
+        return sign * pow(c, 1.8);
+    };
+
+    auto linear_r = to_linear(r);
+    auto linear_g = to_linear(g);
+    auto linear_b = to_linear(b);
+
+    float x = 0.79776664 * linear_r + 0.13518130 * linear_g + 0.03134773 * linear_b;
+    float y = 0.28807483 * linear_r + 0.71183523 * linear_g + 0.00008994 * linear_b;
+    float z = 0.00000000 * linear_r + 0.00000000 * linear_g + 0.82510460 * linear_b;
+
+    return from_xyz50(x, y, z, alpha);
+}
+
+// https://www.w3.org/TR/css-color-4/#predefined-rec2020
+Color Color::from_rec2020(float r, float g, float b, float alpha)
+{
+    auto to_linear = [](float c) -> float {
+        auto constexpr alpha = 1.09929682680944;
+        auto constexpr beta = 0.018053968510807;
+
+        u8 sign = c < 0 ? -1 : 1;
+        auto absolute = abs(c);
+
+        if (absolute < beta * 4.5)
+            return c / 4.5;
+
+        return sign * (pow((absolute + alpha - 1) / alpha, 1 / 0.45));
+    };
+
+    auto linear_r = to_linear(r);
+    auto linear_g = to_linear(g);
+    auto linear_b = to_linear(b);
+
+    float x = 0.63695805 * linear_r + 0.14461690 * linear_g + 0.16888098 * linear_b;
+    float y = 0.26270021 * linear_r + 0.67799807 * linear_g + 0.05930172 * linear_b;
+    float z = 0.00000000 * linear_r + 0.02807269 * linear_g + 1.06098506 * linear_b;
+
+    return from_xyz65(x, y, z, alpha);
+}
+
 Color Color::from_xyz50(float x, float y, float z, float alpha)
 {
-    // See commit description for these values
-    float red = 3.13397926 * x - 1.61689519 * y - 0.49070587 * z;
-    float green = -0.97840009 * x + 1.91589112 * y + 0.03339256 * z;
-    float blue = 0.07200357 * x - 0.22897505 * y + 1.40517398 * z;
+    // See commit description for these values.
+    float r = +3.134136 * x - 1.617386 * y - 0.490662 * z;
+    float g = -0.978795 * x + 1.916254 * y + 0.033443 * z;
+    float b = +0.071955 * x - 0.228977 * y + 1.405386 * z;
 
-    return from_linear_srgb(red, green, blue, alpha);
+    return from_linear_srgb(r, g, b, alpha);
 }
 
 Color Color::from_xyz65(float x, float y, float z, float alpha)
 {
-    // https://en.wikipedia.org/wiki/SRGB#From_CIE_XYZ_to_sRGB
-    float red = 3.2406 * x - 1.5372 * y - 0.4986 * z;
-    float green = -0.9689 * x + 1.8758 * y + 0.0415 * z;
-    float blue = 0.0557 * x - 0.2040 * y + 1.0570 * z;
+    // See commit description for these values.
+    float r = +3.240970 * x - 1.537383 * y - 0.498611 * z;
+    float g = -0.969244 * x + 1.875968 * y + 0.041555 * z;
+    float b = +0.055630 * x - 0.203977 * y + 1.056972 * z;
 
-    return from_linear_srgb(red, green, blue, alpha);
+    return from_linear_srgb(r, g, b, alpha);
 }
 
 Color Color::from_lab(float L, float a, float b, float alpha)

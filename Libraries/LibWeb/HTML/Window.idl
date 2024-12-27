@@ -30,6 +30,7 @@ interface Window : EventTarget {
     readonly attribute History history;
     readonly attribute Navigation navigation;
     readonly attribute CustomElementRegistry customElements;
+    undefined stop();
     undefined focus();
     undefined blur();
 
@@ -49,7 +50,7 @@ interface Window : EventTarget {
 
     // the user agent
     readonly attribute Navigator navigator;
-    [ImplementedAs=navigator] readonly attribute Navigator clientInformation; // legacy alias of .navigator
+    [Replaceable, ImplementedAs=navigator] readonly attribute Navigator clientInformation; // legacy alias of .navigator
 
     // user prompts
     undefined alert();

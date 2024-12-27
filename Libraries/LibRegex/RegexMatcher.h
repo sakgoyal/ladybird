@@ -13,9 +13,6 @@
 
 #include <AK/Forward.h>
 #include <AK/GenericLexer.h>
-#include <AK/HashMap.h>
-#include <AK/Types.h>
-#include <AK/Utf32View.h>
 #include <AK/Vector.h>
 #include <ctype.h>
 
@@ -28,6 +25,7 @@ namespace Detail {
 struct Block {
     size_t start;
     size_t end;
+    StringView comment { "N/A"sv };
 };
 
 }

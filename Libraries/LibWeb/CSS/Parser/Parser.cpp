@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2020-2021, the SerenityOS developers.
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
@@ -15,13 +15,13 @@
 #include <AK/CharacterTypes.h>
 #include <AK/Debug.h>
 #include <AK/GenericLexer.h>
-#include <AK/NonnullRawPtr.h>
 #include <AK/SourceLocation.h>
 #include <AK/TemporaryChange.h>
 #include <LibWeb/CSS/CSSStyleDeclaration.h>
 #include <LibWeb/CSS/CSSStyleSheet.h>
 #include <LibWeb/CSS/CSSStyleValue.h>
 #include <LibWeb/CSS/CalculatedOr.h>
+#include <LibWeb/CSS/CharacterTypes.h>
 #include <LibWeb/CSS/EdgeRect.h>
 #include <LibWeb/CSS/MediaList.h>
 #include <LibWeb/CSS/Parser/Parser.h>
@@ -68,6 +68,7 @@
 #include <LibWeb/CSS/StyleValues/RectStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ResolutionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/RotationStyleValue.h>
+#include <LibWeb/CSS/StyleValues/ScaleStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ScrollbarGutterStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShadowStyleValue.h>
 #include <LibWeb/CSS/StyleValues/ShorthandStyleValue.h>
@@ -76,6 +77,7 @@
 #include <LibWeb/CSS/StyleValues/TimeStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransformationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/TransitionStyleValue.h>
+#include <LibWeb/CSS/StyleValues/TranslationStyleValue.h>
 #include <LibWeb/CSS/StyleValues/URLStyleValue.h>
 #include <LibWeb/CSS/StyleValues/UnresolvedStyleValue.h>
 #include <LibWeb/Dump.h>
@@ -156,7 +158,7 @@ CSSStyleSheet* Parser::parse_as_css_stylesheet(Optional<URL::URL> location)
     auto const& style_sheet = parse_a_stylesheet(m_token_stream, {});
 
     // Interpret all of the resulting top-level qualified rules as style rules, defined below.
-    GC::MarkedVector<CSSRule*> rules(m_context.realm().heap());
+    GC::RootVector<CSSRule*> rules(m_context.realm().heap());
     for (auto const& raw_rule : style_sheet.rules) {
         auto rule = convert_to_rule(raw_rule, Nested::No);
         // If any style rule is invalid, or any at-rule is not recognized or is invalid according to its grammar or context, it’s a parse error.
@@ -702,7 +704,7 @@ ComponentValue Parser::consume_a_component_value(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <{-token>
         // <[-token>
@@ -722,6 +724,52 @@ ComponentValue Parser::consume_a_component_value(TokenStream<T>& input)
         {
             // Consume a token from input and return the result.
             return ComponentValue { input.consume_a_token() };
+        }
+    }
+}
+
+template<>
+void Parser::consume_a_component_value_and_do_nothing<ComponentValue>(TokenStream<ComponentValue>& tokens)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // Note: This overload is called once tokens have already been converted into component values,
+    //       so we do not need to do the work in the more general overload.
+    (void)tokens.consume_a_token();
+}
+
+// 5.4.7. Consume a component value
+// https://drafts.csswg.org/css-syntax/#consume-component-value
+template<typename T>
+void Parser::consume_a_component_value_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a component value from a token stream input:
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <{-token>
+        // <[-token>
+        // <(-token>
+        if (token.is(Token::Type::OpenCurly) || token.is(Token::Type::OpenSquare) || token.is(Token::Type::OpenParen)) {
+            // Consume a simple block from input and return the result.
+            consume_a_simple_block_and_do_nothing(input);
+            return;
+        }
+
+        // <function-token>
+        if (token.is(Token::Type::Function)) {
+            // Consume a function from input and return the result.
+            consume_a_function_and_do_nothing(input);
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a token from input and return the result.
+            input.discard_a_token();
+            return;
         }
     }
 }
@@ -766,6 +814,8 @@ Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<T>
         }
     }
 }
+template Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<ComponentValue>& input, Optional<Token::Type> stop_token, Nested nested);
+template Vector<ComponentValue> Parser::consume_a_list_of_component_values(TokenStream<Token>& input, Optional<Token::Type> stop_token, Nested nested);
 
 // https://drafts.csswg.org/css-syntax/#consume-simple-block
 template<typename T>
@@ -774,11 +824,11 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
     // To consume a simple block from a token stream input:
 
     // Assert: the next token of input is <{-token>, <[-token>, or <(-token>.
-    auto& next = input.next_token();
+    auto const& next = input.next_token();
     VERIFY(next.is(Token::Type::OpenCurly) || next.is(Token::Type::OpenSquare) || next.is(Token::Type::OpenParen));
 
     // Let ending token be the mirror variant of the next token. (E.g. if it was called with <[-token>, the ending token is <]-token>.)
-    auto ending_token = ((Token)input.next_token()).mirror_variant();
+    auto ending_token = input.next_token().mirror_variant();
 
     // Let block be a new simple block with its associated token set to the next token and with its value initially set to an empty list.
     SimpleBlock block {
@@ -791,7 +841,7 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // ending token
@@ -806,6 +856,45 @@ SimpleBlock Parser::consume_a_simple_block(TokenStream<T>& input)
         {
             // Consume a component value from input and append the result to block’s value.
             block.value.empend(move(consume_a_component_value(input)));
+        }
+    }
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-simple-block
+template<typename T>
+void Parser::consume_a_simple_block_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a simple block from a token stream input:
+
+    // Assert: the next token of input is <{-token>, <[-token>, or <(-token>.
+    auto const& next = input.next_token();
+    VERIFY(next.is(Token::Type::OpenCurly) || next.is(Token::Type::OpenSquare) || next.is(Token::Type::OpenParen));
+
+    // Let ending token be the mirror variant of the next token. (E.g. if it was called with <[-token>, the ending token is <]-token>.)
+    auto ending_token = input.next_token().mirror_variant();
+
+    // Let block be a new simple block with its associated token set to the next token and with its value initially set to an empty list.
+
+    // Discard a token from input.
+    input.discard_a_token();
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <eof-token>
+        // ending token
+        if (token.is(Token::Type::EndOfFile) || token.is(ending_token)) {
+            // Discard a token from input. Return block.
+            input.discard_a_token();
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a component value from input and append the result to block’s value.
+            consume_a_component_value_and_do_nothing(input);
         }
     }
 }
@@ -830,7 +919,7 @@ Function Parser::consume_a_function(TokenStream<T>& input)
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // <)-token>
@@ -845,6 +934,40 @@ Function Parser::consume_a_function(TokenStream<T>& input)
         {
             // Consume a component value from input and append the result to function’s value.
             function.value.append(consume_a_component_value(input));
+        }
+    }
+}
+
+// https://drafts.csswg.org/css-syntax/#consume-function
+template<typename T>
+void Parser::consume_a_function_and_do_nothing(TokenStream<T>& input)
+{
+    // AD-HOC: To avoid unnecessairy allocations, we explicitly define a "do nothing" variant that discards the result immediately.
+    // To consume a function from a token stream input:
+
+    // Assert: The next token is a <function-token>.
+    VERIFY(input.next_token().is(Token::Type::Function));
+
+    // Consume a token from input, and let function be a new function with its name equal the returned token’s value,
+    // and a value set to an empty list.
+    input.discard_a_token();
+
+    // Process input:
+    for (;;) {
+        auto const& token = input.next_token();
+
+        // <eof-token>
+        // <)-token>
+        if (token.is(Token::Type::EndOfFile) || token.is(Token::Type::CloseParen)) {
+            // Discard a token from input. Return function.
+            input.discard_a_token();
+            return;
+        }
+
+        // anything else
+        {
+            // Consume a component value from input and append the result to function’s value.
+            consume_a_component_value_and_do_nothing(input);
         }
     }
 }
@@ -997,7 +1120,7 @@ void Parser::consume_the_remnants_of_a_bad_declaration(TokenStream<T>& input, Ne
 
     // Process input:
     for (;;) {
-        auto& token = input.next_token();
+        auto const& token = input.next_token();
 
         // <eof-token>
         // <semicolon-token>
@@ -1019,7 +1142,7 @@ void Parser::consume_the_remnants_of_a_bad_declaration(TokenStream<T>& input, Ne
         // anything else
         {
             // Consume a component value from input, and do nothing.
-            (void)consume_a_component_value(input);
+            consume_a_component_value_and_do_nothing(input);
             continue;
         }
     }
@@ -1790,7 +1913,7 @@ RefPtr<CustomIdentStyleValue> Parser::parse_custom_ident_value(TokenStream<Compo
     return CustomIdentStyleValue::create(custom_ident);
 }
 
-RefPtr<CSSMathValue> Parser::parse_calculated_value(ComponentValue const& component_value)
+RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const& component_value)
 {
     if (!component_value.is_function())
         return nullptr;
@@ -1801,11 +1924,11 @@ RefPtr<CSSMathValue> Parser::parse_calculated_value(ComponentValue const& compon
     if (!function_node)
         return nullptr;
 
-    auto function_type = function_node->determine_type(m_context.current_property_id());
+    auto function_type = function_node->numeric_type();
     if (!function_type.has_value())
         return nullptr;
 
-    return CSSMathValue::create(function_node.release_nonnull(), function_type.release_value());
+    return CalculatedStyleValue::create(function_node.release_nonnull(), function_type.release_value());
 }
 
 OwnPtr<CalculationNode> Parser::parse_a_calc_function_node(Function const& function)
@@ -1813,7 +1936,7 @@ OwnPtr<CalculationNode> Parser::parse_a_calc_function_node(Function const& funct
     if (function.name.equals_ignoring_ascii_case("calc"sv))
         return parse_a_calculation(function.value);
 
-    if (auto maybe_function = parse_math_function(m_context.current_property_id(), function))
+    if (auto maybe_function = parse_math_function(function))
         return maybe_function;
 
     return nullptr;
@@ -2574,7 +2697,7 @@ RefPtr<CSSStyleValue> Parser::parse_angle_value(TokenStream<ComponentValue>& tok
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_angle()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_angle())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_angle())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2587,7 +2710,7 @@ RefPtr<CSSStyleValue> Parser::parse_angle_percentage_value(TokenStream<Component
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_angle() || dimension_value->is_percentage()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_angle_percentage())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_angle_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2600,7 +2723,7 @@ RefPtr<CSSStyleValue> Parser::parse_flex_value(TokenStream<ComponentValue>& toke
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_flex()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_flex())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_flex())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2613,7 +2736,7 @@ RefPtr<CSSStyleValue> Parser::parse_frequency_value(TokenStream<ComponentValue>&
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_frequency()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_frequency())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_frequency())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2626,7 +2749,7 @@ RefPtr<CSSStyleValue> Parser::parse_frequency_percentage_value(TokenStream<Compo
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_frequency() || dimension_value->is_percentage()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_frequency_percentage())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_frequency_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2639,7 +2762,7 @@ RefPtr<CSSStyleValue> Parser::parse_length_value(TokenStream<ComponentValue>& to
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_length()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_length())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_length())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2652,7 +2775,7 @@ RefPtr<CSSStyleValue> Parser::parse_length_percentage_value(TokenStream<Componen
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_length() || dimension_value->is_percentage()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_length_percentage())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_length_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2665,7 +2788,7 @@ RefPtr<CSSStyleValue> Parser::parse_resolution_value(TokenStream<ComponentValue>
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_resolution()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_resolution())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_resolution())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2678,7 +2801,7 @@ RefPtr<CSSStyleValue> Parser::parse_time_value(TokenStream<ComponentValue>& toke
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_time()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_time())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_time())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2691,7 +2814,7 @@ RefPtr<CSSStyleValue> Parser::parse_time_percentage_value(TokenStream<ComponentV
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_time() || dimension_value->is_percentage()
-            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_time_percentage())) {
+            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_time_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2755,7 +2878,7 @@ RefPtr<CSSStyleValue> Parser::parse_rect_value(TokenStream<ComponentValue>& toke
             if (!maybe_length.has_value())
                 return nullptr;
             if (maybe_length.value().is_calculated()) {
-                dbgln("FIXME: Support calculated lengths in rect(): {}", maybe_length.value().calculated()->to_string());
+                dbgln("FIXME: Support calculated lengths in rect(): {}", maybe_length.value().calculated()->to_string(CSS::CSSStyleValue::SerializationMode::Normal));
                 return nullptr;
             }
             params.append(maybe_length.value().value());
@@ -2929,7 +3052,7 @@ RefPtr<CSSStyleValue> Parser::parse_rgb_color_value(TokenStream<ComponentValue>&
         // Verify we're all percentages or all numbers
         auto is_percentage = [](CSSStyleValue const& style_value) {
             return style_value.is_percentage()
-                || (style_value.is_math() && style_value.as_math().resolves_to_percentage());
+                || (style_value.is_calculated() && style_value.as_calculated().resolves_to_percentage());
         };
         bool red_is_percentage = is_percentage(*red);
         bool green_is_percentage = is_percentage(*green);
@@ -3334,17 +3457,17 @@ RefPtr<CSSStyleValue> Parser::parse_color_function(TokenStream<ComponentValue>& 
 
     auto const& color_space = maybe_color_space.token().ident();
 
-    auto c1 = parse_number_percentage_value(inner_tokens);
+    auto c1 = parse_number_percentage_none_value(inner_tokens);
     if (!c1)
         return {};
     inner_tokens.discard_whitespace();
 
-    auto c2 = parse_number_percentage_value(inner_tokens);
+    auto c2 = parse_number_percentage_none_value(inner_tokens);
     if (!c2)
         return {};
     inner_tokens.discard_whitespace();
 
-    auto c3 = parse_number_percentage_value(inner_tokens);
+    auto c3 = parse_number_percentage_none_value(inner_tokens);
     if (!c3)
         return {};
     inner_tokens.discard_whitespace();
@@ -3409,7 +3532,7 @@ RefPtr<CSSStyleValue> Parser::parse_color_value(TokenStream<ComponentValue>& tok
         auto color = Color::from_string(ident);
         if (color.has_value()) {
             transaction.commit();
-            return CSSColorValue::create_from_color(color.release_value());
+            return CSSColorValue::create_from_color(color.release_value(), ident);
         }
         // Otherwise, fall through to the hashless-hex-color case
     }
@@ -3789,12 +3912,6 @@ RefPtr<PositionStyleValue> Parser::parse_position_value(TokenStream<ComponentVal
         }
     };
 
-    auto make_edge_style_value = [](PositionEdge position_edge, bool is_horizontal) -> NonnullRefPtr<EdgeStyleValue> {
-        if (position_edge == PositionEdge::Center)
-            return EdgeStyleValue::create(is_horizontal ? PositionEdge::Left : PositionEdge::Top, Percentage { 50 });
-        return EdgeStyleValue::create(position_edge, Length::make_px(0));
-    };
-
     // <position> = [
     //   [ left | center | right | top | bottom | <length-percentage> ]
     // |
@@ -3821,21 +3938,21 @@ RefPtr<PositionStyleValue> Parser::parse_position_value(TokenStream<ComponentVal
 
             // [ left | right ]
             if (is_horizontal(edge, false))
-                return PositionStyleValue::create(make_edge_style_value(edge, true), make_edge_style_value(PositionEdge::Center, false));
+                return PositionStyleValue::create(EdgeStyleValue::create(edge, {}), EdgeStyleValue::create(PositionEdge::Center, {}));
 
             // [ top | bottom ]
             if (is_vertical(edge, false))
-                return PositionStyleValue::create(make_edge_style_value(PositionEdge::Center, true), make_edge_style_value(edge, false));
+                return PositionStyleValue::create(EdgeStyleValue::create(PositionEdge::Center, {}), EdgeStyleValue::create(edge, {}));
 
             // [ center ]
             VERIFY(edge == PositionEdge::Center);
-            return PositionStyleValue::create(make_edge_style_value(PositionEdge::Center, true), make_edge_style_value(PositionEdge::Center, false));
+            return PositionStyleValue::create(EdgeStyleValue::create(PositionEdge::Center, {}), EdgeStyleValue::create(PositionEdge::Center, {}));
         }
 
         // [ <length-percentage> ]
         if (auto maybe_percentage = parse_length_percentage(token); maybe_percentage.has_value()) {
             transaction.commit();
-            return PositionStyleValue::create(EdgeStyleValue::create(PositionEdge::Left, *maybe_percentage), make_edge_style_value(PositionEdge::Center, false));
+            return PositionStyleValue::create(EdgeStyleValue::create({}, *maybe_percentage), EdgeStyleValue::create(PositionEdge::Center, {}));
         }
 
         return nullptr;
@@ -3870,7 +3987,7 @@ RefPtr<PositionStyleValue> Parser::parse_position_value(TokenStream<ComponentVal
         // [ left | center | right ] [ top | bottom | center ]
         if (is_horizontal(first_edge, true) && is_vertical(second_edge, true)) {
             transaction.commit();
-            return PositionStyleValue::create(make_edge_style_value(first_edge, true), make_edge_style_value(second_edge, false));
+            return PositionStyleValue::create(EdgeStyleValue::create(first_edge, {}), EdgeStyleValue::create(second_edge, {}));
         }
 
         return nullptr;
@@ -3890,14 +4007,14 @@ RefPtr<PositionStyleValue> Parser::parse_position_value(TokenStream<ComponentVal
                 bool valid = as_horizontal ? is_horizontal(position, true) : is_vertical(position, true);
                 if (!valid)
                     return nullptr;
-                return make_edge_style_value(position, as_horizontal);
+                return EdgeStyleValue::create(position, {});
             }
 
             auto maybe_length = parse_length_percentage(token);
             if (!maybe_length.has_value())
                 return nullptr;
 
-            return EdgeStyleValue::create(as_horizontal ? PositionEdge::Left : PositionEdge::Top, maybe_length.release_value());
+            return EdgeStyleValue::create({}, maybe_length);
         };
 
         // [ left | center | right | <length-percentage> ]
@@ -4033,15 +4150,15 @@ RefPtr<PositionStyleValue> Parser::parse_position_value(TokenStream<ComponentVal
         if (!is_vertical(group2.position, true))
             return nullptr;
 
-        auto to_style_value = [&](PositionAndMaybeLength const& group, bool is_horizontal) -> NonnullRefPtr<EdgeStyleValue> {
+        auto to_style_value = [&](PositionAndMaybeLength const& group) -> NonnullRefPtr<EdgeStyleValue> {
             if (group.position == PositionEdge::Center)
-                return EdgeStyleValue::create(is_horizontal ? PositionEdge::Left : PositionEdge::Top, Percentage { 50 });
+                return EdgeStyleValue::create(PositionEdge::Center, {});
 
-            return EdgeStyleValue::create(group.position, group.length.value_or(Length::make_px(0)));
+            return EdgeStyleValue::create(group.position, group.length);
         };
 
         transaction.commit();
-        return PositionStyleValue::create(to_style_value(group1, true), to_style_value(group2, false));
+        return PositionStyleValue::create(to_style_value(group1), to_style_value(group2));
     };
 
     // Note: The alternatives must be attempted in this order since shorter alternatives can match a prefix of longer ones.
@@ -4182,14 +4299,14 @@ RefPtr<CSSStyleValue> Parser::parse_background_value(TokenStream<ComponentValue>
     StyleValueVector background_origins;
     RefPtr<CSSStyleValue> background_color;
 
-    auto initial_background_image = property_initial_value(m_context.realm(), PropertyID::BackgroundImage);
-    auto initial_background_position = property_initial_value(m_context.realm(), PropertyID::BackgroundPosition);
-    auto initial_background_size = property_initial_value(m_context.realm(), PropertyID::BackgroundSize);
-    auto initial_background_repeat = property_initial_value(m_context.realm(), PropertyID::BackgroundRepeat);
-    auto initial_background_attachment = property_initial_value(m_context.realm(), PropertyID::BackgroundAttachment);
-    auto initial_background_clip = property_initial_value(m_context.realm(), PropertyID::BackgroundClip);
-    auto initial_background_origin = property_initial_value(m_context.realm(), PropertyID::BackgroundOrigin);
-    auto initial_background_color = property_initial_value(m_context.realm(), PropertyID::BackgroundColor);
+    auto initial_background_image = property_initial_value(PropertyID::BackgroundImage);
+    auto initial_background_position = property_initial_value(PropertyID::BackgroundPosition);
+    auto initial_background_size = property_initial_value(PropertyID::BackgroundSize);
+    auto initial_background_repeat = property_initial_value(PropertyID::BackgroundRepeat);
+    auto initial_background_attachment = property_initial_value(PropertyID::BackgroundAttachment);
+    auto initial_background_clip = property_initial_value(PropertyID::BackgroundClip);
+    auto initial_background_origin = property_initial_value(PropertyID::BackgroundOrigin);
+    auto initial_background_color = property_initial_value(PropertyID::BackgroundColor);
 
     // Per-layer values
     RefPtr<CSSStyleValue> background_image;
@@ -4396,23 +4513,14 @@ static Optional<LengthPercentage> style_value_to_length_percentage(auto value)
         return LengthPercentage { value->as_percentage().percentage() };
     if (value->is_length())
         return LengthPercentage { value->as_length().length() };
-    if (value->is_math())
-        return LengthPercentage { value->as_math() };
+    if (value->is_calculated())
+        return LengthPercentage { value->as_calculated() };
     return {};
 }
 
 RefPtr<CSSStyleValue> Parser::parse_single_background_position_x_or_y_value(TokenStream<ComponentValue>& tokens, PropertyID property)
 {
-    PositionEdge relative_edge {};
-    if (property == PropertyID::BackgroundPositionX) {
-        // [ center | [ [ left | right | x-start | x-end ]? <length-percentage>? ]! ]#
-        relative_edge = PositionEdge::Left;
-    } else if (property == PropertyID::BackgroundPositionY) {
-        // [ center | [ [ top | bottom | y-start | y-end ]? <length-percentage>? ]! ]#
-        relative_edge = PositionEdge::Top;
-    } else {
-        VERIFY_NOT_REACHED();
-    }
+    Optional<PositionEdge> relative_edge {};
 
     auto transaction = tokens.begin_transaction();
     if (!tokens.has_next_token())
@@ -4426,10 +4534,10 @@ RefPtr<CSSStyleValue> Parser::parse_single_background_position_x_or_y_value(Toke
         auto keyword = value->to_keyword();
         if (keyword == Keyword::Center) {
             transaction.commit();
-            return EdgeStyleValue::create(relative_edge, Percentage { 50 });
+            return EdgeStyleValue::create(PositionEdge::Center, {});
         }
         if (auto edge = keyword_to_position_edge(keyword); edge.has_value()) {
-            relative_edge = *edge;
+            relative_edge = edge;
         } else {
             return nullptr;
         }
@@ -4437,7 +4545,7 @@ RefPtr<CSSStyleValue> Parser::parse_single_background_position_x_or_y_value(Toke
             value = parse_css_value_for_property(property, tokens);
             if (!value) {
                 transaction.commit();
-                return EdgeStyleValue::create(relative_edge, Length::make_px(0));
+                return EdgeStyleValue::create(relative_edge, {});
             }
         }
     }
@@ -4448,9 +4556,21 @@ RefPtr<CSSStyleValue> Parser::parse_single_background_position_x_or_y_value(Toke
         return EdgeStyleValue::create(relative_edge, *offset);
     }
 
+    if (!relative_edge.has_value()) {
+        if (property == PropertyID::BackgroundPositionX) {
+            // [ center | [ [ left | right | x-start | x-end ]? <length-percentage>? ]! ]#
+            relative_edge = PositionEdge::Left;
+        } else if (property == PropertyID::BackgroundPositionY) {
+            // [ center | [ [ top | bottom | y-start | y-end ]? <length-percentage>? ]! ]#
+            relative_edge = PositionEdge::Top;
+        } else {
+            VERIFY_NOT_REACHED();
+        }
+    }
+
     // If no offset is provided create this element but with an offset of default value of zero
     transaction.commit();
-    return EdgeStyleValue::create(relative_edge, Length::make_px(0));
+    return EdgeStyleValue::create(relative_edge, {});
 }
 
 RefPtr<CSSStyleValue> Parser::parse_single_background_repeat_value(TokenStream<ComponentValue>& tokens)
@@ -4524,8 +4644,8 @@ RefPtr<CSSStyleValue> Parser::parse_single_background_size_value(TokenStream<Com
             return LengthPercentage { style_value.as_percentage().percentage() };
         if (style_value.is_length())
             return LengthPercentage { style_value.as_length().length() };
-        if (style_value.is_math())
-            return LengthPercentage { style_value.as_math() };
+        if (style_value.is_calculated())
+            return LengthPercentage { style_value.as_calculated() };
         return {};
     };
 
@@ -4626,11 +4746,11 @@ RefPtr<CSSStyleValue> Parser::parse_border_value(PropertyID property_id, TokenSt
     }
 
     if (!border_width)
-        border_width = property_initial_value(m_context.realm(), width_property);
+        border_width = property_initial_value(width_property);
     if (!border_style)
-        border_style = property_initial_value(m_context.realm(), style_property);
+        border_style = property_initial_value(style_property);
     if (!border_color)
-        border_color = property_initial_value(m_context.realm(), color_property);
+        border_color = property_initial_value(color_property);
 
     transaction.commit();
     return ShorthandStyleValue::create(property_id,
@@ -4806,9 +4926,9 @@ RefPtr<CSSStyleValue> Parser::parse_columns_value(TokenStream<ComponentValue>& t
     }
 
     if (!column_count)
-        column_count = property_initial_value(m_context.realm(), PropertyID::ColumnCount);
+        column_count = property_initial_value(PropertyID::ColumnCount);
     if (!column_width)
-        column_width = property_initial_value(m_context.realm(), PropertyID::ColumnWidth);
+        column_width = property_initial_value(PropertyID::ColumnWidth);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::Columns,
@@ -5015,6 +5135,38 @@ RefPtr<CSSStyleValue> Parser::parse_rotate_value(TokenStream<ComponentValue>& to
     }
 
     return nullptr;
+}
+
+RefPtr<CSSStyleValue> Parser::parse_stroke_dasharray_value(TokenStream<ComponentValue>& tokens)
+{
+    // https://svgwg.org/svg2-draft/painting.html#StrokeDashing
+    // Value: none | <dasharray>
+    if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
+        return none;
+
+    // https://svgwg.org/svg2-draft/painting.html#DataTypeDasharray
+    // <dasharray> = [ [ <length-percentage> | <number> ]+ ]#
+    Vector<ValueComparingNonnullRefPtr<CSSStyleValue const>> dashes;
+    while (tokens.has_next_token()) {
+        tokens.discard_whitespace();
+
+        // A <dasharray> is a list of comma and/or white space separated <number> or <length-percentage> values. A <number> value represents a value in user units.
+        auto value = parse_number_value(tokens);
+        if (value) {
+            dashes.append(value.release_nonnull());
+        } else {
+            auto value = parse_length_percentage_value(tokens);
+            if (!value)
+                return {};
+            dashes.append(value.release_nonnull());
+        }
+
+        tokens.discard_whitespace();
+        if (tokens.has_next_token() && tokens.next_token().is(Token::Type::Comma))
+            tokens.discard_a_token();
+    }
+
+    return StyleValueList::create(move(dashes), StyleValueList::Separator::Comma);
 }
 
 RefPtr<CSSStyleValue> Parser::parse_content_value(TokenStream<ComponentValue>& tokens)
@@ -5273,7 +5425,7 @@ RefPtr<CSSStyleValue> Parser::parse_filter_value_list_value(TokenStream<Componen
 
     auto filter_token_to_operation = [&](auto filter) {
         VERIFY(to_underlying(filter) < to_underlying(FilterToken::Blur));
-        return static_cast<FilterOperation::Color::Type>(filter);
+        return static_cast<Gfx::ColorFilter::Type>(filter);
     };
 
     auto parse_filter_function_name = [&](auto name) -> Optional<FilterToken> {
@@ -5494,9 +5646,9 @@ RefPtr<CSSStyleValue> Parser::parse_flex_shorthand_value(TokenStream<ComponentVa
     }
 
     if (!flex_grow)
-        flex_grow = property_initial_value(m_context.realm(), PropertyID::FlexGrow);
+        flex_grow = property_initial_value(PropertyID::FlexGrow);
     if (!flex_shrink)
-        flex_shrink = property_initial_value(m_context.realm(), PropertyID::FlexShrink);
+        flex_shrink = property_initial_value(PropertyID::FlexShrink);
     if (!flex_basis) {
         // NOTE: The spec says that flex-basis should be 0 here, but other engines currently use 0%.
         // https://github.com/w3c/csswg-drafts/issues/5742
@@ -5536,9 +5688,9 @@ RefPtr<CSSStyleValue> Parser::parse_flex_flow_value(TokenStream<ComponentValue>&
     }
 
     if (!flex_direction)
-        flex_direction = property_initial_value(m_context.realm(), PropertyID::FlexDirection);
+        flex_direction = property_initial_value(PropertyID::FlexDirection);
     if (!flex_wrap)
-        flex_wrap = property_initial_value(m_context.realm(), PropertyID::FlexWrap);
+        flex_wrap = property_initial_value(PropertyID::FlexWrap);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::FlexFlow,
@@ -5659,15 +5811,15 @@ RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& toke
         return nullptr;
 
     if (!font_style)
-        font_style = property_initial_value(m_context.realm(), PropertyID::FontStyle);
+        font_style = property_initial_value(PropertyID::FontStyle);
     if (!font_variant)
-        font_variant = property_initial_value(m_context.realm(), PropertyID::FontVariant);
+        font_variant = property_initial_value(PropertyID::FontVariant);
     if (!font_weight)
-        font_weight = property_initial_value(m_context.realm(), PropertyID::FontWeight);
+        font_weight = property_initial_value(PropertyID::FontWeight);
     if (!font_width)
-        font_width = property_initial_value(m_context.realm(), PropertyID::FontWidth);
+        font_width = property_initial_value(PropertyID::FontWidth);
     if (!line_height)
-        line_height = property_initial_value(m_context.realm(), PropertyID::LineHeight);
+        line_height = property_initial_value(PropertyID::LineHeight);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::Font,
@@ -5777,7 +5929,7 @@ RefPtr<CSSStyleValue> Parser::parse_font_language_override_value(TokenStream<Com
         }
         transaction.commit();
         if (length < 4)
-            return StringStyleValue::create(MUST(String::formatted("{<4}", string_value)));
+            return StringStyleValue::create(MUST(String::formatted("{:<4}", string_value)));
         return string;
     }
 
@@ -5903,6 +6055,459 @@ RefPtr<CSSStyleValue> Parser::parse_font_variation_settings_value(TokenStream<Co
     return StyleValueList::create(move(axis_tags), StyleValueList::Separator::Comma);
 }
 
+RefPtr<CSSStyleValue> Parser::parse_font_variant(TokenStream<ComponentValue>& tokens)
+{
+    // 6.11 https://drafts.csswg.org/css-fonts/#propdef-font-variant
+    // normal | none |
+    // [ [ <common-lig-values> || <discretionary-lig-values> || <historical-lig-values> || <contextual-alt-values> ]
+    // || [ small-caps | all-small-caps | petite-caps | all-petite-caps | unicase | titling-caps ] ||
+    // [ FIXME: stylistic(<feature-value-name>) ||
+    // historical-forms ||
+    // FIXME: styleset(<feature-value-name>#) ||
+    // FIXME: character-variant(<feature-value-name>#) ||
+    // FIXME: swash(<feature-value-name>) ||
+    // FIXME: ornaments(<feature-value-name>) ||
+    // FIXME: annotation(<feature-value-name>) ] ||
+    // [ <numeric-figure-values> || <numeric-spacing-values> || <numeric-fraction-values> ||
+    // ordinal || slashed-zero ] || [ <east-asian-variant-values> || <east-asian-width-values> || ruby ] ||
+    // [ sub | super ] || [ text | emoji | unicode ] ]
+
+    bool has_common_ligatures = false;
+    bool has_discretionary_ligatures = false;
+    bool has_historical_ligatures = false;
+    bool has_contextual = false;
+    bool has_numeric_figures = false;
+    bool has_numeric_spacing = false;
+    bool has_numeric_fractions = false;
+    bool has_numeric_ordinals = false;
+    bool has_numeric_slashed_zero = false;
+    bool has_east_asian_variant = false;
+    bool has_east_asian_width = false;
+    bool has_east_asian_ruby = false;
+    RefPtr<CSSStyleValue> alternates_value {};
+    RefPtr<CSSStyleValue> caps_value {};
+    RefPtr<CSSStyleValue> emoji_value {};
+    RefPtr<CSSStyleValue> position_value {};
+    StyleValueVector east_asian_values;
+    StyleValueVector ligatures_values;
+    StyleValueVector numeric_values;
+
+    if (auto parsed_value = parse_all_as_single_keyword_value(tokens, Keyword::Normal)) {
+        // normal, do nothing
+    } else if (auto parsed_value = parse_all_as_single_keyword_value(tokens, Keyword::None)) {
+        // none
+        ligatures_values.append(parsed_value.release_nonnull());
+    } else {
+
+        while (tokens.has_next_token()) {
+            auto maybe_value = parse_keyword_value(tokens);
+            if (!maybe_value)
+                break;
+            auto value = maybe_value.release_nonnull();
+            if (!value->is_keyword()) {
+                // FIXME: alternate functions such as stylistic()
+                return nullptr;
+            }
+            auto keyword = value->to_keyword();
+
+            switch (keyword) {
+            // <common-lig-values>       = [ common-ligatures | no-common-ligatures ]
+            case Keyword::CommonLigatures:
+            case Keyword::NoCommonLigatures:
+                if (has_common_ligatures)
+                    return nullptr;
+                ligatures_values.append(move(value));
+                has_common_ligatures = true;
+                break;
+            // <discretionary-lig-values> = [ discretionary-ligatures | no-discretionary-ligatures ]
+            case Keyword::DiscretionaryLigatures:
+            case Keyword::NoDiscretionaryLigatures:
+                if (has_discretionary_ligatures)
+                    return nullptr;
+                ligatures_values.append(move(value));
+                has_discretionary_ligatures = true;
+                break;
+            // <historical-lig-values>   = [ historical-ligatures | no-historical-ligatures ]
+            case Keyword::HistoricalLigatures:
+            case Keyword::NoHistoricalLigatures:
+                if (has_historical_ligatures)
+                    return nullptr;
+                ligatures_values.append(move(value));
+                has_historical_ligatures = true;
+                break;
+            // <contextual-alt-values>   = [ contextual | no-contextual ]
+            case Keyword::Contextual:
+            case Keyword::NoContextual:
+                if (has_contextual)
+                    return nullptr;
+                ligatures_values.append(move(value));
+                has_contextual = true;
+                break;
+            // historical-forms
+            case Keyword::HistoricalForms:
+                if (alternates_value != nullptr)
+                    return nullptr;
+                alternates_value = value.ptr();
+                break;
+            // [ small-caps | all-small-caps | petite-caps | all-petite-caps | unicase | titling-caps ]
+            case Keyword::SmallCaps:
+            case Keyword::AllSmallCaps:
+            case Keyword::PetiteCaps:
+            case Keyword::AllPetiteCaps:
+            case Keyword::Unicase:
+            case Keyword::TitlingCaps:
+                if (caps_value != nullptr)
+                    return nullptr;
+                caps_value = value.ptr();
+                break;
+            // <numeric-figure-values>       = [ lining-nums | oldstyle-nums ]
+            case Keyword::LiningNums:
+            case Keyword::OldstyleNums:
+                if (has_numeric_figures)
+                    return nullptr;
+                numeric_values.append(move(value));
+                has_numeric_figures = true;
+                break;
+            // <numeric-spacing-values>      = [ proportional-nums | tabular-nums ]
+            case Keyword::ProportionalNums:
+            case Keyword::TabularNums:
+                if (has_numeric_spacing)
+                    return nullptr;
+                numeric_values.append(move(value));
+                has_numeric_spacing = true;
+                break;
+            // <numeric-fraction-values>     = [ diagonal-fractions | stacked-fractions]
+            case Keyword::DiagonalFractions:
+            case Keyword::StackedFractions:
+                if (has_numeric_fractions)
+                    return nullptr;
+                numeric_values.append(move(value));
+                has_numeric_fractions = true;
+                break;
+            // ordinal
+            case Keyword::Ordinal:
+                if (has_numeric_ordinals)
+                    return nullptr;
+                numeric_values.append(move(value));
+                has_numeric_ordinals = true;
+                break;
+            case Keyword::SlashedZero:
+                if (has_numeric_slashed_zero)
+                    return nullptr;
+                numeric_values.append(move(value));
+                has_numeric_slashed_zero = true;
+                break;
+            // <east-asian-variant-values> = [ jis78 | jis83 | jis90 | jis04 | simplified | traditional ]
+            case Keyword::Jis78:
+            case Keyword::Jis83:
+            case Keyword::Jis90:
+            case Keyword::Jis04:
+            case Keyword::Simplified:
+            case Keyword::Traditional:
+                if (has_east_asian_variant)
+                    return nullptr;
+                east_asian_values.append(move(value));
+                has_east_asian_variant = true;
+                break;
+            // <east-asian-width-values>   = [ full-width | proportional-width ]
+            case Keyword::FullWidth:
+            case Keyword::ProportionalWidth:
+                if (has_east_asian_width)
+                    return nullptr;
+                east_asian_values.append(move(value));
+                has_east_asian_width = true;
+                break;
+            // ruby
+            case Keyword::Ruby:
+                if (has_east_asian_ruby)
+                    return nullptr;
+                east_asian_values.append(move(value));
+                has_east_asian_ruby = true;
+                break;
+            // text | emoji | unicode
+            case Keyword::Text:
+            case Keyword::Emoji:
+            case Keyword::Unicode:
+                if (emoji_value != nullptr)
+                    return nullptr;
+                emoji_value = value.ptr();
+                break;
+            // sub | super
+            case Keyword::Sub:
+            case Keyword::Super:
+                if (position_value != nullptr)
+                    return nullptr;
+                position_value = value.ptr();
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    if (ligatures_values.is_empty())
+        ligatures_values.append(CSSKeywordValue::create(Keyword::Normal));
+    if (numeric_values.is_empty())
+        numeric_values.append(CSSKeywordValue::create(Keyword::Normal));
+    if (east_asian_values.is_empty())
+        east_asian_values.append(CSSKeywordValue::create(Keyword::Normal));
+
+    return ShorthandStyleValue::create(PropertyID::FontVariant,
+        { PropertyID::FontVariantAlternates,
+            PropertyID::FontVariantCaps,
+            PropertyID::FontVariantEastAsian,
+            PropertyID::FontVariantEmoji,
+            PropertyID::FontVariantLigatures,
+            PropertyID::FontVariantNumeric,
+            PropertyID::FontVariantPosition },
+        {
+            alternates_value == nullptr ? CSSKeywordValue::create(Keyword::Normal) : alternates_value.release_nonnull(),
+            caps_value == nullptr ? CSSKeywordValue::create(Keyword::Normal) : caps_value.release_nonnull(),
+            StyleValueList::create(move(east_asian_values), StyleValueList::Separator::Space),
+            emoji_value == nullptr ? CSSKeywordValue::create(Keyword::Normal) : emoji_value.release_nonnull(),
+            StyleValueList::create(move(ligatures_values), StyleValueList::Separator::Space),
+            StyleValueList::create(move(numeric_values), StyleValueList::Separator::Space),
+            position_value == nullptr ? CSSKeywordValue::create(Keyword::Normal) : position_value.release_nonnull(),
+        });
+}
+
+RefPtr<CSSStyleValue> Parser::parse_font_variant_alternates_value(TokenStream<ComponentValue>& tokens)
+{
+    // 6.8 https://drafts.csswg.org/css-fonts/#font-variant-alternates-prop
+    // normal |
+    // [ FIXME: stylistic(<feature-value-name>) ||
+    //   historical-forms ||
+    //   FIXME: styleset(<feature-value-name>#) ||
+    //   FIXME: character-variant(<feature-value-name>#) ||
+    //   FIXME: swash(<feature-value-name>) ||
+    //   FIXME: ornaments(<feature-value-name>) ||
+    //   FIXME: annotation(<feature-value-name>) ]
+
+    // normal
+    if (auto normal = parse_all_as_single_keyword_value(tokens, Keyword::Normal))
+        return normal;
+
+    // historical-forms
+    // FIXME: Support this together with other values when we parse them.
+    if (auto historical_forms = parse_all_as_single_keyword_value(tokens, Keyword::HistoricalForms))
+        return historical_forms;
+
+    dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @font-variant-alternate: parsing {} not implemented.", tokens.next_token().to_debug_string());
+    return nullptr;
+}
+
+// FIXME: This should not be needed, however http://wpt.live/css/css-fonts/font-variant-caps.html fails without it
+RefPtr<CSSStyleValue> Parser::parse_font_variant_caps_value(TokenStream<ComponentValue>& tokens)
+{
+    // https://drafts.csswg.org/css-fonts/#propdef-font-variant-caps
+    // normal | small-caps | all-small-caps | petite-caps | all-petite-caps | unicase | titling-caps
+
+    bool has_token = false;
+    while (tokens.has_next_token()) {
+        if (has_token)
+            break;
+        auto maybe_value = parse_keyword_value(tokens);
+        if (!maybe_value)
+            break;
+        auto value = maybe_value.release_nonnull();
+        auto font_variant = keyword_to_font_variant_caps(value->to_keyword());
+        if (font_variant.has_value()) {
+            return value;
+        }
+        break;
+    }
+
+    return nullptr;
+}
+
+RefPtr<CSSStyleValue> Parser::parse_font_variant_east_asian_value(TokenStream<ComponentValue>& tokens)
+{
+    // 6.10 https://drafts.csswg.org/css-fonts/#propdef-font-variant-east-asian
+    // normal | [ <east-asian-variant-values> || <east-asian-width-values> || ruby ]
+    // <east-asian-variant-values> = [ jis78 | jis83 | jis90 | jis04 | simplified | traditional ]
+    // <east-asian-width-values>   = [ full-width | proportional-width ]
+
+    StyleValueVector value_list;
+    bool has_ruby = false;
+    bool has_variant = false;
+    bool has_width = false;
+
+    // normal | ...
+    if (auto normal = parse_all_as_single_keyword_value(tokens, Keyword::Normal)) {
+        value_list.append(normal.release_nonnull());
+    } else {
+        while (tokens.has_next_token()) {
+            auto maybe_value = parse_keyword_value(tokens);
+            if (!maybe_value)
+                break;
+            auto value = maybe_value.release_nonnull();
+            auto font_variant = keyword_to_font_variant_east_asian(value->to_keyword());
+            if (!font_variant.has_value()) {
+                return nullptr;
+            }
+            auto keyword = value->to_keyword();
+            if (keyword == Keyword::Ruby) {
+                if (has_ruby)
+                    return nullptr;
+                has_ruby = true;
+            } else if (keyword == Keyword::FullWidth || keyword == Keyword::ProportionalWidth) {
+                if (has_width)
+                    return nullptr;
+                has_width = true;
+            } else {
+                if (has_variant)
+                    return nullptr;
+                has_variant = true;
+            }
+            value_list.append(move(value));
+        }
+    }
+    if (value_list.is_empty())
+        return nullptr;
+
+    return StyleValueList::create(move(value_list), StyleValueList::Separator::Space);
+}
+
+RefPtr<CSSStyleValue> Parser::parse_font_variant_ligatures_value(TokenStream<ComponentValue>& tokens)
+{
+    // 6.4 https://drafts.csswg.org/css-fonts/#propdef-font-variant-ligatures
+    // normal | none | [ <common-lig-values> || <discretionary-lig-values> || <historical-lig-values> || <contextual-alt-values> ]
+    // <common-lig-values>       = [ common-ligatures | no-common-ligatures ]
+    // <discretionary-lig-values> = [ discretionary-ligatures | no-discretionary-ligatures ]
+    // <historical-lig-values>   = [ historical-ligatures | no-historical-ligatures ]
+    // <contextual-alt-values>   = [ contextual | no-contextual ]
+
+    StyleValueVector value_list;
+    bool has_common_ligatures = false;
+    bool has_discretionary_ligatures = false;
+    bool has_historical_ligatures = false;
+    bool has_contextual = false;
+
+    // normal | ...
+    if (auto normal = parse_all_as_single_keyword_value(tokens, Keyword::Normal)) {
+        value_list.append(normal.release_nonnull());
+        // none | ...
+    } else if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None)) {
+        value_list.append(none.release_nonnull());
+    } else {
+        while (tokens.has_next_token()) {
+            auto maybe_value = parse_keyword_value(tokens);
+            if (!maybe_value)
+                break;
+            auto value = maybe_value.release_nonnull();
+            switch (value->to_keyword()) {
+            // <common-lig-values>       = [ common-ligatures | no-common-ligatures ]
+            case Keyword::CommonLigatures:
+            case Keyword::NoCommonLigatures:
+                if (has_common_ligatures)
+                    return nullptr;
+                has_common_ligatures = true;
+                break;
+            // <discretionary-lig-values> = [ discretionary-ligatures | no-discretionary-ligatures ]
+            case Keyword::DiscretionaryLigatures:
+            case Keyword::NoDiscretionaryLigatures:
+                if (has_discretionary_ligatures)
+                    return nullptr;
+                has_discretionary_ligatures = true;
+                break;
+            // <historical-lig-values> = [ historical-ligatures | no-historical-ligatures ]
+            case Keyword::HistoricalLigatures:
+            case Keyword::NoHistoricalLigatures:
+                if (has_historical_ligatures)
+                    return nullptr;
+                has_historical_ligatures = true;
+                break;
+            // <contextual-alt-values> = [ contextual | no-contextual ]
+            case Keyword::Contextual:
+            case Keyword::NoContextual:
+                if (has_contextual)
+                    return nullptr;
+                has_contextual = true;
+                break;
+            default:
+                return nullptr;
+            }
+            value_list.append(move(value));
+        }
+    }
+
+    if (value_list.is_empty())
+        return nullptr;
+
+    return StyleValueList::create(move(value_list), StyleValueList::Separator::Space);
+}
+
+RefPtr<CSSStyleValue> Parser::parse_font_variant_numeric_value(TokenStream<ComponentValue>& tokens)
+{
+    // 6.7 https://drafts.csswg.org/css-fonts/#propdef-font-variant-numeric
+    // normal | [ <numeric-figure-values> || <numeric-spacing-values> || <numeric-fraction-values> || ordinal || slashed-zero]
+    // <numeric-figure-values>       = [ lining-nums | oldstyle-nums ]
+    // <numeric-spacing-values>      = [ proportional-nums | tabular-nums ]
+    // <numeric-fraction-values>     = [ diagonal-fractions | stacked-fractions ]
+
+    StyleValueVector value_list;
+    bool has_figures = false;
+    bool has_spacing = false;
+    bool has_fractions = false;
+    bool has_ordinals = false;
+    bool has_slashed_zero = false;
+
+    // normal | ...
+    if (auto normal = parse_all_as_single_keyword_value(tokens, Keyword::Normal)) {
+        value_list.append(normal.release_nonnull());
+    } else {
+        while (tokens.has_next_token()) {
+            auto maybe_value = parse_keyword_value(tokens);
+            if (!maybe_value)
+                break;
+            auto value = maybe_value.release_nonnull();
+            switch (value->to_keyword()) {
+            // ... || ordinal
+            case Keyword::Ordinal:
+                if (has_ordinals)
+                    return nullptr;
+                has_ordinals = true;
+                break;
+            // ... || slashed-zero
+            case Keyword::SlashedZero:
+                if (has_slashed_zero)
+                    return nullptr;
+                has_slashed_zero = true;
+                break;
+            // <numeric-figure-values> = [ lining-nums | oldstyle-nums ]
+            case Keyword::LiningNums:
+            case Keyword::OldstyleNums:
+                if (has_figures)
+                    return nullptr;
+                has_figures = true;
+                break;
+            // <numeric-spacing-values> = [ proportional-nums | tabular-nums ]
+            case Keyword::ProportionalNums:
+            case Keyword::TabularNums:
+                if (has_spacing)
+                    return nullptr;
+                has_spacing = true;
+                break;
+            // <numeric-fraction-values> = [ diagonal-fractions | stacked-fractions ]
+            case Keyword::DiagonalFractions:
+            case Keyword::StackedFractions:
+                if (has_fractions)
+                    return nullptr;
+                has_fractions = true;
+                break;
+            default:
+                return nullptr;
+            }
+            value_list.append(value);
+        }
+    }
+
+    if (value_list.is_empty())
+        return nullptr;
+
+    return StyleValueList::create(move(value_list), StyleValueList::Separator::Space);
+}
+
 Vector<ParsedFontFace::Source> Parser::parse_as_font_face_src()
 {
     return parse_font_face_src(m_token_stream);
@@ -6003,6 +6608,11 @@ Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<T>& compo
 template Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<Token>& component_values);
 template Vector<ParsedFontFace::Source> Parser::parse_font_face_src(TokenStream<ComponentValue>& component_values);
 
+Vector<ComponentValue> Parser::parse_as_list_of_component_values()
+{
+    return parse_a_list_of_component_values(m_token_stream);
+}
+
 RefPtr<CSSStyleValue> Parser::parse_list_style_value(TokenStream<ComponentValue>& tokens)
 {
     RefPtr<CSSStyleValue> list_position;
@@ -6068,11 +6678,11 @@ RefPtr<CSSStyleValue> Parser::parse_list_style_value(TokenStream<ComponentValue>
     }
 
     if (!list_position)
-        list_position = property_initial_value(m_context.realm(), PropertyID::ListStylePosition);
+        list_position = property_initial_value(PropertyID::ListStylePosition);
     if (!list_image)
-        list_image = property_initial_value(m_context.realm(), PropertyID::ListStyleImage);
+        list_image = property_initial_value(PropertyID::ListStyleImage);
     if (!list_type)
-        list_type = property_initial_value(m_context.realm(), PropertyID::ListStyleType);
+        list_type = property_initial_value(PropertyID::ListStyleType);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::ListStyle,
@@ -6302,13 +6912,13 @@ RefPtr<CSSStyleValue> Parser::parse_text_decoration_value(TokenStream<ComponentV
     }
 
     if (!decoration_line)
-        decoration_line = property_initial_value(m_context.realm(), PropertyID::TextDecorationLine);
+        decoration_line = property_initial_value(PropertyID::TextDecorationLine);
     if (!decoration_thickness)
-        decoration_thickness = property_initial_value(m_context.realm(), PropertyID::TextDecorationThickness);
+        decoration_thickness = property_initial_value(PropertyID::TextDecorationThickness);
     if (!decoration_style)
-        decoration_style = property_initial_value(m_context.realm(), PropertyID::TextDecorationStyle);
+        decoration_style = property_initial_value(PropertyID::TextDecorationStyle);
     if (!decoration_color)
-        decoration_color = property_initial_value(m_context.realm(), PropertyID::TextDecorationColor);
+        decoration_color = property_initial_value(PropertyID::TextDecorationColor);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::TextDecoration,
@@ -6343,6 +6953,11 @@ RefPtr<CSSStyleValue> Parser::parse_text_decoration_line_value(TokenStream<Compo
 
     if (style_values.is_empty())
         return nullptr;
+
+    quick_sort(style_values, [](auto& left, auto& right) {
+        return *keyword_to_text_decoration_line(left->to_keyword()) < *keyword_to_text_decoration_line(right->to_keyword());
+    });
+
     return StyleValueList::create(move(style_values), StyleValueList::Separator::Space);
 }
 
@@ -6506,13 +7121,13 @@ RefPtr<CSSStyleValue> Parser::parse_easing_value(TokenStream<ComponentValue>& to
         }
 
         // Perform extra validation
-        // https://drafts.csswg.org/css-easing/#funcdef-step-easing-function-steps
-        // The first parameter specifies the number of intervals in the function. It must be a positive integer greater than 0
-        // unless the second parameter is jump-none in which case it must be a positive integer greater than 1.
+        // https://drafts.csswg.org/css-easing/#step-easing-functions
+        // If the <step-position> is jump-none, the <integer> must be at least 2, or the function is invalid.
+        // Otherwise, the <integer> must be at least 1, or the function is invalid.
         if (steps.position == EasingStyleValue::Steps::Position::JumpNone) {
-            if (intervals < 1)
+            if (intervals <= 1)
                 return nullptr;
-        } else if (intervals < 0) {
+        } else if (intervals <= 0) {
             return nullptr;
         }
 
@@ -6564,7 +7179,7 @@ RefPtr<CSSStyleValue> Parser::parse_transform_value(TokenStream<ComponentValue>&
             argument_tokens.discard_whitespace();
 
             auto const& value = argument_tokens.consume_a_token();
-            RefPtr<CSSMathValue> maybe_calc_value = parse_calculated_value(value);
+            RefPtr<CalculatedStyleValue> maybe_calc_value = parse_calculated_value(value);
 
             switch (function_metadata.parameters[argument_index].type) {
             case TransformFunctionParameterType::Angle: {
@@ -6704,8 +7319,8 @@ RefPtr<CSSStyleValue> Parser::parse_transform_origin_value(TokenStream<Component
                 return OptionalNone {};
             }
         }
-        if (value->is_math()) {
-            return AxisOffset { Axis::None, value->as_math() };
+        if (value->is_calculated()) {
+            return AxisOffset { Axis::None, value->as_calculated() };
         }
         return OptionalNone {};
     };
@@ -6894,6 +7509,60 @@ Optional<CSS::GridSize> Parser::parse_grid_size(ComponentValue const& component_
     else if (dimension->is_flex())
         return GridSize(dimension->flex());
     return {};
+}
+
+RefPtr<CSSStyleValue> Parser::parse_translate_value(TokenStream<ComponentValue>& tokens)
+{
+    if (tokens.remaining_token_count() == 1) {
+        // "none"
+        if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
+            return none;
+    }
+
+    auto transaction = tokens.begin_transaction();
+
+    auto maybe_x = parse_length_percentage(tokens);
+    if (!maybe_x.has_value())
+        return nullptr;
+
+    if (!tokens.has_next_token()) {
+        transaction.commit();
+        return TranslationStyleValue::create(maybe_x.release_value(), LengthPercentage(Length::make_px(0)));
+    }
+
+    auto maybe_y = parse_length_percentage(tokens);
+    if (!maybe_y.has_value())
+        return nullptr;
+
+    transaction.commit();
+    return TranslationStyleValue::create(maybe_x.release_value(), maybe_y.release_value());
+}
+
+RefPtr<CSSStyleValue> Parser::parse_scale_value(TokenStream<ComponentValue>& tokens)
+{
+    if (tokens.remaining_token_count() == 1) {
+        // "none"
+        if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
+            return none;
+    }
+
+    auto transaction = tokens.begin_transaction();
+
+    auto maybe_x = parse_number_percentage(tokens);
+    if (!maybe_x.has_value())
+        return nullptr;
+
+    if (!tokens.has_next_token()) {
+        transaction.commit();
+        return ScaleStyleValue::create(maybe_x.value(), maybe_x.value());
+    }
+
+    auto maybe_y = parse_number_percentage(tokens);
+    if (!maybe_y.has_value())
+        return nullptr;
+
+    transaction.commit();
+    return ScaleStyleValue::create(maybe_x.release_value(), maybe_y.release_value());
 }
 
 Optional<CSS::GridFitContent> Parser::parse_fit_content(Vector<ComponentValue> const& component_values)
@@ -7585,20 +8254,60 @@ RefPtr<CSSStyleValue> Parser::parse_grid_shorthand_value(TokenStream<ComponentVa
 RefPtr<CSSStyleValue> Parser::parse_grid_template_areas_value(TokenStream<ComponentValue>& tokens)
 {
     // none | <string>+
-    Vector<Vector<String>> grid_area_rows;
-
     if (auto none = parse_all_as_single_keyword_value(tokens, Keyword::None))
-        return GridTemplateAreaStyleValue::create(move(grid_area_rows));
+        return GridTemplateAreaStyleValue::create({});
+
+    auto is_full_stop = [](u32 code_point) {
+        return code_point == '.';
+    };
+
+    auto consume_while = [](Utf8CodePointIterator& code_points, AK::Function<bool(u32)> predicate) {
+        StringBuilder builder;
+        while (!code_points.done() && predicate(*code_points)) {
+            builder.append_code_point(*code_points);
+            ++code_points;
+        }
+        return MUST(builder.to_string());
+    };
+
+    Vector<Vector<String>> grid_area_rows;
+    Optional<size_t> column_count;
 
     auto transaction = tokens.begin_transaction();
     while (tokens.has_next_token() && tokens.next_token().is(Token::Type::String)) {
         Vector<String> grid_area_columns;
-        auto const parts = MUST(tokens.consume_a_token().token().string().to_string().split(' '));
-        for (auto& part : parts) {
-            grid_area_columns.append(part);
+        auto string = tokens.consume_a_token().token().string().code_points();
+        auto code_points = string.begin();
+
+        while (!code_points.done()) {
+            if (is_whitespace(*code_points)) {
+                consume_while(code_points, is_whitespace);
+            } else if (is_full_stop(*code_points)) {
+                consume_while(code_points, *is_full_stop);
+                grid_area_columns.append("."_string);
+            } else if (is_ident_code_point(*code_points)) {
+                auto token = consume_while(code_points, is_ident_code_point);
+                grid_area_columns.append(move(token));
+            } else {
+                return nullptr;
+            }
         }
+
+        if (grid_area_columns.is_empty())
+            return nullptr;
+
+        if (column_count.has_value()) {
+            if (grid_area_columns.size() != column_count)
+                return nullptr;
+        } else {
+            column_count = grid_area_columns.size();
+        }
+
         grid_area_rows.append(move(grid_area_columns));
     }
+
+    // FIXME: If a named grid area spans multiple grid cells, but those cells do not form a single filled-in rectangle, the declaration is invalid.
+
     transaction.commit();
     return GridTemplateAreaStyleValue::create(grid_area_rows);
 }
@@ -7789,6 +8498,30 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
         if (auto parsed_value = parse_font_variation_settings_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
+    case PropertyID::FontVariant:
+        if (auto parsed_value = parse_font_variant(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontVariantAlternates:
+        if (auto parsed_value = parse_font_variant_alternates_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontVariantCaps:
+        if (auto parsed_value = parse_font_variant_caps_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontVariantEastAsian:
+        if (auto parsed_value = parse_font_variant_east_asian_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontVariantLigatures:
+        if (auto parsed_value = parse_font_variant_ligatures_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontVariantNumeric:
+        if (auto parsed_value = parse_font_variant_numeric_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
     case PropertyID::GridArea:
         if (auto parsed_value = parse_grid_area_shorthand_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
@@ -7885,6 +8618,10 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
         if (auto parsed_value = parse_scrollbar_gutter_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
+    case PropertyID::StrokeDasharray:
+        if (auto parsed_value = parse_stroke_dasharray_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
     case PropertyID::TextDecoration:
         if (auto parsed_value = parse_text_decoration_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
@@ -7907,6 +8644,14 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
         return ParseError::SyntaxError;
     case PropertyID::Transition:
         if (auto parsed_value = parse_transition_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::Translate:
+        if (auto parsed_value = parse_translate_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::Scale:
+        if (auto parsed_value = parse_scale_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     default:
@@ -7967,7 +8712,7 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
     }
 
     for (auto& property : unassigned_properties)
-        assigned_values.ensure(to_underlying(property)).append(property_initial_value(m_context.realm(), property));
+        assigned_values.ensure(to_underlying(property)).append(property_initial_value(property));
 
     stream.discard_whitespace();
     if (stream.has_next_token())
@@ -8267,39 +9012,6 @@ Optional<Parser::PropertyAndValue> Parser::parse_css_value_for_properties(Readon
     return OptionalNone {};
 }
 
-class UnparsedCalculationNode final : public CalculationNode {
-public:
-    static NonnullOwnPtr<UnparsedCalculationNode> create(ComponentValue component_value)
-    {
-        return adopt_own(*new (nothrow) UnparsedCalculationNode(move(component_value)));
-    }
-    virtual ~UnparsedCalculationNode() = default;
-
-    ComponentValue& component_value() { return m_component_value; }
-
-    virtual String to_string() const override { VERIFY_NOT_REACHED(); }
-    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override { VERIFY_NOT_REACHED(); }
-    virtual Optional<CSSNumericType> determine_type(Web::CSS::PropertyID) const override { VERIFY_NOT_REACHED(); }
-    virtual bool contains_percentage() const override { VERIFY_NOT_REACHED(); }
-    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override { VERIFY_NOT_REACHED(); }
-    virtual void for_each_child_node(AK::Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override { }
-
-    virtual void dump(StringBuilder& builder, int indent) const override
-    {
-        builder.appendff("{: >{}}UNPARSED({})\n", "", indent, m_component_value.to_debug_string());
-    }
-    virtual bool equals(CalculationNode const&) const override { return false; }
-
-private:
-    UnparsedCalculationNode(ComponentValue component_value)
-        : CalculationNode(Type::Unparsed)
-        , m_component_value(move(component_value))
-    {
-    }
-
-    ComponentValue m_component_value;
-};
-
 // https://html.spec.whatwg.org/multipage/images.html#parsing-a-sizes-attribute
 LengthOrCalculated Parser::Parser::parse_as_sizes_attribute(DOM::Element const& element, HTML::HTMLImageElement const* img)
 {
@@ -8402,26 +9114,133 @@ LengthOrCalculated Parser::Parser::parse_as_sizes_attribute(DOM::Element const& 
     return Length(100, Length::Type::Vw);
 }
 
-// https://www.w3.org/TR/css-values-4/#parse-a-calculation
+OwnPtr<CalculationNode> Parser::convert_to_calculation_node(CalcParsing::Node const& node)
+{
+    return node.visit(
+        [this](NonnullOwnPtr<CalcParsing::ProductNode> const& product_node) -> OwnPtr<CalculationNode> {
+            Vector<NonnullOwnPtr<CalculationNode>> children;
+            children.ensure_capacity(product_node->children.size());
+
+            for (auto const& child : product_node->children) {
+                if (auto child_as_node = convert_to_calculation_node(child)) {
+                    children.append(child_as_node.release_nonnull());
+                } else {
+                    return nullptr;
+                }
+            }
+
+            return ProductCalculationNode::create(move(children));
+        },
+        [this](NonnullOwnPtr<CalcParsing::SumNode> const& sum_node) -> OwnPtr<CalculationNode> {
+            Vector<NonnullOwnPtr<CalculationNode>> children;
+            children.ensure_capacity(sum_node->children.size());
+
+            for (auto const& child : sum_node->children) {
+                if (auto child_as_node = convert_to_calculation_node(child)) {
+                    children.append(child_as_node.release_nonnull());
+                } else {
+                    return nullptr;
+                }
+            }
+
+            return SumCalculationNode::create(move(children));
+        },
+        [this](NonnullOwnPtr<CalcParsing::InvertNode> const& invert_node) -> OwnPtr<CalculationNode> {
+            if (auto child_as_node = convert_to_calculation_node(invert_node->child))
+                return InvertCalculationNode::create(child_as_node.release_nonnull());
+            return nullptr;
+        },
+        [this](NonnullOwnPtr<CalcParsing::NegateNode> const& negate_node) -> OwnPtr<CalculationNode> {
+            if (auto child_as_node = convert_to_calculation_node(negate_node->child))
+                return NegateCalculationNode::create(child_as_node.release_nonnull());
+            return nullptr;
+        },
+        [](Number const& number) -> OwnPtr<CalculationNode> {
+            return NumericCalculationNode::create(number);
+        },
+        [this](Dimension const& dimension) -> OwnPtr<CalculationNode> {
+            if (dimension.is_angle())
+                return NumericCalculationNode::create(dimension.angle());
+            if (dimension.is_frequency())
+                return NumericCalculationNode::create(dimension.frequency());
+            if (dimension.is_length())
+                return NumericCalculationNode::create(dimension.length());
+            if (dimension.is_percentage()) {
+                // FIXME: Figure this out in non-property contexts
+                auto percentage_resolved_type = property_resolves_percentages_relative_to(m_context.current_property_id());
+                return NumericCalculationNode::create(dimension.percentage(), percentage_resolved_type);
+            }
+            if (dimension.is_resolution())
+                return NumericCalculationNode::create(dimension.resolution());
+            if (dimension.is_time())
+                return NumericCalculationNode::create(dimension.time());
+            if (dimension.is_flex()) {
+                // https://www.w3.org/TR/css3-grid-layout/#fr-unit
+                // NOTE: <flex> values are not <length>s (nor are they compatible with <length>s, like some <percentage> values),
+                //       so they cannot be represented in or combined with other unit types in calc() expressions.
+                // FIXME: Flex is allowed in calc(), so figure out what this spec text means and how to implement it.
+                dbgln_if(CSS_PARSER_DEBUG, "Rejecting <flex> in calc()");
+                return nullptr;
+            }
+            dbgln_if(CSS_PARSER_DEBUG, "Unrecognized dimension type in calc() expression: {}", dimension.to_string());
+            return nullptr;
+        },
+        [](CalculationNode::ConstantType const& constant_type) -> OwnPtr<CalculationNode> {
+            return ConstantCalculationNode::create(constant_type);
+        },
+        [this](NonnullRawPtr<ComponentValue const> const& component_value) -> OwnPtr<CalculationNode> {
+            // NOTE: This is the "process the leaf nodes" part of step 5 of https://drafts.csswg.org/css-values-4/#parse-a-calculation
+            //       We divert a little from the spec: Rather than modify an existing tree of values, we construct a new one from that source tree.
+            //       This lets us make CalculationNodes immutable.
+
+            // 1. If leaf is a parenthesized simple block, replace leaf with the result of parsing a calculation from leaf’s contents.
+            if (component_value->is_block() && component_value->block().is_paren()) {
+                auto leaf_calculation = parse_a_calculation(component_value->block().value);
+                if (!leaf_calculation)
+                    return nullptr;
+
+                return leaf_calculation.release_nonnull();
+            }
+
+            // 2. If leaf is a math function, replace leaf with the internal representation of that math function.
+            // NOTE: All function tokens at this point should be math functions.
+            if (component_value->is_function()) {
+                auto const& function = component_value->function();
+                auto leaf_calculation = parse_a_calc_function_node(function);
+                if (!leaf_calculation)
+                    return nullptr;
+
+                return leaf_calculation.release_nonnull();
+            }
+
+            // NOTE: If we get here, then we have a ComponentValue that didn't get replaced with something else,
+            //       so the calc() is invalid.
+            dbgln_if(CSS_PARSER_DEBUG, "Leftover ComponentValue in calc tree! That probably means the syntax is invalid, but maybe we just didn't implement `{}` yet.", component_value->to_debug_string());
+            return nullptr;
+        },
+        [](CalcParsing::Operator const& op) -> OwnPtr<CalculationNode> {
+            dbgln_if(CSS_PARSER_DEBUG, "Leftover Operator {} in calc tree!", op.delim);
+            return nullptr;
+        });
+}
+
+// https://drafts.csswg.org/css-values-4/#parse-a-calculation
 OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const& original_values)
 {
     // 1. Discard any <whitespace-token>s from values.
     // 2. An item in values is an “operator” if it’s a <delim-token> with the value "+", "-", "*", or "/". Otherwise, it’s a “value”.
-    struct Operator {
-        char delim;
-    };
-    using Value = Variant<NonnullOwnPtr<CalculationNode>, Operator>;
-    Vector<Value> values;
+
+    Vector<CalcParsing::Node> values;
     for (auto const& value : original_values) {
         if (value.is(Token::Type::Whitespace))
             continue;
         if (value.is(Token::Type::Delim)) {
             if (first_is_one_of(value.token().delim(), static_cast<u32>('+'), static_cast<u32>('-'), static_cast<u32>('*'), static_cast<u32>('/'))) {
                 // NOTE: Sequential operators are invalid syntax.
-                if (!values.is_empty() && values.last().has<Operator>())
+                if (!values.is_empty() && values.last().has<CalcParsing::Operator>())
                     return nullptr;
 
-                values.append(Operator { static_cast<char>(value.token().delim()) });
+                values.append(CalcParsing::Operator { static_cast<char>(value.token().delim()) });
                 continue;
             }
         }
@@ -8429,41 +9248,22 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
         if (value.is(Token::Type::Ident)) {
             auto maybe_constant = CalculationNode::constant_type_from_string(value.token().ident());
             if (maybe_constant.has_value()) {
-                values.append({ ConstantCalculationNode::create(maybe_constant.value()) });
+                values.append(maybe_constant.value());
                 continue;
             }
         }
 
         if (value.is(Token::Type::Number)) {
-            values.append({ NumericCalculationNode::create(value.token().number()) });
+            values.append(value.token().number());
             continue;
         }
 
         if (auto dimension = parse_dimension(value); dimension.has_value()) {
-            if (dimension->is_angle())
-                values.append({ NumericCalculationNode::create(dimension->angle()) });
-            else if (dimension->is_frequency())
-                values.append({ NumericCalculationNode::create(dimension->frequency()) });
-            else if (dimension->is_length())
-                values.append({ NumericCalculationNode::create(dimension->length()) });
-            else if (dimension->is_percentage())
-                values.append({ NumericCalculationNode::create(dimension->percentage()) });
-            else if (dimension->is_resolution())
-                values.append({ NumericCalculationNode::create(dimension->resolution()) });
-            else if (dimension->is_time())
-                values.append({ NumericCalculationNode::create(dimension->time()) });
-            else if (dimension->is_flex()) {
-                // https://www.w3.org/TR/css3-grid-layout/#fr-unit
-                // NOTE: <flex> values are not <length>s (nor are they compatible with <length>s, like some <percentage> values),
-                //       so they cannot be represented in or combined with other unit types in calc() expressions.
-                return nullptr;
-            } else {
-                VERIFY_NOT_REACHED();
-            }
+            values.append(dimension.release_value());
             continue;
         }
 
-        values.append({ UnparsedCalculationNode::create(value) });
+        values.append(NonnullRawPtr { value });
     }
 
     // If we have no values, the syntax is invalid.
@@ -8471,15 +9271,15 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
         return nullptr;
 
     // NOTE: If the first or last value is an operator, the syntax is invalid.
-    if (values.first().has<Operator>() || values.last().has<Operator>())
+    if (values.first().has<CalcParsing::Operator>() || values.last().has<CalcParsing::Operator>())
         return nullptr;
 
     // 3. Collect children into Product and Invert nodes.
     //    For every consecutive run of value items in values separated by "*" or "/" operators:
     while (true) {
         Optional<size_t> first_product_operator = values.find_first_index_if([](auto const& item) {
-            return item.template has<Operator>()
-                && first_is_one_of(item.template get<Operator>().delim, '*', '/');
+            return item.template has<CalcParsing::Operator>()
+                && first_is_one_of(item.template get<CalcParsing::Operator>().delim, '*', '/');
         });
 
         if (!first_product_operator.has_value())
@@ -8489,12 +9289,12 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
         auto end_of_run = first_product_operator.value() + 1;
         for (auto i = start_of_run + 1; i < values.size(); i += 2) {
             auto& item = values[i];
-            if (!item.has<Operator>()) {
+            if (!item.has<CalcParsing::Operator>()) {
                 end_of_run = i - 1;
                 break;
             }
 
-            auto delim = item.get<Operator>().delim;
+            auto delim = item.get<CalcParsing::Operator>().delim;
             if (!first_is_one_of(delim, '*', '/')) {
                 end_of_run = i - 1;
                 break;
@@ -8502,37 +9302,34 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
         }
 
         // 1. For each "/" operator in the run, replace its right-hand value item rhs with an Invert node containing rhs as its child.
-        Vector<NonnullOwnPtr<CalculationNode>> run_values;
-        run_values.append(move(values[start_of_run].get<NonnullOwnPtr<CalculationNode>>()));
+        Vector<CalcParsing::Node> run_values;
+        run_values.append(move(values[start_of_run]));
         for (auto i = start_of_run + 1; i <= end_of_run; i += 2) {
-            auto& operator_ = values[i].get<Operator>().delim;
+            auto& operator_ = values[i].get<CalcParsing::Operator>().delim;
             auto& rhs = values[i + 1];
             if (operator_ == '/') {
-                run_values.append(InvertCalculationNode::create(move(rhs.get<NonnullOwnPtr<CalculationNode>>())));
+                run_values.append(make<CalcParsing::InvertNode>(move(rhs)));
                 continue;
             }
             VERIFY(operator_ == '*');
-            run_values.append(move(rhs.get<NonnullOwnPtr<CalculationNode>>()));
+            run_values.append(move(rhs));
         }
         // 2. Replace the entire run with a Product node containing the value items of the run as its children.
-        auto product_node = ProductCalculationNode::create(move(run_values));
         values.remove(start_of_run, end_of_run - start_of_run + 1);
-        values.insert(start_of_run, { move(product_node) });
+        values.insert(start_of_run, make<CalcParsing::ProductNode>(move(run_values)));
     }
 
     // 4. Collect children into Sum and Negate nodes.
-    Optional<NonnullOwnPtr<CalculationNode>> single_value;
+    Optional<CalcParsing::Node> single_value;
     {
         // 1. For each "-" operator item in values, replace its right-hand value item rhs with a Negate node containing rhs as its child.
         for (auto i = 0u; i < values.size(); ++i) {
             auto& maybe_minus_operator = values[i];
-            if (!maybe_minus_operator.has<Operator>() || maybe_minus_operator.get<Operator>().delim != '-')
+            if (!maybe_minus_operator.has<CalcParsing::Operator>() || maybe_minus_operator.get<CalcParsing::Operator>().delim != '-')
                 continue;
 
             auto rhs_index = ++i;
-            auto& rhs = values[rhs_index];
-
-            NonnullOwnPtr<CalculationNode> negate_node = NegateCalculationNode::create(move(rhs.get<NonnullOwnPtr<CalculationNode>>()));
+            auto negate_node = make<CalcParsing::NegateNode>(move(values[rhs_index]));
             values.remove(rhs_index);
             values.insert(rhs_index, move(negate_node));
         }
@@ -8540,77 +9337,31 @@ OwnPtr<CalculationNode> Parser::parse_a_calculation(Vector<ComponentValue> const
         // 2. If values has only one item, and it is a Product node or a parenthesized simple block, replace values with that item.
         if (values.size() == 1) {
             values.first().visit(
-                [&](ComponentValue& component_value) {
+                [&](ComponentValue const& component_value) {
                     if (component_value.is_block() && component_value.block().is_paren())
-                        single_value = UnparsedCalculationNode::create(move(component_value));
+                        single_value = NonnullRawPtr { component_value };
                 },
-                [&](NonnullOwnPtr<CalculationNode>& node) {
-                    if (node->type() == CalculationNode::Type::Product)
-                        single_value = move(node);
+                [&](NonnullOwnPtr<CalcParsing::ProductNode>& node) {
+                    single_value = move(node);
                 },
                 [](auto&) {});
         }
         //    Otherwise, replace values with a Sum node containing the value items of values as its children.
         if (!single_value.has_value()) {
-            values.remove_all_matching([](Value& value) { return value.has<Operator>(); });
-            Vector<NonnullOwnPtr<CalculationNode>> value_items;
-            value_items.ensure_capacity(values.size());
-            for (auto& value : values) {
-                if (value.has<Operator>())
-                    continue;
-                value_items.unchecked_append(move(value.get<NonnullOwnPtr<CalculationNode>>()));
-            }
-            single_value = SumCalculationNode::create(move(value_items));
+            values.remove_all_matching([](CalcParsing::Node& value) { return value.has<CalcParsing::Operator>(); });
+            single_value = make<CalcParsing::SumNode>(move(values));
         }
     }
+    VERIFY(single_value.has_value());
 
     // 5. At this point values is a tree of Sum, Product, Negate, and Invert nodes, with other types of values at the leaf nodes. Process the leaf nodes.
-    //     For every leaf node leaf in values:
-    bool parsing_failed_for_child_node = false;
-    single_value.value()->for_each_child_node([&](NonnullOwnPtr<CalculationNode>& node) {
-        if (node->type() != CalculationNode::Type::Unparsed)
-            return;
-
-        auto& unparsed_node = static_cast<UnparsedCalculationNode&>(*node);
-        auto& component_value = unparsed_node.component_value();
-
-        // 1. If leaf is a parenthesized simple block, replace leaf with the result of parsing a calculation from leaf’s contents.
-        if (component_value.is_block() && component_value.block().is_paren()) {
-            auto leaf_calculation = parse_a_calculation(component_value.block().value);
-            if (!leaf_calculation) {
-                parsing_failed_for_child_node = true;
-                return;
-            }
-            node = leaf_calculation.release_nonnull();
-            return;
-        }
-
-        // 2. If leaf is a math function, replace leaf with the internal representation of that math function.
-        // NOTE: All function tokens at this point should be math functions.
-        else if (component_value.is_function()) {
-            auto& function = component_value.function();
-            auto leaf_calculation = parse_a_calc_function_node(function);
-            if (!leaf_calculation) {
-                parsing_failed_for_child_node = true;
-                return;
-            }
-
-            node = leaf_calculation.release_nonnull();
-            return;
-        }
-
-        // NOTE: If we get here, then we have an UnparsedCalculationNode that didn't get replaced with something else.
-        //       So, the calc() is invalid.
-        dbgln_if(CSS_PARSER_DEBUG, "Leftover UnparsedCalculationNode in calc tree! That probably means the syntax is invalid, but maybe we just didn't implement `{}` yet.", component_value.to_debug_string());
-        parsing_failed_for_child_node = true;
-        return;
-    });
-
-    if (parsing_failed_for_child_node)
+    // NOTE: We process leaf nodes as part of this conversion.
+    auto calculation_tree = convert_to_calculation_node(*single_value);
+    if (!calculation_tree)
         return nullptr;
 
     // FIXME: 6. Return the result of simplifying a calculation tree from values.
-    return single_value.release_value();
+    return calculation_tree.release_nonnull();
 }
 
 bool Parser::has_ignored_vendor_prefix(StringView string)
@@ -8816,9 +9567,9 @@ bool Parser::expand_unresolved_values(DOM::Element& element, FlyString const& pr
             }
 
             if (property.has_value()) {
-                if (auto maybe_calc_value = parse_calculated_value(value); maybe_calc_value && maybe_calc_value->is_math()) {
+                if (auto maybe_calc_value = parse_calculated_value(value); maybe_calc_value && maybe_calc_value->is_calculated()) {
                     // FIXME: Run the actual simplification algorithm
-                    auto& calc_value = maybe_calc_value->as_math();
+                    auto& calc_value = maybe_calc_value->as_calculated();
                     if (property_accepts_type(*property, ValueType::Angle) && calc_value.resolves_to_angle()) {
                         auto resolved_value = calc_value.resolve_angle();
                         dest.empend(Token::create_dimension(resolved_value->to_degrees(), "deg"_fly_string));

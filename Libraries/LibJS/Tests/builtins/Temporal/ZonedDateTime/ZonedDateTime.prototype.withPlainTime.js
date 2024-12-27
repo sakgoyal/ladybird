@@ -5,9 +5,7 @@ describe("correct behavior", () => {
 
     function checkCommonExpectedResults(withPlainTimeZonedDateTime) {
         expect(withPlainTimeZonedDateTime.epochNanoseconds).toBe(1636064604200300400n);
-        expect(withPlainTimeZonedDateTime.epochMicroseconds).toBe(1636064604200300n);
         expect(withPlainTimeZonedDateTime.epochMilliseconds).toBe(1636064604200);
-        expect(withPlainTimeZonedDateTime.epochSeconds).toBe(1636064604);
         expect(withPlainTimeZonedDateTime.year).toBe(2021);
         expect(withPlainTimeZonedDateTime.month).toBe(11);
         expect(withPlainTimeZonedDateTime.monthCode).toBe("M11");
@@ -32,8 +30,7 @@ describe("correct behavior", () => {
 
     test("basic functionality", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 4, 21, 16, 56, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const plainTime = new Temporal.PlainTime(22, 23, 24, 200, 300, 400);
         const withPlainTimeZonedDateTime = zonedDateTime.withPlainTime(plainTime);
 
@@ -42,8 +39,7 @@ describe("correct behavior", () => {
 
     test("plain time-like object", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 4, 21, 16, 56, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const plainTimeLike = {
             hour: 22,
             minute: 23,
@@ -59,21 +55,16 @@ describe("correct behavior", () => {
 
     test("passing no parameters is the equivalent of using startOfDay", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 4, 21, 16, 56, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const startOfDayZonedDateTime = zonedDateTime.startOfDay();
         const withPlainTimeZonedDateTime = zonedDateTime.withPlainTime();
 
         expect(startOfDayZonedDateTime.epochNanoseconds).toBe(
             withPlainTimeZonedDateTime.epochNanoseconds
         );
-        expect(startOfDayZonedDateTime.epochMicroseconds).toBe(
-            withPlainTimeZonedDateTime.epochMicroseconds
-        );
         expect(startOfDayZonedDateTime.epochMilliseconds).toBe(
             withPlainTimeZonedDateTime.epochMilliseconds
         );
-        expect(startOfDayZonedDateTime.epochSeconds).toBe(withPlainTimeZonedDateTime.epochSeconds);
         expect(startOfDayZonedDateTime.year).toBe(withPlainTimeZonedDateTime.year);
         expect(startOfDayZonedDateTime.month).toBe(withPlainTimeZonedDateTime.month);
         expect(startOfDayZonedDateTime.monthCode).toBe(withPlainTimeZonedDateTime.monthCode);
@@ -100,8 +91,7 @@ describe("correct behavior", () => {
 
     test("from plain time string", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 4, 21, 16, 56, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const withPlainTimeZonedDateTime = zonedDateTime.withPlainTime("22:23:24.200300400");
 
         checkCommonExpectedResults(withPlainTimeZonedDateTime);
@@ -117,17 +107,11 @@ describe("errors", () => {
 
     test("invalid plain time-like object", () => {
         expect(() => {
-            new Temporal.ZonedDateTime(1n, {}).withPlainTime({});
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: hour, microsecond, millisecond, minute, nanosecond, second"
-        );
+            new Temporal.ZonedDateTime(1n, "UTC").withPlainTime({});
+        }).toThrowWithMessage(TypeError, "Invalid time");
 
         expect(() => {
-            new Temporal.ZonedDateTime(1n, {}).withPlainTime({ foo: 1, bar: 2 });
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: hour, microsecond, millisecond, minute, nanosecond, second"
-        );
+            new Temporal.ZonedDateTime(1n, "UTC").withPlainTime({ foo: 1, bar: 2 });
+        }).toThrowWithMessage(TypeError, "Invalid time");
     });
 });

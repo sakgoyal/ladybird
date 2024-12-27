@@ -15,9 +15,10 @@
 #include <AK/RefCounted.h>
 #include <AK/StackInfo.h>
 #include <AK/Variant.h>
+#include <LibCrypto/Forward.h>
 #include <LibGC/Function.h>
 #include <LibGC/Heap.h>
-#include <LibGC/MarkedVector.h>
+#include <LibGC/RootVector.h>
 #include <LibJS/CyclicModule.h>
 #include <LibJS/ModuleLoading.h>
 #include <LibJS/Runtime/CommonPropertyNames.h>
@@ -287,6 +288,7 @@ public:
     Function<ThrowCompletionOr<HandledByHost>(ArrayBuffer&, size_t)> host_resize_array_buffer;
     Function<void(StringView)> host_unrecognized_date_string;
     Function<ThrowCompletionOr<void>(Realm&, NonnullOwnPtr<ExecutionContext>, ShadowRealm&)> host_initialize_shadow_realm;
+    Function<Crypto::SignedBigInteger(Object const& global)> host_system_utc_epoch_nanoseconds;
 
     Vector<StackTraceElement> stack_trace() const;
 

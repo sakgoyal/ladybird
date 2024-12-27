@@ -9,8 +9,8 @@ describe("correct behavior", () => {
         plainDate = new Temporal.PlainDate(2021, 7, 6);
         expect(plainDate.toJSON()).toBe("2021-07-06");
 
-        plainDate = new Temporal.PlainDate(2021, 7, 6, { toString: () => "foo" });
-        expect(plainDate.toJSON()).toBe("2021-07-06[u-ca=foo]");
+        plainDate = new Temporal.PlainDate(2021, 7, 6, "gregory");
+        expect(plainDate.toJSON()).toBe("2021-07-06[u-ca=gregory]");
     });
 });
 

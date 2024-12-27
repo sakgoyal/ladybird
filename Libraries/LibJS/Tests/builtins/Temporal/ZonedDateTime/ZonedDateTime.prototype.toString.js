@@ -5,21 +5,18 @@ describe("correct behavior", () => {
 
     test("basic functionality", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 1, 33, 5, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         expect(zonedDateTime.toString()).toBe("2021-11-03T01:33:05.1002003+00:00[UTC]");
     });
 
     test("negative epoch nanoseconds", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(-999_999_999n, timeZone);
+        const zonedDateTime = new Temporal.ZonedDateTime(-999_999_999n, "UTC");
         expect(zonedDateTime.toString()).toBe("1969-12-31T23:59:59.000000001+00:00[UTC]");
     });
 
     test("fractionalSecondDigits option", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 1, 33, 5, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const values = [
             ["auto", "2021-11-03T01:33:05.1002003+00:00[UTC]"],
             [0, "2021-11-03T01:33:05+00:00[UTC]"],
@@ -47,8 +44,7 @@ describe("correct behavior", () => {
 
     test("smallestUnit option", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 1, 33, 5, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const values = [
             ["minute", "2021-11-03T01:33+00:00[UTC]"],
             ["second", "2021-11-03T01:33:05+00:00[UTC]"],
@@ -67,8 +63,7 @@ describe("correct behavior", () => {
 
     test("timeZoneName option", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 1, 33, 5, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const values = [
             ["auto", "2021-11-03T01:33:05.1002003+00:00[UTC]"],
             ["never", "2021-11-03T01:33:05.1002003+00:00"],
@@ -83,8 +78,7 @@ describe("correct behavior", () => {
 
     test("offset option", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 1, 33, 5, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const values = [
             ["auto", "2021-11-03T01:33:05.1002003+00:00[UTC]"],
             ["never", "2021-11-03T01:33:05.1002003[UTC]"],
@@ -96,41 +90,9 @@ describe("correct behavior", () => {
         }
     });
 
-    test("doesn't call ToString on calendar if calenderName option is 'never'", () => {
-        let calledToString = false;
-        const calendar = {
-            toString() {
-                calledToString = true;
-                return "nocall";
-            },
-        };
-
-        const plainDateTime = new Temporal.PlainDateTime(
-            2022,
-            8,
-            8,
-            14,
-            38,
-            40,
-            100,
-            200,
-            300,
-            calendar
-        );
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
-
-        const options = {
-            calendarName: "never",
-        };
-        expect(zonedDateTime.toString(options)).toBe("2022-08-08T14:38:40.1002003+00:00[UTC]");
-        expect(calledToString).toBeFalse();
-    });
-
     test("calendarName option", () => {
         const plainDateTime = new Temporal.PlainDateTime(2022, 11, 2, 19, 4, 35, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const values = [
             ["auto", "2022-11-02T19:04:35.1002003+00:00[UTC]"],
             ["always", "2022-11-02T19:04:35.1002003+00:00[UTC][u-ca=iso8601]"],
@@ -150,13 +112,6 @@ describe("errors", () => {
         expect(() => {
             Temporal.ZonedDateTime.prototype.toString.call("foo");
         }).toThrowWithMessage(TypeError, "Not an object of type Temporal.ZonedDateTime");
-    });
-
-    test("custom time zone doesn't have a getOffsetNanosecondsFor function", () => {
-        const zonedDateTime = new Temporal.ZonedDateTime(0n, {});
-        expect(() => {
-            zonedDateTime.toString();
-        }).toThrowWithMessage(TypeError, "getOffsetNanosecondsFor is undefined");
     });
 
     test("calendarName option must be one of 'auto', 'always', 'never', 'critical'", () => {

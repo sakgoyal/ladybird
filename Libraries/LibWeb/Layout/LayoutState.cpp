@@ -109,6 +109,10 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
 
             auto child_border_box = child.paintable_box()->absolute_border_box_rect();
 
+            // Border boxes with zero area do not affect the scrollable overflow area.
+            if (child_border_box.is_empty())
+                return TraversalDecision::Continue;
+
             // NOTE: Here we check that the child is not wholly in the negative scrollable overflow region.
             if (child_border_box.bottom() < 0 || child_border_box.right() < 0)
                 return TraversalDecision::Continue;
@@ -120,11 +124,11 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
             //   (including zero-area boxes and accounting for transforms as described above),
             //   provided they themselves have overflow: visible (i.e. do not themselves trap the overflow)
             //   and that scrollable overflow is not already clipped (e.g. by the clip property or the contain property).
-            if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
+            if (child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
                 auto child_scrollable_overflow = measure_scrollable_overflow(child);
-                if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible)
+                if (child.computed_values().overflow_x() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_horizontally(child_scrollable_overflow);
-                if (is<Viewport>(box) || child.computed_values().overflow_y() == CSS::Overflow::Visible)
+                if (child.computed_values().overflow_y() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
             }
 
@@ -308,8 +312,9 @@ void LayoutState::commit(Box& root)
         auto* paintable = inline_node->first_paintable();
         if (paintable)
             continue;
-        paintable = inline_node->create_paintable_for_line_with_index(0);
-        inline_node->add_paintable(paintable);
+        auto line_paintable = inline_node->create_paintable_for_line_with_index(0);
+        inline_node->add_paintable(line_paintable);
+        inline_node_paintables.set(line_paintable.ptr());
     }
 
     // Resolve relative positions for regular boxes (not line box fragments):
@@ -373,17 +378,42 @@ void LayoutState::commit(Box& root)
             continue;
         }
 
-        auto const& fragments = paintable_with_lines->fragments();
-        if (fragments.is_empty()) {
-            continue;
+        Optional<CSSPixelPoint> offset;
+        CSSPixelSize size;
+        auto line_index = paintable_with_lines->line_index();
+        paintable_with_lines->for_each_in_inclusive_subtree_of_type<Painting::PaintableWithLines>([&offset, &size, &line_index](auto& paintable) {
+            if (paintable.line_index() == line_index) {
+                auto const& fragments = paintable.fragments();
+                if (!fragments.is_empty()) {
+                    if (!offset.has_value() || (fragments.first().offset().x() < offset.value().x())) {
+                        offset = fragments.first().offset();
+                    }
+                }
+                for (auto const& fragment : fragments) {
+                    // FIXME: Padding and margin of nested inlines not included in fragment width
+                    size.set_width(size.width() + fragment.width());
+                }
+            }
+            return TraversalDecision::Continue;
+        });
+
+        if (offset.has_value()) {
+            if (!paintable_with_lines->fragments().is_empty()) {
+                offset.value().set_y(paintable_with_lines->fragments().first().offset().y());
+            }
+            // FIXME: If this paintable does not have any fragment we do no know the y offset. It should be where text should
+            // start if there had been any for this node. Pick y offset of the leftmost fragment in the inclusive subtree in the meantime.
+            paintable_with_lines->set_offset(offset.value());
         }
 
-        paintable_with_lines->set_offset(fragments.first().offset());
-        CSSPixelSize size;
-        for (auto const& fragment : fragments) {
-            size.set_width(size.width() + fragment.width());
-            size.set_height(max(size.height(), fragment.height()));
+        if (!paintable_with_lines->fragments().is_empty()) {
+            for (auto const& fragment : paintable_with_lines->fragments()) {
+                size.set_height(max(size.height(), fragment.height()));
+            }
+        } else {
+            size.set_height(paintable_with_lines->layout_node().computed_values().line_height());
         }
+
         paintable_with_lines->set_content_size(size.width(), size.height());
     }
 
@@ -682,5 +712,4 @@ void LayoutState::UsedValues::set_indefinite_content_height()
 {
     m_has_definite_height = false;
 }
-
 }

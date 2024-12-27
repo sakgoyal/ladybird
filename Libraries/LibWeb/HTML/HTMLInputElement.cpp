@@ -47,6 +47,7 @@
 #include <LibWeb/MimeSniff/Resource.h>
 #include <LibWeb/Namespace.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/Painting/PaintableBox.h>
 #include <LibWeb/Selection/Selection.h>
 #include <LibWeb/UIEvents/EventNames.h>
 #include <LibWeb/UIEvents/MouseEvent.h>
@@ -98,7 +99,7 @@ GC::Ref<ValidityState const> HTMLInputElement::validity() const
     return realm.create<ValidityState>(realm);
 }
 
-GC::Ptr<Layout::Node> HTMLInputElement::create_layout_node(CSS::StyleProperties style)
+GC::Ptr<Layout::Node> HTMLInputElement::create_layout_node(GC::Ref<CSS::ComputedProperties> style)
 {
     if (type_state() == TypeAttributeState::Hidden)
         return nullptr;
@@ -113,8 +114,8 @@ GC::Ptr<Layout::Node> HTMLInputElement::create_layout_node(CSS::StyleProperties 
     // This specification introduces the appearance property to provide some control over this behavior.
     // In particular, using appearance: none allows authors to suppress the native appearance of widgets,
     // giving them a primitive appearance where CSS can be used to restyle them.
-    if (style.appearance() == CSS::Appearance::None) {
-        return Element::create_layout_node_for_display_type(document(), style.display(), style, this);
+    if (style->appearance() == CSS::Appearance::None) {
+        return Element::create_layout_node_for_display_type(document(), style->display(), style, this);
     }
 
     if (type_state() == TypeAttributeState::SubmitButton || type_state() == TypeAttributeState::Button || type_state() == TypeAttributeState::ResetButton)
@@ -126,10 +127,10 @@ GC::Ptr<Layout::Node> HTMLInputElement::create_layout_node(CSS::StyleProperties 
     if (type_state() == TypeAttributeState::RadioButton)
         return heap().allocate<Layout::RadioButton>(document(), *this, move(style));
 
-    return Element::create_layout_node_for_display_type(document(), style.display(), style, this);
+    return Element::create_layout_node_for_display_type(document(), style->display(), style, this);
 }
 
-void HTMLInputElement::adjust_computed_style(CSS::StyleProperties& style)
+void HTMLInputElement::adjust_computed_style(CSS::ComputedProperties& style)
 {
     if (type_state() == TypeAttributeState::Hidden || type_state() == TypeAttributeState::SubmitButton || type_state() == TypeAttributeState::Button || type_state() == TypeAttributeState::ResetButton || type_state() == TypeAttributeState::ImageButton || type_state() == TypeAttributeState::Checkbox || type_state() == TypeAttributeState::RadioButton)
         return;
@@ -335,7 +336,7 @@ WebIDL::ExceptionOr<void> HTMLInputElement::show_picker()
     // The showPicker() method steps are:
 
     // 1. If this is not mutable, then throw an "InvalidStateError" DOMException.
-    if (!m_is_mutable)
+    if (!is_mutable())
         return WebIDL::InvalidStateError::create(realm(), "Element is not mutable"_string);
 
     // 2. If this's relevant settings object's origin is not same origin with this's relevant settings object's top-level origin,
@@ -637,6 +638,8 @@ void HTMLInputElement::commit_pending_changes()
     case TypeAttributeState::Telephone:
     case TypeAttributeState::Text:
     case TypeAttributeState::URL:
+    case TypeAttributeState::Checkbox:
+    case TypeAttributeState::RadioButton:
         if (!m_has_uncommitted_changes)
             return;
         break;
@@ -709,10 +712,7 @@ void HTMLInputElement::handle_maxlength_attribute()
 void HTMLInputElement::handle_readonly_attribute(Optional<String> const& maybe_value)
 {
     // The readonly attribute is a boolean attribute that controls whether or not the user can edit the form control. When specified, the element is not mutable.
-    m_is_mutable = !maybe_value.has_value() || !is_allowed_to_be_readonly(m_type);
-
-    if (m_text_node)
-        m_text_node->set_always_editable(m_is_mutable);
+    set_is_mutable(!maybe_value.has_value() || !is_allowed_to_be_readonly(m_type));
 }
 
 // https://html.spec.whatwg.org/multipage/input.html#the-input-element:attr-input-placeholder-3
@@ -868,12 +868,7 @@ void HTMLInputElement::create_text_input_shadow_tree()
     MUST(element->append_child(*m_inner_text_element));
 
     m_text_node = realm().create<DOM::Text>(document(), move(initial_value));
-    if (type_state() == TypeAttributeState::FileUpload) {
-        // NOTE: file upload state is mutable, but we don't allow the text node to be modifed
-        m_text_node->set_always_editable(false);
-    } else {
-        handle_readonly_attribute(attribute(HTML::AttributeNames::readonly));
-    }
+    handle_readonly_attribute(attribute(HTML::AttributeNames::readonly));
     if (type_state() == TypeAttributeState::Password)
         m_text_node->set_is_password_input({}, true);
     handle_maxlength_attribute();
@@ -898,20 +893,20 @@ void HTMLInputElement::create_text_input_shadow_tree()
                 return JS::js_undefined();
             },
             0, "", &realm());
-        auto mouseup_callback = realm().heap().allocate<WebIDL::CallbackType>(*mouseup_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+        auto mouseup_callback = realm().heap().allocate<WebIDL::CallbackType>(*mouseup_callback_function, realm());
         DOM::AddEventListenerOptions mouseup_listener_options;
         mouseup_listener_options.once = true;
 
         auto up_callback_function = JS::NativeFunction::create(
             realm(), [this](JS::VM&) {
-                if (m_is_mutable) {
+                if (is_mutable()) {
                     MUST(step_up());
                     user_interaction_did_change_input_value();
                 }
                 return JS::js_undefined();
             },
             0, "", &realm());
-        auto step_up_callback = realm().heap().allocate<WebIDL::CallbackType>(*up_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+        auto step_up_callback = realm().heap().allocate<WebIDL::CallbackType>(*up_callback_function, realm());
         up_button->add_event_listener_without_options(UIEvents::EventNames::mousedown, DOM::IDLEventListener::create(realm(), step_up_callback));
         up_button->add_event_listener_without_options(UIEvents::EventNames::mouseup, DOM::IDLEventListener::create(realm(), mouseup_callback));
 
@@ -926,14 +921,14 @@ void HTMLInputElement::create_text_input_shadow_tree()
 
         auto down_callback_function = JS::NativeFunction::create(
             realm(), [this](JS::VM&) {
-                if (m_is_mutable) {
+                if (is_mutable()) {
                     MUST(step_down());
                     user_interaction_did_change_input_value();
                 }
                 return JS::js_undefined();
             },
             0, "", &realm());
-        auto step_down_callback = realm().heap().allocate<WebIDL::CallbackType>(*down_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+        auto step_down_callback = realm().heap().allocate<WebIDL::CallbackType>(*down_callback_function, realm());
         down_button->add_event_listener_without_options(UIEvents::EventNames::mousedown, DOM::IDLEventListener::create(realm(), step_down_callback));
         down_button->add_event_listener_without_options(UIEvents::EventNames::mouseup, DOM::IDLEventListener::create(realm(), mouseup_callback));
     }
@@ -983,6 +978,8 @@ void HTMLInputElement::create_file_input_shadow_tree()
     auto shadow_root = realm.create<DOM::ShadowRoot>(document(), *this, Bindings::ShadowRootMode::Closed);
 
     m_file_button = DOM::create_element(document(), HTML::TagNames::button, Namespace::HTML).release_value_but_fixme_should_propagate_errors();
+    m_file_button->set_use_pseudo_element(CSS::Selector::PseudoElement::Type::FileSelectorButton);
+
     m_file_label = DOM::create_element(document(), HTML::TagNames::label, Namespace::HTML).release_value_but_fixme_should_propagate_errors();
     MUST(m_file_label->set_attribute(HTML::AttributeNames::style, "padding-left: 4px;"_string));
 
@@ -992,7 +989,7 @@ void HTMLInputElement::create_file_input_shadow_tree()
     };
 
     auto on_button_click_function = JS::NativeFunction::create(realm, move(on_button_click), 0, "", &realm);
-    auto on_button_click_callback = realm.heap().allocate<WebIDL::CallbackType>(on_button_click_function, Bindings::principal_host_defined_environment_settings_object(realm));
+    auto on_button_click_callback = realm.heap().allocate<WebIDL::CallbackType>(on_button_click_function, realm);
     m_file_button->add_event_listener_without_options(UIEvents::EventNames::click, DOM::IDLEventListener::create(realm, on_button_click_callback));
 
     update_file_input_shadow_tree();
@@ -1064,7 +1061,7 @@ void HTMLInputElement::create_range_input_shadow_tree()
             return JS::js_undefined();
         },
         0, "", &realm());
-    auto keydown_callback = realm().heap().allocate<WebIDL::CallbackType>(*keydown_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+    auto keydown_callback = realm().heap().allocate<WebIDL::CallbackType>(*keydown_callback_function, realm());
     add_event_listener_without_options(UIEvents::EventNames::keydown, DOM::IDLEventListener::create(realm(), keydown_callback));
 
     auto wheel_callback_function = JS::NativeFunction::create(
@@ -1079,7 +1076,7 @@ void HTMLInputElement::create_range_input_shadow_tree()
             return JS::js_undefined();
         },
         0, "", &realm());
-    auto wheel_callback = realm().heap().allocate<WebIDL::CallbackType>(*wheel_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+    auto wheel_callback = realm().heap().allocate<WebIDL::CallbackType>(*wheel_callback_function, realm());
     add_event_listener_without_options(UIEvents::EventNames::wheel, DOM::IDLEventListener::create(realm(), wheel_callback));
 
     auto update_slider_by_mouse = [this](JS::VM& vm) {
@@ -1102,7 +1099,7 @@ void HTMLInputElement::create_range_input_shadow_tree()
                     return JS::js_undefined();
                 },
                 0, "", &realm());
-            auto mousemove_callback = realm().heap().allocate<WebIDL::CallbackType>(*mousemove_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+            auto mousemove_callback = realm().heap().allocate<WebIDL::CallbackType>(*mousemove_callback_function, realm());
             auto mousemove_listener = DOM::IDLEventListener::create(realm(), mousemove_callback);
             auto& window = static_cast<HTML::Window&>(relevant_global_object(*this));
             window.add_event_listener_without_options(UIEvents::EventNames::mousemove, mousemove_listener);
@@ -1114,7 +1111,7 @@ void HTMLInputElement::create_range_input_shadow_tree()
                     return JS::js_undefined();
                 },
                 0, "", &realm());
-            auto mouseup_callback = realm().heap().allocate<WebIDL::CallbackType>(*mouseup_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+            auto mouseup_callback = realm().heap().allocate<WebIDL::CallbackType>(*mouseup_callback_function, realm());
             DOM::AddEventListenerOptions mouseup_listener_options;
             mouseup_listener_options.once = true;
             window.add_event_listener(UIEvents::EventNames::mouseup, DOM::IDLEventListener::create(realm(), mouseup_callback), mouseup_listener_options);
@@ -1122,22 +1119,22 @@ void HTMLInputElement::create_range_input_shadow_tree()
             return JS::js_undefined();
         },
         0, "", &realm());
-    auto mousedown_callback = realm().heap().allocate<WebIDL::CallbackType>(*mousedown_callback_function, Bindings::principal_host_defined_environment_settings_object(realm()));
+    auto mousedown_callback = realm().heap().allocate<WebIDL::CallbackType>(*mousedown_callback_function, realm());
     add_event_listener_without_options(UIEvents::EventNames::mousedown, DOM::IDLEventListener::create(realm(), mousedown_callback));
 }
 
-void HTMLInputElement::computed_css_values_changed()
+void HTMLInputElement::computed_properties_changed()
 {
-    auto appearance = computed_css_values()->appearance();
+    auto appearance = computed_properties()->appearance();
     if (!appearance.has_value() || *appearance == CSS::Appearance::None)
         return;
 
     auto palette = document().page().palette();
     auto accent_color = palette.color(ColorRole::Accent).to_string();
 
-    auto const& accent_color_property = computed_css_values()->property(CSS::PropertyID::AccentColor);
+    auto const& accent_color_property = computed_properties()->property(CSS::PropertyID::AccentColor);
     if (accent_color_property.has_color())
-        accent_color = accent_color_property.to_string();
+        accent_color = accent_color_property.to_string(CSS::CSSStyleValue::SerializationMode::Normal);
 
     if (m_slider_progress_element)
         MUST(m_slider_progress_element->style_for_bindings()->set_property(CSS::PropertyID::BackgroundColor, accent_color));
@@ -1198,7 +1195,7 @@ void HTMLInputElement::did_lose_focus()
     commit_pending_changes();
 }
 
-void HTMLInputElement::form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value)
+void HTMLInputElement::form_associated_element_attribute_changed(FlyString const& name, Optional<String> const& value, Optional<FlyString> const&)
 {
     if (name == HTML::AttributeNames::checked) {
         if (!value.has_value()) {
@@ -1322,7 +1319,7 @@ WebIDL::ExceptionOr<void> HTMLInputElement::handle_src_attribute(String const& v
 
     // 1. Let url be the result of encoding-parsing a URL given the src attribute's value, relative to the element's
     //    node document.
-    auto url = document().parse_url(value);
+    auto url = document().encoding_parse_url(value);
 
     // 2. If url is failure, then return.
     if (!url.is_valid())
@@ -1596,7 +1593,24 @@ void HTMLInputElement::form_associated_element_was_removed(DOM::Node*)
     set_shadow_root(nullptr);
 }
 
-void HTMLInputElement::apply_presentational_hints(CSS::StyleProperties& style) const
+bool HTMLInputElement::is_presentational_hint(FlyString const& name) const
+{
+    if (Base::is_presentational_hint(name))
+        return true;
+
+    if (type_state() != TypeAttributeState::ImageButton)
+        return false;
+
+    return first_is_one_of(name,
+        HTML::AttributeNames::align,
+        HTML::AttributeNames::border,
+        HTML::AttributeNames::height,
+        HTML::AttributeNames::hspace,
+        HTML::AttributeNames::vspace,
+        HTML::AttributeNames::width);
+}
+
+void HTMLInputElement::apply_presentational_hints(GC::Ref<CSS::CascadedProperties> cascaded_properties) const
 {
     if (type_state() != TypeAttributeState::ImageButton)
         return;
@@ -1604,42 +1618,42 @@ void HTMLInputElement::apply_presentational_hints(CSS::StyleProperties& style) c
     for_each_attribute([&](auto& name, auto& value) {
         if (name == HTML::AttributeNames::align) {
             if (value.equals_ignoring_ascii_case("center"sv))
-                style.set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Center));
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Center));
             else if (value.equals_ignoring_ascii_case("middle"sv))
-                style.set_property(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Middle));
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::TextAlign, CSS::CSSKeywordValue::create(CSS::Keyword::Middle));
         } else if (name == HTML::AttributeNames::border) {
-            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value() && *parsed_value > 0) {
+            if (auto parsed_value = parse_non_negative_integer(value); parsed_value.has_value()) {
                 auto width_style_value = CSS::LengthStyleValue::create(CSS::Length::make_px(*parsed_value));
-                style.set_property(CSS::PropertyID::BorderTopWidth, width_style_value);
-                style.set_property(CSS::PropertyID::BorderRightWidth, width_style_value);
-                style.set_property(CSS::PropertyID::BorderBottomWidth, width_style_value);
-                style.set_property(CSS::PropertyID::BorderLeftWidth, width_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderTopWidth, width_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderRightWidth, width_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderBottomWidth, width_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderLeftWidth, width_style_value);
 
                 auto border_style_value = CSS::CSSKeywordValue::create(CSS::Keyword::Solid);
-                style.set_property(CSS::PropertyID::BorderTopStyle, border_style_value);
-                style.set_property(CSS::PropertyID::BorderRightStyle, border_style_value);
-                style.set_property(CSS::PropertyID::BorderBottomStyle, border_style_value);
-                style.set_property(CSS::PropertyID::BorderLeftStyle, border_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderTopStyle, border_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderRightStyle, border_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderBottomStyle, border_style_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::BorderLeftStyle, border_style_value);
             }
         } else if (name == HTML::AttributeNames::height) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::Height, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Height, *parsed_value);
             }
         }
         // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images:maps-to-the-dimension-property
         else if (name == HTML::AttributeNames::hspace) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::MarginLeft, *parsed_value);
-                style.set_property(CSS::PropertyID::MarginRight, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginLeft, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginRight, *parsed_value);
             }
         } else if (name == HTML::AttributeNames::vspace) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::MarginTop, *parsed_value);
-                style.set_property(CSS::PropertyID::MarginBottom, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginTop, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::MarginBottom, *parsed_value);
             }
         } else if (name == HTML::AttributeNames::width) {
             if (auto parsed_value = parse_dimension_value(value)) {
-                style.set_property(CSS::PropertyID::Width, *parsed_value);
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Width, *parsed_value);
             }
         }
     });
@@ -1829,7 +1843,7 @@ WebIDL::Long HTMLInputElement::max_length() const
 {
     // The maxLength IDL attribute must reflect the maxlength content attribute, limited to only non-negative numbers.
     if (auto maxlength_string = get_attribute(HTML::AttributeNames::maxlength); maxlength_string.has_value()) {
-        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value())
+        if (auto maxlength = parse_non_negative_integer(*maxlength_string); maxlength.has_value() && *maxlength <= 2147483647)
             return *maxlength;
     }
     return -1;
@@ -1846,7 +1860,7 @@ WebIDL::Long HTMLInputElement::min_length() const
 {
     // The minLength IDL attribute must reflect the minlength content attribute, limited to only non-negative numbers.
     if (auto minlength_string = get_attribute(HTML::AttributeNames::minlength); minlength_string.has_value()) {
-        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value())
+        if (auto minlength = parse_non_negative_integer(*minlength_string); minlength.has_value() && *minlength <= 2147483647)
             return *minlength;
     }
     return -1;
@@ -1859,19 +1873,94 @@ WebIDL::ExceptionOr<void> HTMLInputElement::set_min_length(WebIDL::Long value)
 }
 
 // https://html.spec.whatwg.org/multipage/input.html#the-size-attribute
-unsigned HTMLInputElement::size() const
+WebIDL::UnsignedLong HTMLInputElement::size() const
 {
+    // The size attribute, if specified, must have a value that is a valid non-negative integer greater than zero.
     // The size IDL attribute is limited to only positive numbers and has a default value of 20.
     if (auto size_string = get_attribute(HTML::AttributeNames::size); size_string.has_value()) {
-        if (auto size = parse_non_negative_integer(*size_string); size.has_value())
+        if (auto size = parse_non_negative_integer(*size_string); size.has_value() && *size != 0 && *size <= 2147483647)
             return *size;
     }
     return 20;
 }
 
-WebIDL::ExceptionOr<void> HTMLInputElement::set_size(unsigned value)
+WebIDL::ExceptionOr<void> HTMLInputElement::set_size(WebIDL::UnsignedLong value)
 {
+    if (value == 0)
+        return WebIDL::IndexSizeError::create(realm(), "Size must be greater than zero"_string);
+    if (value > 2147483647)
+        value = 20;
     return set_attribute(HTML::AttributeNames::size, String::number(value));
+}
+
+// https://html.spec.whatwg.org/multipage/input.html#dom-input-height
+WebIDL::UnsignedLong HTMLInputElement::height() const
+{
+    const_cast<DOM::Document&>(document()).update_layout();
+
+    // When the input element's type attribute is not in the Image Button state, then no image is available.
+    if (type_state() != TypeAttributeState::ImageButton)
+        return 0;
+
+    // Return the rendered height of the image, in CSS pixels, if the image is being rendered.
+    if (auto* paintable_box = this->paintable_box())
+        return paintable_box->content_height().to_int();
+
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
+    if (auto height_string = get_attribute(HTML::AttributeNames::height); height_string.has_value()) {
+        if (auto height = parse_non_negative_integer(*height_string); height.has_value() && *height <= 2147483647)
+            return *height;
+    }
+
+    // ...or else the natural height and height of the image, in CSS pixels, if an image is available but not being rendered
+    if (auto bitmap = current_image_bitmap())
+        return bitmap->height();
+
+    // ...or else 0, if the image is not available or does not have intrinsic dimensions.
+    return 0;
+}
+
+WebIDL::ExceptionOr<void> HTMLInputElement::set_height(WebIDL::UnsignedLong value)
+{
+    if (value > 2147483647)
+        value = 0;
+
+    return set_attribute(HTML::AttributeNames::height, String::number(value));
+}
+
+// https://html.spec.whatwg.org/multipage/input.html#dom-input-width
+WebIDL::UnsignedLong HTMLInputElement::width() const
+{
+    const_cast<DOM::Document&>(document()).update_layout();
+
+    // When the input element's type attribute is not in the Image Button state, then no image is available.
+    if (type_state() != TypeAttributeState::ImageButton)
+        return 0;
+
+    // Return the rendered width of the image, in CSS pixels, if the image is being rendered.
+    if (auto* paintable_box = this->paintable_box())
+        return paintable_box->content_width().to_int();
+
+    // On setting [the width or height IDL attribute], they must act as if they reflected the respective content attributes of the same name.
+    if (auto width_string = get_attribute(HTML::AttributeNames::width); width_string.has_value()) {
+        if (auto width = parse_non_negative_integer(*width_string); width.has_value() && *width <= 2147483647)
+            return *width;
+    }
+
+    // ...or else the natural width and height of the image, in CSS pixels, if an image is available but not being rendered
+    if (auto bitmap = current_image_bitmap())
+        return bitmap->width();
+
+    // ...or else 0, if the image is not available or does not have intrinsic dimensions.
+    return 0;
+}
+
+WebIDL::ExceptionOr<void> HTMLInputElement::set_width(WebIDL::UnsignedLong value)
+{
+    if (value > 2147483647)
+        value = 0;
+
+    return set_attribute(HTML::AttributeNames::width, String::number(value));
 }
 
 // https://html.spec.whatwg.org/multipage/input.html#concept-input-value-string-number
@@ -2271,12 +2360,19 @@ void HTMLInputElement::set_custom_validity(String const& error)
 
 Optional<ARIA::Role> HTMLInputElement::default_role() const
 {
+    // http://wpt.live/html-aam/roles-dynamic-switch.tentative.window.html "Disconnected <input type=checkbox switch>"
+    if (!is_connected())
+        return {};
     // https://www.w3.org/TR/html-aria/#el-input-button
     if (type_state() == TypeAttributeState::Button)
         return ARIA::Role::button;
     // https://www.w3.org/TR/html-aria/#el-input-checkbox
-    if (type_state() == TypeAttributeState::Checkbox)
+    if (type_state() == TypeAttributeState::Checkbox) {
+        // https://github.com/w3c/html-aam/issues/496
+        if (has_attribute(HTML::AttributeNames::switch_))
+            return ARIA::Role::switch_;
         return ARIA::Role::checkbox;
+    }
     // https://www.w3.org/TR/html-aria/#el-input-email
     if (type_state() == TypeAttributeState::Email && !has_attribute(AttributeNames::list))
         return ARIA::Role::textbox;

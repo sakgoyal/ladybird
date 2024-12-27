@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/Bitmap.h>
 #include <AK/QuickSort.h>
 #include <LibJS/Runtime/Iterator.h>
 #include <LibWeb/Animations/Animation.h>
@@ -155,7 +156,7 @@ static WebIDL::ExceptionOr<KeyframeType<AL>> process_a_keyframe_like_object(JS::
 
         auto name = input_property.as_string().utf8_string();
         if (name == "all"sv) {
-            all_value = TRY(keyframe_object.get(JS::PropertyKey { name }));
+            all_value = TRY(keyframe_object.get(vm.names.all));
             for (auto i = to_underlying(CSS::first_longhand_property_id); i <= to_underlying(CSS::last_longhand_property_id); ++i) {
                 auto property = static_cast<CSS::PropertyID>(i);
                 if (CSS::is_animatable_property(property))
@@ -182,7 +183,7 @@ static WebIDL::ExceptionOr<KeyframeType<AL>> process_a_keyframe_like_object(JS::
         // 1. Let raw value be the result of calling the [[Get]] internal method on keyframe input, with property name
         //    as the property key and keyframe input as the receiver.
         // 2. Check the completion record of raw value.
-        JS::PropertyKey key { property_name };
+        JS::PropertyKey key { property_name.to_byte_string(), JS::PropertyKey::StringMayBeNumber::No };
         auto raw_value = TRY(keyframe_object.has_property(key)) ? TRY(keyframe_object.get(key)) : *all_value;
 
         using PropertyValuesType = Conditional<AL == AllowLists::Yes, Vector<String>, String>;
@@ -541,12 +542,10 @@ static WebIDL::ExceptionOr<Vector<BaseKeyframe>> process_a_keyframes_argument(JS
             if (!property_id.has_value())
                 continue;
 
-            auto parser = CSS::Parser::Parser::create(CSS::Parser::ParsingContext(realm), value_string);
-
-            if (auto style_value = parser.parse_as_css_value(*property_id)) {
+            if (auto style_value = parse_css_value(CSS::Parser::ParsingContext(), value_string, *property_id)) {
                 // Handle 'initial' here so we don't have to get the default value of the property every frame in StyleComputer
                 if (style_value->is_initial())
-                    style_value = CSS::property_initial_value(realm, *property_id);
+                    style_value = CSS::property_initial_value(*property_id);
                 parsed_properties.set(*property_id, *style_value);
             }
         }
@@ -557,7 +556,7 @@ static WebIDL::ExceptionOr<Vector<BaseKeyframe>> process_a_keyframes_argument(JS
         //
         //    If parsing the "easing" property fails, throw a TypeError and abort this procedure.
         auto easing_string = keyframe.easing.get<String>();
-        auto easing_value = AnimationEffect::parse_easing_string(realm, easing_string);
+        auto easing_value = AnimationEffect::parse_easing_string(easing_string);
 
         if (!easing_value)
             return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, MUST(String::formatted("Invalid animation easing value: \"{}\"", easing_string)) };
@@ -569,7 +568,7 @@ static WebIDL::ExceptionOr<Vector<BaseKeyframe>> process_a_keyframes_argument(JS
     //    interface, and if any of the values fail to parse, throw a TypeError and abort this procedure.
     for (auto& unused_easing : unused_easings) {
         auto easing_string = unused_easing.get<String>();
-        auto easing_value = AnimationEffect::parse_easing_string(realm, easing_string);
+        auto easing_value = AnimationEffect::parse_easing_string(easing_string);
         if (!easing_value)
             return WebIDL::SimpleException { WebIDL::SimpleExceptionType::TypeError, MUST(String::formatted("Invalid animation easing value: \"{}\"", easing_string)) };
     }
@@ -798,7 +797,7 @@ Optional<CSS::Selector::PseudoElement::Type> KeyframeEffect::pseudo_element_type
 }
 
 // https://www.w3.org/TR/web-animations-1/#dom-keyframeeffect-getkeyframes
-WebIDL::ExceptionOr<GC::MarkedVector<JS::Object*>> KeyframeEffect::get_keyframes()
+WebIDL::ExceptionOr<GC::RootVector<JS::Object*>> KeyframeEffect::get_keyframes()
 {
     if (m_keyframe_objects.size() != m_keyframes.size()) {
         auto& vm = this->vm();
@@ -812,7 +811,7 @@ WebIDL::ExceptionOr<GC::MarkedVector<JS::Object*>> KeyframeEffect::get_keyframes
             TRY(object->set(vm.names.offset, keyframe.offset.has_value() ? JS::Value(keyframe.offset.value()) : JS::js_null(), ShouldThrowExceptions::Yes));
             TRY(object->set(vm.names.computedOffset, JS::Value(keyframe.computed_offset.value()), ShouldThrowExceptions::Yes));
             auto easing_value = keyframe.easing.get<NonnullRefPtr<CSS::CSSStyleValue const>>();
-            TRY(object->set(vm.names.easing, JS::PrimitiveString::create(vm, easing_value->to_string()), ShouldThrowExceptions::Yes));
+            TRY(object->set(vm.names.easing, JS::PrimitiveString::create(vm, easing_value->to_string(CSS::CSSStyleValue::SerializationMode::Normal)), ShouldThrowExceptions::Yes));
 
             if (keyframe.composite == Bindings::CompositeOperationOrAuto::Replace) {
                 TRY(object->set(vm.names.composite, JS::PrimitiveString::create(vm, "replace"sv), ShouldThrowExceptions::Yes));
@@ -825,15 +824,15 @@ WebIDL::ExceptionOr<GC::MarkedVector<JS::Object*>> KeyframeEffect::get_keyframes
             }
 
             for (auto const& [id, value] : keyframe.parsed_properties()) {
-                auto value_string = JS::PrimitiveString::create(vm, value->to_string());
-                TRY(object->set(JS::PropertyKey(DeprecatedFlyString(CSS::camel_case_string_from_property_id(id))), value_string, ShouldThrowExceptions::Yes));
+                auto value_string = JS::PrimitiveString::create(vm, value->to_string(CSS::CSSStyleValue::SerializationMode::Normal));
+                TRY(object->set(JS::PropertyKey { DeprecatedFlyString(CSS::camel_case_string_from_property_id(id)), JS::PropertyKey::StringMayBeNumber::No }, value_string, ShouldThrowExceptions::Yes));
             }
 
             m_keyframe_objects.append(object);
         }
     }
 
-    GC::MarkedVector<JS::Object*> keyframes { heap() };
+    GC::RootVector<JS::Object*> keyframes { heap() };
     for (auto const& keyframe : m_keyframe_objects)
         keyframes.append(keyframe);
     return keyframes;
@@ -916,19 +915,19 @@ static CSS::RequiredInvalidationAfterStyleChange compute_required_invalidation(H
     return invalidation;
 }
 
-void KeyframeEffect::update_style_properties()
+void KeyframeEffect::update_computed_properties()
 {
     auto target = this->target();
     if (!target)
         return;
 
-    Optional<CSS::StyleProperties&> style = {};
+    GC::Ptr<CSS::ComputedProperties> style = {};
     if (!pseudo_element_type().has_value())
-        style = target->computed_css_values();
+        style = target->computed_properties();
     else
-        style = target->pseudo_element_computed_css_values(pseudo_element_type().value());
+        style = target->pseudo_element_computed_properties(pseudo_element_type().value());
 
-    if (!style.has_value())
+    if (!style)
         return;
 
     auto animated_properties_before_update = style->animated_property_values();
@@ -936,24 +935,13 @@ void KeyframeEffect::update_style_properties()
     auto& document = target->document();
     document.style_computer().collect_animation_into(*target, pseudo_element_type(), *this, *style, CSS::StyleComputer::AnimationRefresh::Yes);
 
+    auto invalidation = compute_required_invalidation(animated_properties_before_update, style->animated_property_values());
+
     // Traversal of the subtree is necessary to update the animated properties inherited from the target element.
     target->for_each_in_subtree_of_type<DOM::Element>([&](auto& element) {
-        auto element_style = element.computed_css_values();
-        if (!element_style.has_value() || !element.layout_node())
-            return TraversalDecision::Continue;
-
-        for (auto i = to_underlying(CSS::first_property_id); i <= to_underlying(CSS::last_property_id); ++i) {
-            if (element_style->is_property_inherited(static_cast<CSS::PropertyID>(i))) {
-                auto new_value = CSS::StyleComputer::get_inherit_value(document.realm(), static_cast<CSS::PropertyID>(i), &element);
-                element_style->set_property(static_cast<CSS::PropertyID>(i), *new_value, CSS::StyleProperties::Inherited::Yes);
-            }
-        }
-
-        element.layout_node()->apply_style(*element_style);
+        invalidation |= element.recompute_inherited_style();
         return TraversalDecision::Continue;
     });
-
-    auto invalidation = compute_required_invalidation(animated_properties_before_update, style->animated_property_values());
 
     if (!pseudo_element_type().has_value()) {
         if (target->layout_node())

@@ -2,12 +2,7 @@ describe("correct behavior", () => {
     test("basic functionality", () => {
         {
             const duration = new Temporal.Duration(0, 0, 0, 0, 1, 2, 3, 4, 5, 6);
-            const relativeTo = new Temporal.PlainDate(1970, 1, 1);
             const values = [
-                [{ unit: "year", relativeTo }, 0.0001180556825534627],
-                [{ unit: "month", relativeTo }, 0.0013900104558714158],
-                [{ unit: "week", relativeTo }, 0.006155760590287699],
-                [{ unit: "day", relativeTo }, 0.04309032413201389],
                 [{ unit: "hour" }, 1.034167779168333],
                 [{ unit: "minute" }, 62.0500667501],
                 [{ unit: "second" }, 3723.00400500600017],
@@ -20,50 +15,39 @@ describe("correct behavior", () => {
                 expect(duration.total(arg))[matcher](expected);
             }
         }
+    });
 
-        {
-            const duration = new Temporal.Duration(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
-            const relativeTo = new Temporal.PlainDate(1970, 1, 1);
-            const values = [
-                [{ unit: "year", relativeTo }, 1.2307194003046997],
-                [{ unit: "month", relativeTo }, 14.813309068103722],
-                [{ unit: "week", relativeTo }, 64.17322587303077],
-                [{ unit: "day", relativeTo }, 449.21258111121534],
-                [{ unit: "hour", relativeTo }, 10781.101946669169],
-                [{ unit: "minute", relativeTo }, 646866.1168001501],
-                [{ unit: "second", relativeTo }, 38811967.00800901],
-                [{ unit: "millisecond", relativeTo }, 38811967008.00901],
-                [{ unit: "microsecond", relativeTo }, 38811967008009.01],
-                [{ unit: "nanosecond", relativeTo }, 38811967008009010],
-            ];
-            for (const [arg, expected] of values) {
-                const matcher = Number.isInteger(expected) ? "toBe" : "toBeCloseTo";
-                expect(duration.total(arg))[matcher](expected);
-            }
-        }
+    test("relative to plain date", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
 
-        {
-            const relativeTo = new Temporal.PlainDate(1970, 1, 1);
-            const units = [
-                "year",
-                "month",
-                "week",
-                "day",
-                "hour",
-                "minute",
-                "second",
-                "millisecond",
-                "microsecond",
-                "nanosecond",
-            ];
-            for (let i = 0; i < 10; ++i) {
-                const args = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-                args[i] = 123;
-                const unit = units[i];
-                const duration = new Temporal.Duration(...args);
-                expect(duration.total({ unit, relativeTo })).toBe(123);
-            }
-        }
+        ["2000-01-01", "2000-01-01T00:00", "2000-01-01T00:00[u-ca=iso8601]"].forEach(relativeTo => {
+            const result = duration.total({ unit: "months", relativeTo });
+            expect(result).toBe(1);
+        });
+    });
+
+    test("relative to zoned date time", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        [
+            "2000-01-01[UTC]",
+            "2000-01-01T00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC]",
+            "2000-01-01T00:00+00:00[UTC][u-ca=iso8601]",
+        ].forEach(relativeTo => {
+            const result = duration.total({ unit: "months", relativeTo });
+            expect(result).toBe(1);
+        });
+    });
+
+    test("match minutes", () => {
+        const duration = new Temporal.Duration(1, 0, 0, 0, 24);
+
+        const result = duration.total({
+            unit: "days",
+            relativeTo: "1970-01-01T00:00:00-00:45[Africa/Monrovia]",
+        });
+        expect(result).toBe(366);
     });
 });
 
@@ -78,14 +62,14 @@ describe("errors", () => {
         const duration = new Temporal.Duration();
         expect(() => {
             duration.total();
-        }).toThrowWithMessage(TypeError, "Required options object is missing or undefined");
+        }).toThrowWithMessage(TypeError, "totalOf is undefined");
     });
 
     test("missing unit option", () => {
         const duration = new Temporal.Duration();
         expect(() => {
             duration.total({});
-        }).toThrowWithMessage(RangeError, "unit option value is undefined");
+        }).toThrowWithMessage(RangeError, "undefined is not a valid value for option unit");
     });
 
     test("invalid unit option", () => {
@@ -99,9 +83,14 @@ describe("errors", () => {
         const duration = new Temporal.Duration(1);
         expect(() => {
             duration.total({ unit: "second" });
-        }).toThrowWithMessage(
-            RangeError,
-            "A starting point is required for balancing calendar units"
-        );
+        }).toThrowWithMessage(RangeError, "Largest unit must not be year");
+    });
+
+    test("relativeTo with invalid date", () => {
+        const duration = new Temporal.Duration(0, 0, 0, 31);
+
+        expect(() => {
+            duration.total({ unit: "minute", relativeTo: "-271821-04-19" });
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 });

@@ -46,7 +46,7 @@ describe("correct behavior", () => {
             new Temporal.PlainTime().with({
                 calendar: undefined,
             });
-        }).not.toThrowWithMessage(TypeError, "Object must not have a defined calendar property");
+        }).not.toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument can have a timeZone property as long as it's undefined", () => {
@@ -54,7 +54,7 @@ describe("correct behavior", () => {
             new Temporal.PlainTime().with({
                 timeZone: undefined,
             });
-        }).not.toThrowWithMessage(TypeError, "Object must not have a defined timeZone property");
+        }).not.toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 });
 
@@ -68,10 +68,10 @@ describe("errors", () => {
     test("argument is not an object", () => {
         expect(() => {
             new Temporal.PlainTime().with("foo");
-        }).toThrowWithMessage(TypeError, "foo is not an object");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
             new Temporal.PlainTime().with(42);
-        }).toThrowWithMessage(TypeError, "42 is not an object");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("options is not an object", () => {
@@ -92,16 +92,10 @@ describe("errors", () => {
     test("argument is an invalid plain time-like object", () => {
         expect(() => {
             new Temporal.PlainTime().with({});
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: hour, microsecond, millisecond, minute, nanosecond, second"
-        );
+        }).toThrowWithMessage(TypeError, "Invalid time");
         expect(() => {
             new Temporal.PlainTime().with({ foo: 1, bar: 2 });
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: hour, microsecond, millisecond, minute, nanosecond, second"
-        );
+        }).toThrowWithMessage(TypeError, "Invalid time");
     });
 
     test("error when coercing property to number", () => {
@@ -122,10 +116,16 @@ describe("errors", () => {
         for (const property of PLAIN_TIME_PROPERTIES) {
             expect(() => {
                 new Temporal.PlainTime().with({ [property]: Infinity });
-            }).toThrowWithMessage(RangeError, "Property must not be Infinity");
+            }).toThrowWithMessage(
+                RangeError,
+                `Invalid value Infinity for time field '${property}'`
+            );
             expect(() => {
                 new Temporal.PlainTime().with({ [property]: -Infinity });
-            }).toThrowWithMessage(RangeError, "Property must not be Infinity");
+            }).toThrowWithMessage(
+                RangeError,
+                `Invalid value -Infinity for time field '${property}'`
+            );
         }
     });
 
@@ -146,12 +146,12 @@ describe("errors", () => {
             new Temporal.PlainTime().with({
                 calendar: null,
             });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined calendar property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
             new Temporal.PlainTime().with({
                 calendar: 1,
             });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined calendar property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument must not have a defined timeZone property", () => {
@@ -159,12 +159,12 @@ describe("errors", () => {
             new Temporal.PlainTime().with({
                 timeZone: null,
             });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined timeZone property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
             new Temporal.PlainTime().with({
                 timeZone: 1,
             });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined timeZone property");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("error when getting calendar", () => {
@@ -191,26 +191,13 @@ describe("errors", () => {
         for (const typeWithCalendar of REJECTED_CALENDAR_TYPES_THREE_ARGUMENTS) {
             expect(() => {
                 new Temporal.PlainTime().with(new typeWithCalendar(1, 1, 1));
-            }).toThrowWithMessage(
-                TypeError,
-                "Object must not have a defined calendar or timeZone property"
-            );
+            }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         }
 
         for (const typeWithCalendar of REJECTED_CALENDAR_TYPES_TWO_ARGUMENTS) {
             expect(() => {
                 new Temporal.PlainTime().with(new typeWithCalendar(1, 1));
-            }).toThrowWithMessage(
-                TypeError,
-                "Object must not have a defined calendar or timeZone property"
-            );
+            }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         }
-
-        expect(() => {
-            new Temporal.PlainTime().with(new Temporal.ZonedDateTime(1n, {}));
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must not have a defined calendar or timeZone property"
-        );
     });
 });

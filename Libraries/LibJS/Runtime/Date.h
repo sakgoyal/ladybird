@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2022, Linus Groh <linusg@serenityos.org>
- * Copyright (c) 2022-2024, Tim Flynn <trflynn89@serenityos.org>
+ * Copyright (c) 2022-2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -85,7 +85,9 @@ double make_time(double hour, double min, double sec, double ms);
 double make_day(double year, double month, double date);
 double make_date(double day, double time);
 double time_clip(double time);
-bool is_time_zone_offset_string(StringView offset_string);
-double parse_time_zone_offset_string(StringView offset_string);
+bool is_offset_time_zone_identifier(StringView offset_string);
+ThrowCompletionOr<double> parse_date_time_utc_offset(VM&, StringView offset_string);
+double parse_date_time_utc_offset(StringView offset_string);
+double parse_date_time_utc_offset(Temporal::TimeZoneOffset const&);
 
 }

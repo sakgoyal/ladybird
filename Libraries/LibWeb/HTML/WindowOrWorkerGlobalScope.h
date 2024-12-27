@@ -29,19 +29,19 @@ class WindowOrWorkerGlobalScopeMixin {
 public:
     virtual ~WindowOrWorkerGlobalScopeMixin();
 
-    virtual Bindings::PlatformObject& this_impl() = 0;
-    virtual Bindings::PlatformObject const& this_impl() const = 0;
+    virtual DOM::EventTarget& this_impl() = 0;
+    virtual DOM::EventTarget const& this_impl() const = 0;
 
     // JS API functions
-    WebIDL::ExceptionOr<String> origin() const;
+    String origin() const;
     bool is_secure_context() const;
     bool cross_origin_isolated() const;
     GC::Ref<WebIDL::Promise> create_image_bitmap(ImageBitmapSource image, Optional<ImageBitmapOptions> options = {}) const;
     GC::Ref<WebIDL::Promise> create_image_bitmap(ImageBitmapSource image, WebIDL::Long sx, WebIDL::Long sy, WebIDL::Long sw, WebIDL::Long sh, Optional<ImageBitmapOptions> options = {}) const;
     GC::Ref<WebIDL::Promise> fetch(Fetch::RequestInfo const&, Fetch::RequestInit const&) const;
 
-    i32 set_timeout(TimerHandler, i32 timeout, GC::MarkedVector<JS::Value> arguments);
-    i32 set_interval(TimerHandler, i32 timeout, GC::MarkedVector<JS::Value> arguments);
+    i32 set_timeout(TimerHandler, i32 timeout, GC::RootVector<JS::Value> arguments);
+    i32 set_interval(TimerHandler, i32 timeout, GC::RootVector<JS::Value> arguments);
     void clear_timeout(i32);
     void clear_interval(i32);
     void clear_map_of_active_timers();
@@ -76,18 +76,6 @@ public:
 
     [[nodiscard]] GC::Ref<Crypto::Crypto> crypto();
 
-    void push_onto_outstanding_rejected_promises_weak_set(JS::Promise*);
-
-    // Returns true if removed, false otherwise.
-    bool remove_from_outstanding_rejected_promises_weak_set(JS::Promise*);
-
-    void push_onto_about_to_be_notified_rejected_promises_list(GC::Ref<JS::Promise>);
-
-    // Returns true if removed, false otherwise.
-    bool remove_from_about_to_be_notified_rejected_promises_list(GC::Ref<JS::Promise>);
-
-    void notify_about_rejected_promises(Badge<EventLoop>);
-
 protected:
     void initialize(JS::Realm&);
     void visit_edges(JS::Cell::Visitor&);
@@ -98,7 +86,7 @@ private:
         Yes,
         No,
     };
-    i32 run_timer_initialization_steps(TimerHandler handler, i32 timeout, GC::MarkedVector<JS::Value> arguments, Repeat repeat, Optional<i32> previous_id = {});
+    i32 run_timer_initialization_steps(TimerHandler handler, i32 timeout, GC::RootVector<JS::Value> arguments, Repeat repeat, Optional<i32> previous_id = {});
     void run_steps_after_a_timeout_impl(i32 timeout, Function<void()> completion_step, Optional<i32> timer_key = {});
 
     GC::Ref<WebIDL::Promise> create_image_bitmap_impl(ImageBitmapSource& image, Optional<WebIDL::Long> sx, Optional<WebIDL::Long> sy, Optional<WebIDL::Long> sw, Optional<WebIDL::Long> sh, Optional<ImageBitmapOptions>& options) const;
@@ -130,13 +118,6 @@ private:
     GC::Ptr<Crypto::Crypto> m_crypto;
 
     bool m_error_reporting_mode { false };
-
-    // https://html.spec.whatwg.org/multipage/webappapis.html#about-to-be-notified-rejected-promises-list
-    Vector<GC::Root<JS::Promise>> m_about_to_be_notified_rejected_promises_list;
-
-    // https://html.spec.whatwg.org/multipage/webappapis.html#outstanding-rejected-promises-weak-set
-    // The outstanding rejected promises weak set must not create strong references to any of its members, and implementations are free to limit its size, e.g. by removing old entries from it when new ones are added.
-    Vector<GC::Ptr<JS::Promise>> m_outstanding_rejected_promises_weak_set;
 };
 
 }

@@ -84,6 +84,12 @@ enum class XMLHttpRequestResponseType;
 
 namespace Web::Clipboard {
 class Clipboard;
+class ClipboardItem;
+}
+
+namespace Web::Compression {
+class CompressionStream;
+class DecompressionStream;
 }
 
 namespace Web::Cookie {
@@ -108,6 +114,7 @@ class BackgroundRepeatStyleValue;
 class BackgroundSizeStyleValue;
 class BasicShapeStyleValue;
 class BorderRadiusStyleValue;
+class CalculatedStyleValue;
 class Clip;
 class ConicGradientStyleValue;
 class ContentStyleValue;
@@ -126,7 +133,6 @@ class CSSKeyframesRule;
 class CSSKeywordValue;
 class CSSLayerBlockRule;
 class CSSLayerStatementRule;
-class CSSMathValue;
 class CSSMediaRule;
 class CSSNestedDeclarations;
 class CSSOKLab;
@@ -200,6 +206,7 @@ class Resolution;
 class ResolutionOrCalculated;
 class ResolutionStyleValue;
 class RotationStyleValue;
+class ScaleStyleValue;
 class Screen;
 class ScreenOrientation;
 class ScrollbarGutterStyleValue;
@@ -209,7 +216,7 @@ class ShorthandStyleValue;
 class Size;
 class StringStyleValue;
 class StyleComputer;
-class StyleProperties;
+class ComputedProperties;
 class StyleSheet;
 class StyleSheetList;
 class StyleValueList;
@@ -222,6 +229,7 @@ class TimeStyleValue;
 class Transformation;
 class TransformationStyleValue;
 class TransitionStyleValue;
+class TranslationStyleValue;
 class UnresolvedStyleValue;
 class URLStyleValue;
 class VisualViewport;
@@ -506,11 +514,10 @@ class PageTransitionEvent;
 class Path2D;
 class Plugin;
 class PluginArray;
+class PopoverInvokerElement;
 class PromiseRejectionEvent;
 class RadioNodeList;
 class SelectedFile;
-class ServiceWorkerContainer;
-class ServiceWorkerRegistration;
 class SessionHistoryEntry;
 class SharedResourceRequest;
 class Storage;
@@ -567,10 +574,15 @@ class Performance;
 
 namespace Web::IndexedDB {
 class Database;
-class IDBFactory;
+class IDBCursor;
 class IDBDatabase;
+class IDBFactory;
+class IDBIndex;
+class IDBKeyRange;
+class IDBObjectStore;
 class IDBOpenDBRequest;
 class IDBRequest;
+class IDBTransaction;
 class IDBVersionChangeEvent;
 }
 
@@ -593,6 +605,7 @@ class BlockFormattingContext;
 class Box;
 class ButtonBox;
 class CheckBox;
+class FieldSetBox;
 class FlexFormattingContext;
 class FormattingContext;
 class ImageBox;
@@ -600,6 +613,7 @@ class InlineFormattingContext;
 class InlineNode;
 class Label;
 class LabelableNode;
+class LegendBox;
 class LineBox;
 class LineBoxFragment;
 class ListItemBox;
@@ -651,6 +665,7 @@ namespace Web::Painting {
 class AudioPaintable;
 class ButtonPaintable;
 class CheckBoxPaintable;
+class FieldSetPaintable;
 class LabelablePaintable;
 class MediaPaintable;
 class Paintable;
@@ -699,6 +714,12 @@ class ResizeObserver;
 
 namespace Web::Selection {
 class Selection;
+}
+
+namespace Web::ServiceWorker {
+class ServiceWorker;
+class ServiceWorkerContainer;
+class ServiceWorkerRegistration;
 }
 
 namespace Web::Streams {
@@ -781,6 +802,7 @@ class PerformanceMeasure;
 }
 
 namespace Web::WebAssembly {
+class Global;
 class Instance;
 class Memory;
 class Module;
@@ -802,6 +824,7 @@ class DynamicsCompressorNode;
 class GainNode;
 class OfflineAudioContext;
 class OscillatorNode;
+class PannerNode;
 class PeriodicWave;
 
 enum class AudioContextState;
@@ -812,9 +835,23 @@ struct OscillatorOptions;
 }
 
 namespace Web::WebGL {
+class OpenGLContext;
+class WebGL2RenderingContext;
+class WebGLActiveInfo;
+class WebGLBuffer;
 class WebGLContextEvent;
+class WebGLFramebuffer;
+class WebGLObject;
+class WebGLProgram;
+class WebGLRenderbuffer;
 class WebGLRenderingContext;
-class WebGLRenderingContextBase;
+class WebGLSampler;
+class WebGLShader;
+class WebGLShaderPrecisionFormat;
+class WebGLSync;
+class WebGLTexture;
+class WebGLUniformLocation;
+class WebGLVertexArrayObject;
 }
 
 namespace Web::WebIDL {

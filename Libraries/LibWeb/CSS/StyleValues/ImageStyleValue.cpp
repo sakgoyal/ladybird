@@ -112,9 +112,9 @@ Gfx::ImmutableBitmap const* ImageStyleValue::bitmap(size_t frame_index, Gfx::Int
     return nullptr;
 }
 
-String ImageStyleValue::to_string() const
+String ImageStyleValue::to_string(SerializationMode) const
 {
-    return serialize_a_url(MUST(m_url.to_string()));
+    return serialize_a_url(m_url.to_string());
 }
 
 bool ImageStyleValue::equals(CSSStyleValue const& other) const

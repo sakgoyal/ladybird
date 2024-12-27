@@ -4,8 +4,8 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const zonedDateTimeOne = new Temporal.ZonedDateTime(1n, new Temporal.TimeZone("UTC"));
-        const zonedDateTimeTwo = new Temporal.ZonedDateTime(2n, new Temporal.TimeZone("UTC"));
+        const zonedDateTimeOne = new Temporal.ZonedDateTime(1n, "UTC");
+        const zonedDateTimeTwo = new Temporal.ZonedDateTime(2n, "UTC");
 
         expect(Temporal.ZonedDateTime.compare(zonedDateTimeOne, zonedDateTimeOne)).toBe(0);
         expect(Temporal.ZonedDateTime.compare(zonedDateTimeTwo, zonedDateTimeTwo)).toBe(0);

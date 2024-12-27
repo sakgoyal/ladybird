@@ -10,14 +10,9 @@
 
 namespace AK {
 
-static bool is_absolute_path(StringView path)
-{
-    return path.length() >= 2 && path[1] == ':';
-}
-
 static bool is_root(auto const& parts)
 {
-    return parts.size() == 1 && is_absolute_path(parts[0]);
+    return parts.size() == 1 && LexicalPath::is_absolute_path(parts[0]);
 }
 
 LexicalPath::LexicalPath(ByteString path)
@@ -45,9 +40,14 @@ LexicalPath::LexicalPath(ByteString path)
     }
 }
 
-bool LexicalPath::is_absolute() const
+bool LexicalPath::is_absolute_path(StringView path)
 {
-    return is_absolute_path(m_string);
+    return path.length() >= 2 && path[1] == ':';
+}
+
+bool LexicalPath::is_root() const
+{
+    return AK::is_root(m_parts);
 }
 
 Vector<ByteString> LexicalPath::parts() const
@@ -86,7 +86,7 @@ ByteString LexicalPath::canonicalized_path(ByteString path)
             continue;
         if (part == ".." && !canonical_parts.is_empty()) {
             // At the root, .. does nothing.
-            if (is_root(canonical_parts))
+            if (AK::is_root(canonical_parts))
                 continue;
             // A .. and a previous non-.. part cancel each other.
             if (canonical_parts.last() != "..") {
@@ -100,7 +100,7 @@ ByteString LexicalPath::canonicalized_path(ByteString path)
     StringBuilder builder;
     builder.join('\\', canonical_parts);
     // "X:" -> "X:\"
-    if (is_root(canonical_parts))
+    if (AK::is_root(canonical_parts))
         builder.append('\\');
     path = builder.to_byte_string();
     return path == "" ? "." : path;

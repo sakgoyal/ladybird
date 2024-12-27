@@ -5,14 +5,11 @@ describe("correct behavior", () => {
 
     test("basic functionality", () => {
         const plainDateTime = new Temporal.PlainDateTime(2021, 11, 3, 20, 9, 45, 100, 200, 300);
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = plainDateTime.toZonedDateTime(timeZone);
+        const zonedDateTime = plainDateTime.toZonedDateTime("UTC");
         const startOfDayZonedDateTime = zonedDateTime.startOfDay();
 
         expect(startOfDayZonedDateTime.epochNanoseconds).toBe(1635897600000000000n);
-        expect(startOfDayZonedDateTime.epochMicroseconds).toBe(1635897600000000n);
         expect(startOfDayZonedDateTime.epochMilliseconds).toBe(1635897600000);
-        expect(startOfDayZonedDateTime.epochSeconds).toBe(1635897600);
         expect(startOfDayZonedDateTime.year).toBe(2021);
         expect(startOfDayZonedDateTime.month).toBe(11);
         expect(startOfDayZonedDateTime.monthCode).toBe("M11");

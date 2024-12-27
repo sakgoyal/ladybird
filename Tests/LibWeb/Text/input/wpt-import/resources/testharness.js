@@ -8,7 +8,8 @@
 {
     // default timeout is 10 seconds, test can override if needed
     var settings = {
-        output:true,
+        // Assume we are running tests if the internals object is exposed.
+        output: !(window.internals && window.internals.headless),
         harness_timeout:{
             "normal":150000, // NOTE: Overridden for Ladybird due to slow GCC CI
             "long":300000 // NOTE: Overridden for Ladybird due to slow GCC CI
@@ -554,6 +555,13 @@
     }
 
     var test_environment = create_test_environment();
+
+    // Tell the ladybird test runner what our preferred timeout is
+    {
+        let timeout = test_environment.test_timeout();
+        if (timeout)
+            window.internals.setTestTimeout(timeout);
+    }
 
     function is_shared_worker(worker) {
         return 'SharedWorker' in global_scope && worker instanceof SharedWorker;
@@ -4548,7 +4556,7 @@
     AssertionError.prototype = Object.create(Error.prototype);
 
     const get_stack = function() {
-        if (window.internals) {
+        if (window.internals && window.internals.headless) {
             return "(Stack traces disabled in Ladybird test mode)";
         }
 

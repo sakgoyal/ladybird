@@ -104,7 +104,7 @@ class HTTPTestServer {
         this.baseURL = baseURL;
     }
     async createEcho(method, path, options) {
-        const result = await fetch(`${this.baseURL}/create`, {
+        const result = await fetch(`${this.baseURL}/echo`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -121,8 +121,7 @@ class HTTPTestServer {
     }
 }
 
-// FIXME: Get the port from internals
-const __httpTestServer = new HTTPTestServer("http://localhost:8123");
+const __httpTestServer = new HTTPTestServer(`http://localhost:${internals.getEchoServerPort()}`);
 function httpTestServer() {
     return __httpTestServer;
 }

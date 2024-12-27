@@ -27,7 +27,7 @@ class HTMLSelectElement final
 public:
     virtual ~HTMLSelectElement() override;
 
-    virtual void adjust_computed_style(CSS::StyleProperties&) override;
+    virtual void adjust_computed_style(CSS::ComputedProperties&) override;
 
     WebIDL::UnsignedLong size() const;
     WebIDL::ExceptionOr<void> set_size(WebIDL::UnsignedLong);
@@ -105,7 +105,7 @@ private:
     // ^DOM::Element
     virtual i32 default_tab_index_value() const override;
 
-    virtual void computed_css_values_changed() override;
+    virtual void computed_properties_changed() override;
 
     virtual void children_changed() override;
 
@@ -114,6 +114,8 @@ private:
     void create_shadow_tree_if_needed();
     void update_inner_text_element();
     void queue_input_and_change_events();
+
+    u32 display_size() const;
 
     GC::Ptr<HTMLOptionsCollection> m_options;
     GC::Ptr<DOM::HTMLCollection> m_selected_options;

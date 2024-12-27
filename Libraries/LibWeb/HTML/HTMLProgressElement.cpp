@@ -7,7 +7,7 @@
  */
 
 #include <LibWeb/Bindings/HTMLProgressElementPrototype.h>
-#include <LibWeb/CSS/StyleProperties.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/StyleValues/DisplayStyleValue.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/ElementFactory.h>
@@ -61,7 +61,7 @@ WebIDL::ExceptionOr<void> HTMLProgressElement::set_value(double value)
 }
 
 // https://html.spec.whatwg.org/multipage/form-elements.html#dom-progress-max
-double HTMLProgressElement::max() const
+WebIDL::Double HTMLProgressElement::max() const
 {
     if (auto max_string = get_attribute(HTML::AttributeNames::max); max_string.has_value()) {
         if (auto max = parse_floating_point_number(*max_string); max.has_value())
@@ -74,7 +74,7 @@ double HTMLProgressElement::max() const
 WebIDL::ExceptionOr<void> HTMLProgressElement::set_max(double value)
 {
     if (value <= 0)
-        value = 1;
+        return {};
 
     TRY(set_attribute(HTML::AttributeNames::max, String::number(value)));
     update_progress_value_element();
@@ -99,7 +99,7 @@ void HTMLProgressElement::removed_from(DOM::Node*)
     set_shadow_root(nullptr);
 }
 
-void HTMLProgressElement::adjust_computed_style(CSS::StyleProperties& style)
+void HTMLProgressElement::adjust_computed_style(CSS::ComputedProperties& style)
 {
     // https://drafts.csswg.org/css-display-3/#unbox
     if (style.display().is_contents())
@@ -130,14 +130,14 @@ void HTMLProgressElement::update_progress_value_element()
         MUST(m_progress_value_element->style_for_bindings()->set_property(CSS::PropertyID::Width, MUST(String::formatted("{}%", position() * 100))));
 }
 
-void HTMLProgressElement::computed_css_values_changed()
+void HTMLProgressElement::computed_properties_changed()
 {
     auto palette = document().page().palette();
     auto accent_color = palette.color(ColorRole::Accent).to_string();
 
-    auto const& accent_color_property = computed_css_values()->property(CSS::PropertyID::AccentColor);
+    auto const& accent_color_property = computed_properties()->property(CSS::PropertyID::AccentColor);
     if (accent_color_property.has_color())
-        accent_color = accent_color_property.to_string();
+        accent_color = accent_color_property.to_string(Web::CSS::CSSStyleValue::SerializationMode::Normal);
 
     if (m_progress_value_element)
         MUST(m_progress_value_element->style_for_bindings()->set_property(CSS::PropertyID::BackgroundColor, accent_color));

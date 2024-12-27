@@ -40,11 +40,9 @@ set(SOURCES
     MappedFile.cpp
     MimeData.cpp
     Notifier.cpp
-    Process.cpp
     Resource.cpp
     ResourceImplementation.cpp
     ResourceImplementationFile.cpp
-    SessionManagement.cpp
     Socket.cpp
     SystemServerTakeover.cpp
     TCPServer.cpp
@@ -55,10 +53,12 @@ set(SOURCES
 
 if (WIN32)
     list(APPEND SOURCES
+        ProcessWindows.cpp
         AnonymousBufferWindows.cpp
         EventLoopImplementationWindows.cpp)
 else()
     list(APPEND SOURCES
+        Process.cpp
         AnonymousBuffer.cpp
         EventLoopImplementationUnix.cpp)
 endif()
@@ -109,4 +109,8 @@ endif()
 
 if (ANDROID)
     target_link_libraries(LibCore PRIVATE log)
+endif()
+
+if (WIN32)
+    target_link_libraries(LibCore PRIVATE ws2_32.lib)
 endif()

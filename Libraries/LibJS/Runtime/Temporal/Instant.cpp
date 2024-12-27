@@ -2,369 +2,297 @@
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2021, Idan Horowitz <idan.horowitz@serenityos.org>
  * Copyright (c) 2023, Shannon Booth <shannon@serenityos.org>
+ * Copyright (c) 2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include <AK/TypeCasts.h>
-#include <AK/Variant.h>
-#include <LibCrypto/BigInt/SignedBigInteger.h>
 #include <LibJS/Runtime/AbstractOperations.h>
-#include <LibJS/Runtime/Completion.h>
+#include <LibJS/Runtime/BigInt.h>
 #include <LibJS/Runtime/Date.h>
-#include <LibJS/Runtime/GlobalObject.h>
-#include <LibJS/Runtime/Temporal/AbstractOperations.h>
-#include <LibJS/Runtime/Temporal/Calendar.h>
+#include <LibJS/Runtime/Realm.h>
+#include <LibJS/Runtime/Temporal/Duration.h>
 #include <LibJS/Runtime/Temporal/Instant.h>
 #include <LibJS/Runtime/Temporal/InstantConstructor.h>
 #include <LibJS/Runtime/Temporal/PlainDateTime.h>
+#include <LibJS/Runtime/Temporal/PlainTime.h>
 #include <LibJS/Runtime/Temporal/TimeZone.h>
 #include <LibJS/Runtime/Temporal/ZonedDateTime.h>
+#include <LibJS/Runtime/VM.h>
+#include <LibJS/Runtime/ValueInlines.h>
 
 namespace JS::Temporal {
 
 GC_DEFINE_ALLOCATOR(Instant);
 
 // 8 Temporal.Instant Objects, https://tc39.es/proposal-temporal/#sec-temporal-instant-objects
-Instant::Instant(BigInt const& nanoseconds, Object& prototype)
+Instant::Instant(BigInt const& epoch_nanoseconds, Object& prototype)
     : Object(ConstructWithPrototypeTag::Tag, prototype)
-    , m_nanoseconds(nanoseconds)
+    , m_epoch_nanoseconds(epoch_nanoseconds)
 {
 }
 
 void Instant::visit_edges(Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
-
-    visitor.visit(m_nanoseconds);
+    visitor.visit(m_epoch_nanoseconds);
 }
 
-// 8.5.1 IsValidEpochNanoseconds ( epochNanoseconds ), https://tc39.es/proposal-temporal/#sec-temporal-isvalidepochnanoseconds
-bool is_valid_epoch_nanoseconds(BigInt const& epoch_nanoseconds)
-{
-    return is_valid_epoch_nanoseconds(epoch_nanoseconds.big_integer());
-}
+// nsMaxInstant = 10**8 × nsPerDay = 8.64 × 10**21
+Crypto::SignedBigInteger const NANOSECONDS_MAX_INSTANT = "8640000000000000000000"_sbigint;
+
+// nsMinInstant = -nsMaxInstant = -8.64 × 10**21
+Crypto::SignedBigInteger const NANOSECONDS_MIN_INSTANT = "-8640000000000000000000"_sbigint;
+
+// nsPerDay = 10**6 × ℝ(msPerDay) = 8.64 × 10**13
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_DAY = 86400000000000_bigint;
+
+// Non-standard:
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_HOUR = 3600000000000_bigint;
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_MINUTE = 60000000000_bigint;
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_SECOND = 1000000000_bigint;
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_MILLISECOND = 1000000_bigint;
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_MICROSECOND = 1000_bigint;
+Crypto::UnsignedBigInteger const NANOSECONDS_PER_NANOSECOND = 1_bigint;
+
+Crypto::UnsignedBigInteger const MICROSECONDS_PER_MILLISECOND = 1000_bigint;
+Crypto::UnsignedBigInteger const MILLISECONDS_PER_SECOND = 1000_bigint;
+Crypto::UnsignedBigInteger const SECONDS_PER_MINUTE = 60_bigint;
+Crypto::UnsignedBigInteger const MINUTES_PER_HOUR = 60_bigint;
+Crypto::UnsignedBigInteger const HOURS_PER_DAY = 24_bigint;
 
 // 8.5.1 IsValidEpochNanoseconds ( epochNanoseconds ), https://tc39.es/proposal-temporal/#sec-temporal-isvalidepochnanoseconds
 bool is_valid_epoch_nanoseconds(Crypto::SignedBigInteger const& epoch_nanoseconds)
 {
-    // 1. Assert: Type(epochNanoseconds) is BigInt.
-
-    // 2. If ℝ(epochNanoseconds) < nsMinInstant or ℝ(epochNanoseconds) > nsMaxInstant, then
-    if (epoch_nanoseconds < ns_min_instant || epoch_nanoseconds > ns_max_instant) {
+    // 1. If ℝ(epochNanoseconds) < nsMinInstant or ℝ(epochNanoseconds) > nsMaxInstant, then
+    if (epoch_nanoseconds < NANOSECONDS_MIN_INSTANT || epoch_nanoseconds > NANOSECONDS_MAX_INSTANT) {
         // a. Return false.
         return false;
     }
 
-    // 3. Return true.
+    // 2. Return true.
     return true;
 }
 
-// 8.5.2 CreateTemporalInstant ( epochNanoseconds [ , newTarget ] ), https://tc39.es/proposal-temporal/#sec-temporal-createtemporalinstant
-ThrowCompletionOr<Instant*> create_temporal_instant(VM& vm, BigInt const& epoch_nanoseconds, FunctionObject const* new_target)
+// 8.5.2 CreateTemporalInstant ( epochNanoseconds [ , newTarget ] ), https://tc39.es/proposal-temporal/#sec-temporal-isvalidepochnanoseconds
+ThrowCompletionOr<GC::Ref<Instant>> create_temporal_instant(VM& vm, BigInt const& epoch_nanoseconds, GC::Ptr<FunctionObject> new_target)
 {
     auto& realm = *vm.current_realm();
 
-    // 1. Assert: Type(epochNanoseconds) is BigInt.
+    // 1.  Assert: IsValidEpochNanoseconds(epochNanoseconds) is true.
+    VERIFY(is_valid_epoch_nanoseconds(epoch_nanoseconds.big_integer()));
 
-    // 2. Assert: ! IsValidEpochNanoseconds(epochNanoseconds) is true.
-    VERIFY(is_valid_epoch_nanoseconds(epoch_nanoseconds));
-
-    // 3. If newTarget is not present, set newTarget to %Temporal.Instant%.
+    // 2. If newTarget is not present, set newTarget to %Temporal.Instant%.
     if (!new_target)
         new_target = realm.intrinsics().temporal_instant_constructor();
 
-    // 4. Let object be ? OrdinaryCreateFromConstructor(newTarget, "%Temporal.Instant.prototype%", « [[InitializedTemporalInstant]], [[Nanoseconds]] »).
-    // 5. Set object.[[Nanoseconds]] to epochNanoseconds.
+    // 3. Let object be ? OrdinaryCreateFromConstructor(newTarget, "%Temporal.Instant.prototype%", « [[InitializedTemporalInstant]], [[EpochNanoseconds]] »).
+    // 4. Set object.[[EpochNanoseconds]] to epochNanoseconds.
     auto object = TRY(ordinary_create_from_constructor<Instant>(vm, *new_target, &Intrinsics::temporal_instant_prototype, epoch_nanoseconds));
 
-    // 6. Return object.
-    return object.ptr();
+    // 5. Return object.
+    return object;
 }
 
 // 8.5.3 ToTemporalInstant ( item ), https://tc39.es/proposal-temporal/#sec-temporal-totemporalinstant
-ThrowCompletionOr<Instant*> to_temporal_instant(VM& vm, Value item)
+ThrowCompletionOr<GC::Ref<Instant>> to_temporal_instant(VM& vm, Value item)
 {
-    // 1. If Type(item) is Object, then
+    // 1. If item is an Object, then
     if (item.is_object()) {
-        // a. If item has an [[InitializedTemporalInstant]] internal slot, then
-        if (is<Instant>(item.as_object())) {
-            // i. Return item.
-            return &static_cast<Instant&>(item.as_object());
-        }
+        auto const& object = item.as_object();
 
-        // b. If item has an [[InitializedTemporalZonedDateTime]] internal slot, then
-        if (is<ZonedDateTime>(item.as_object())) {
-            auto& zoned_date_time = static_cast<ZonedDateTime&>(item.as_object());
+        // a. If item has an [[InitializedTemporalInstant]] or [[InitializedTemporalZonedDateTime]] internal slot, then
+        //     i. Return ! CreateTemporalInstant(item.[[EpochNanoseconds]]).
+        if (is<Instant>(object))
+            return MUST(create_temporal_instant(vm, static_cast<Instant const&>(object).epoch_nanoseconds()));
+        if (is<ZonedDateTime>(object))
+            return MUST(create_temporal_instant(vm, static_cast<ZonedDateTime const&>(object).epoch_nanoseconds()));
 
-            // i. Return ! CreateTemporalInstant(item.[[Nanoseconds]]).
-            return create_temporal_instant(vm, zoned_date_time.nanoseconds());
-        }
+        // b. NOTE: This use of ToPrimitive allows Instant-like objects to be converted.
+        // c. Set item to ? ToPrimitive(item, STRING).
+        item = TRY(item.to_primitive(vm, Value::PreferredType::String));
     }
 
-    // 2. Let string be ? ToString(item).
-    auto string = TRY(item.to_string(vm));
+    // 2. If item is not a String, throw a TypeError exception.
+    if (!item.is_string())
+        return vm.throw_completion<TypeError>(ErrorType::TemporalInvalidInstantString, item);
 
-    // 3. Let epochNanoseconds be ? ParseTemporalInstant(string).
-    auto* epoch_nanoseconds = TRY(parse_temporal_instant(vm, string));
+    // 3. Let parsed be ? ParseISODateTime(item, « TemporalInstantString »).
+    auto parsed = TRY(parse_iso_date_time(vm, item.as_string().utf8_string_view(), { { Production::TemporalInstantString } }));
 
-    // 4. Return ! CreateTemporalInstant(ℤ(epochNanoseconds)).
-    return create_temporal_instant(vm, *epoch_nanoseconds);
-}
+    // 4. Assert: Either parsed.[[TimeZone]].[[OffsetString]] is not empty or parsed.[[TimeZone]].[[Z]] is true, but not both.
+    auto const& offset_string = parsed.time_zone.offset_string;
+    auto z_designator = parsed.time_zone.z_designator;
 
-// 8.5.4 ParseTemporalInstant ( isoString ), https://tc39.es/proposal-temporal/#sec-temporal-parsetemporalinstant
-ThrowCompletionOr<BigInt*> parse_temporal_instant(VM& vm, StringView iso_string)
-{
-    // 1. Assert: Type(isoString) is String.
+    VERIFY(offset_string.has_value() || z_designator);
+    VERIFY(!offset_string.has_value() || !z_designator);
 
-    // 2. Let result be ? ParseTemporalInstantString(isoString).
-    auto result = TRY(parse_temporal_instant_string(vm, iso_string));
+    // 5. If parsed.[[TimeZone]].[[Z]] is true, let offsetNanoseconds be 0; otherwise, let offsetNanoseconds be
+    //    ! ParseDateTimeUTCOffset(parsed.[[TimeZone]].[[OffsetString]]).
+    auto offset_nanoseconds = z_designator ? 0.0 : parse_date_time_utc_offset(*offset_string);
 
-    // 3. Let offsetString be result.[[TimeZoneOffsetString]].
-    auto& offset_string = result.time_zone_offset;
+    // 6. If parsed.[[Time]] is START-OF-DAY, let time be MidnightTimeRecord(); else let time be parsed.[[Time]].
+    auto time = parsed.time.has<ParsedISODateTime::StartOfDay>() ? midnight_time_record() : parsed.time.get<Time>();
 
-    // 4. Assert: offsetString is not undefined.
-    VERIFY(offset_string.has_value());
+    // 7. Let balanced be BalanceISODateTime(parsed.[[Year]], parsed.[[Month]], parsed.[[Day]], time.[[Hour]], time.[[Minute]], time.[[Second]], time.[[Millisecond]], time.[[Microsecond]], time.[[Nanosecond]] - offsetNanoseconds).
+    auto balanced = balance_iso_date_time(*parsed.year, parsed.month, parsed.day, time.hour, time.minute, time.second, time.millisecond, time.microsecond, time.nanosecond - offset_nanoseconds);
 
-    // 5. Let utc be GetUTCEpochNanoseconds(result.[[Year]], result.[[Month]], result.[[Day]], result.[[Hour]], result.[[Minute]], result.[[Second]], result.[[Millisecond]], result.[[Microsecond]], result.[[Nanosecond]]).
-    auto utc = get_utc_epoch_nanoseconds(result.year, result.month, result.day, result.hour, result.minute, result.second, result.millisecond, result.microsecond, result.nanosecond);
+    // 8. Perform ? CheckISODaysRange(balanced.[[ISODate]]).
+    TRY(check_iso_days_range(vm, balanced.iso_date));
 
-    // 6. If IsTimeZoneOffsetString(offsetString) is false, throw a RangeError exception.
-    if (!is_time_zone_offset_string(*offset_string))
-        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidTimeZoneName, *offset_string);
+    // 9. Let epochNanoseconds be GetUTCEpochNanoseconds(balanced).
+    auto epoch_nanoseconds = get_utc_epoch_nanoseconds(balanced);
 
-    // 7. Let offsetNanoseconds be ParseTimeZoneOffsetString(offsetString).
-    auto offset_nanoseconds = parse_time_zone_offset_string(*offset_string);
-
-    // 7. Let result be utc - ℤ(offsetNanoseconds).
-    auto result_ns = utc.minus(Crypto::SignedBigInteger { offset_nanoseconds });
-
-    // 8. If ! IsValidEpochNanoseconds(result) is false, then
-    if (!is_valid_epoch_nanoseconds(result_ns)) {
-        // a. Throw a RangeError exception.
+    // 10. If IsValidEpochNanoseconds(epochNanoseconds) is false, throw a RangeError exception.
+    if (!is_valid_epoch_nanoseconds(epoch_nanoseconds))
         return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidEpochNanoseconds);
-    }
 
-    // 9. Return result.
-    return BigInt::create(vm, move(result_ns)).ptr();
+    // 11. Return ! CreateTemporalInstant(epochNanoseconds).
+    return MUST(create_temporal_instant(vm, BigInt::create(vm, move(epoch_nanoseconds))));
 }
 
-// 8.5.5 CompareEpochNanoseconds ( epochNanosecondsOne, epochNanosecondsTwo ), https://tc39.es/proposal-temporal/#sec-temporal-compareepochnanoseconds
-i32 compare_epoch_nanoseconds(BigInt const& epoch_nanoseconds_one, BigInt const& epoch_nanoseconds_two)
+// 8.5.4 CompareEpochNanoseconds ( epochNanosecondsOne, epochNanosecondsTwo ), https://tc39.es/proposal-temporal/#sec-temporal-compareepochnanoseconds
+i8 compare_epoch_nanoseconds(Crypto::SignedBigInteger const& epoch_nanoseconds_one, Crypto::SignedBigInteger const& epoch_nanoseconds_two)
 {
     // 1. If epochNanosecondsOne > epochNanosecondsTwo, return 1.
-    if (epoch_nanoseconds_one.big_integer() > epoch_nanoseconds_two.big_integer())
+    if (epoch_nanoseconds_one > epoch_nanoseconds_two)
         return 1;
 
     // 2. If epochNanosecondsOne < epochNanosecondsTwo, return -1.
-    if (epoch_nanoseconds_one.big_integer() < epoch_nanoseconds_two.big_integer())
+    if (epoch_nanoseconds_one < epoch_nanoseconds_two)
         return -1;
 
     // 3. Return 0.
     return 0;
 }
 
-// 8.5.6 AddInstant ( epochNanoseconds, hours, minutes, seconds, milliseconds, microseconds, nanoseconds ), https://tc39.es/proposal-temporal/#sec-temporal-addinstant
-ThrowCompletionOr<BigInt*> add_instant(VM& vm, BigInt const& epoch_nanoseconds, double hours, double minutes, double seconds, double milliseconds, double microseconds, double nanoseconds)
+// 8.5.5 AddInstant ( epochNanoseconds, timeDuration ), https://tc39.es/proposal-temporal/#sec-temporal-addinstant
+ThrowCompletionOr<Crypto::SignedBigInteger> add_instant(VM& vm, Crypto::SignedBigInteger const& epoch_nanoseconds, TimeDuration const& time_duration)
 {
-    VERIFY(hours == trunc(hours) && minutes == trunc(minutes) && seconds == trunc(seconds) && milliseconds == trunc(milliseconds) && microseconds == trunc(microseconds) && nanoseconds == trunc(nanoseconds));
+    // 1. Let result be AddTimeDurationToEpochNanoseconds(timeDuration, epochNanoseconds).
+    auto result = add_time_duration_to_epoch_nanoseconds(time_duration, epoch_nanoseconds);
 
-    // 1. Let result be epochNanoseconds + ℤ(nanoseconds) + ℤ(microseconds) × 1000ℤ + ℤ(milliseconds) × 10^6ℤ + ℤ(seconds) × 10^9ℤ + ℤ(minutes) × 60ℤ × 10^9ℤ + ℤ(hours) × 3600ℤ × 10^9ℤ.
-    auto result = BigInt::create(vm,
-        epoch_nanoseconds.big_integer()
-            .plus(Crypto::SignedBigInteger { nanoseconds })
-            .plus(Crypto::SignedBigInteger { microseconds }.multiplied_by(Crypto::SignedBigInteger { 1'000 }))
-            .plus(Crypto::SignedBigInteger { milliseconds }.multiplied_by(Crypto::SignedBigInteger { 1'000'000 }))
-            .plus(Crypto::SignedBigInteger { seconds }.multiplied_by(Crypto::SignedBigInteger { 1'000'000'000 }))
-            .plus(Crypto::SignedBigInteger { minutes }.multiplied_by(Crypto::SignedBigInteger { 60 }).multiplied_by(Crypto::SignedBigInteger { 1'000'000'000 }))
-            .plus(Crypto::SignedBigInteger { hours }.multiplied_by(Crypto::SignedBigInteger { 3600 }).multiplied_by(Crypto::SignedBigInteger { 1'000'000'000 })));
-
-    // 2. If ! IsValidEpochNanoseconds(result) is false, throw a RangeError exception.
-    if (!is_valid_epoch_nanoseconds(*result))
+    // 2. If IsValidEpochNanoseconds(result) is false, throw a RangeError exception.
+    if (!is_valid_epoch_nanoseconds(result))
         return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidEpochNanoseconds);
 
     // 3. Return result.
-    return result.ptr();
+    return result;
 }
 
-// 8.5.6 DifferenceInstant ( ns1, ns2, roundingIncrement, smallestUnit, largestUnit, roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-differenceinstant
-TimeDurationRecord difference_instant(VM& vm, BigInt const& nanoseconds1, BigInt const& nanoseconds2, u64 rounding_increment, StringView smallest_unit, StringView largest_unit, StringView rounding_mode)
+// 8.5.6 DifferenceInstant ( ns1, ns2, roundingIncrement, smallestUnit, roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-differenceinstant
+InternalDuration difference_instant(VM& vm, Crypto::SignedBigInteger const& nanoseconds1, Crypto::SignedBigInteger const& nanoseconds2, u64 rounding_increment, Unit smallest_unit, RoundingMode rounding_mode)
 {
-    static Crypto::UnsignedBigInteger const BIGINT_ONE_THOUSAND { 1'000 };
+    // 1. Let timeDuration be TimeDurationFromEpochNanosecondsDifference(ns2, ns1).
+    auto time_duration = time_duration_from_epoch_nanoseconds_difference(nanoseconds2, nanoseconds1);
 
-    // 1. Let difference be ℝ(ns2) - ℝ(ns1).
-    auto difference = nanoseconds2.big_integer().minus(nanoseconds1.big_integer());
+    // 2. Set timeDuration to ! RoundTimeDuration(timeDuration, roundingIncrement, smallestUnit, roundingMode).
+    time_duration = MUST(round_time_duration(vm, time_duration, Crypto::UnsignedBigInteger { rounding_increment }, smallest_unit, rounding_mode));
 
-    // 2. Let nanoseconds be remainder(difference, 1000).
-    auto nanoseconds = remainder(difference, BIGINT_ONE_THOUSAND);
-
-    // 3. Let microseconds be remainder(truncate(difference / 1000), 1000).
-    auto microseconds = remainder(difference.divided_by(BIGINT_ONE_THOUSAND).quotient, BIGINT_ONE_THOUSAND);
-
-    // 4. Let milliseconds be remainder(truncate(difference / 10^6), 1000).
-    auto milliseconds = remainder(difference.divided_by(Crypto::UnsignedBigInteger { 1'000'000 }).quotient, BIGINT_ONE_THOUSAND);
-
-    // 5. Let seconds be truncate(difference / 10^9).
-    auto seconds = difference.divided_by(Crypto::UnsignedBigInteger { 1'000'000'000 }).quotient;
-
-    // 6. If smallestUnit is "nanosecond" and roundingIncrement is 1, then
-    if (smallest_unit == "nanosecond"sv && rounding_increment == 1) {
-        // a. Return ! BalanceTimeDuration(0, 0, 0, seconds, milliseconds, microseconds, nanoseconds, largestUnit).
-        return MUST(balance_time_duration(vm, 0, 0, 0, seconds.to_double(), milliseconds.to_double(), microseconds.to_double(), nanoseconds, largest_unit));
-    }
-
-    // 7. Let roundResult be ! RoundDuration(0, 0, 0, 0, 0, 0, seconds, milliseconds, microseconds, nanoseconds, roundingIncrement, smallestUnit, roundingMode).
-    auto round_result = MUST(round_duration(vm, 0, 0, 0, 0, 0, 0, seconds.to_double(), milliseconds.to_double(), microseconds.to_double(), nanoseconds.to_double(), rounding_increment, smallest_unit, rounding_mode)).duration_record;
-
-    // 8. Assert: roundResult.[[Days]] is 0.
-    VERIFY(round_result.days == 0);
-
-    // 9. Return ! BalanceTimeDuration(0, roundResult.[[Hours]], roundResult.[[Minutes]], roundResult.[[Seconds]], roundResult.[[Milliseconds]], roundResult.[[Microseconds]], roundResult.[[Nanoseconds]], largestUnit).
-    return MUST(balance_time_duration(vm, 0, round_result.hours, round_result.minutes, round_result.seconds, round_result.milliseconds, round_result.microseconds, Crypto::SignedBigInteger { round_result.nanoseconds }, largest_unit));
+    // 3. Return CombineDateAndTimeDuration(ZeroDateDuration(), timeDuration).
+    return combine_date_and_time_duration(zero_date_duration(vm), move(time_duration));
 }
 
-// 8.5.8 RoundTemporalInstant ( ns, increment, unit, roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-roundtemporalinstant
-BigInt* round_temporal_instant(VM& vm, BigInt const& nanoseconds, u64 increment, StringView unit, StringView rounding_mode)
+// 8.5.7 RoundTemporalInstant ( ns, increment, unit, roundingMode ), https://tc39.es/proposal-temporal/#sec-temporal-roundtemporalinstant
+Crypto::SignedBigInteger round_temporal_instant(Crypto::SignedBigInteger const& nanoseconds, u64 increment, Unit unit, RoundingMode rounding_mode)
 {
-    // 1. Assert: Type(ns) is BigInt.
+    // 1. Let unitLength be the value in the "Length in Nanoseconds" column of the row of Table 21 whose "Value" column contains unit.
+    auto unit_length = temporal_unit_length_in_nanoseconds(unit);
 
-    u64 increment_nanoseconds;
-    // 2. If unit is "hour", then
-    if (unit == "hour"sv) {
-        // a. Let incrementNs be increment × 3.6 × 10^12.
-        increment_nanoseconds = increment * 3600000000000;
-    }
-    // 3. Else if unit is "minute", then
-    else if (unit == "minute"sv) {
-        // a. Let incrementNs be increment × 6 × 10^10.
-        increment_nanoseconds = increment * 60000000000;
-    }
-    // 4. Else if unit is "second", then
-    else if (unit == "second"sv) {
-        // a. Let incrementNs be increment × 10^9.
-        increment_nanoseconds = increment * 1000000000;
-    }
-    // 5. Else if unit is "millisecond", then
-    else if (unit == "millisecond"sv) {
-        // a. Let incrementNs be increment × 10^6.
-        increment_nanoseconds = increment * 1000000;
-    }
-    // 6. Else if unit is "microsecond", then
-    else if (unit == "microsecond"sv) {
-        // a. Let incrementNs be increment × 10^3.
-        increment_nanoseconds = increment * 1000;
-    }
-    // 7. Else,
-    else {
-        // a. Assert: unit is "nanosecond".
-        VERIFY(unit == "nanosecond"sv);
+    // 2. Let incrementNs be increment × unitLength.
+    auto increment_nanoseconds = Crypto::UnsignedBigInteger { increment }.multiplied_by(unit_length);
 
-        // b. Let incrementNs be increment.
-        increment_nanoseconds = increment;
-    }
-
-    // 8. Return RoundNumberToIncrementAsIfPositive(ℝ(ns), incrementNs, roundingMode).
-    return BigInt::create(vm, round_number_to_increment_as_if_positive(nanoseconds.big_integer(), increment_nanoseconds, rounding_mode));
+    // 3. Return ℤ(RoundNumberToIncrementAsIfPositive(ℝ(ns), incrementNs, roundingMode)).
+    return round_number_to_increment_as_if_positive(nanoseconds, increment_nanoseconds, rounding_mode);
 }
 
-// 8.5.9 TemporalInstantToString ( instant, timeZone, precision ), https://tc39.es/proposal-temporal/#sec-temporal-temporalinstanttostring
-ThrowCompletionOr<String> temporal_instant_to_string(VM& vm, Instant& instant, Value time_zone, Variant<StringView, u8> const& precision)
+// 8.5.8 TemporalInstantToString ( instant, timeZone, precision ), https://tc39.es/proposal-temporal/#sec-temporal-temporalinstanttostring
+String temporal_instant_to_string(Instant const& instant, Optional<StringView> time_zone, SecondsStringPrecision::Precision precision)
 {
-    // 1. Assert: Type(instant) is Object.
-    // 2. Assert: instant has an [[InitializedTemporalInstant]] internal slot.
+    // 1. Let outputTimeZone be timeZone.
+    // 2. If outputTimeZone is undefined, set outputTimeZone to "UTC".
+    auto output_time_zone = time_zone.value_or("UTC"sv);
 
-    // 3. Let outputTimeZone be timeZone.
-    auto output_time_zone = time_zone;
+    // 3. Let epochNs be instant.[[EpochNanoseconds]].
+    auto const& epoch_nanoseconds = instant.epoch_nanoseconds()->big_integer();
 
-    // 4. If outputTimeZone is undefined, then
-    if (output_time_zone.is_undefined()) {
-        // a. Set outputTimeZone to ! CreateTemporalTimeZone("UTC").
-        output_time_zone = MUST_OR_THROW_OOM(create_temporal_time_zone(vm, "UTC"_string));
-    }
+    // 4. Let isoDateTime be GetISODateTimeFor(outputTimeZone, epochNs).
+    auto iso_date_time = get_iso_date_time_for(output_time_zone, epoch_nanoseconds);
 
-    // 5. Let isoCalendar be ! GetISO8601Calendar().
-    auto* iso_calendar = get_iso8601_calendar(vm);
-
-    // 6. Let dateTime be ? BuiltinTimeZoneGetPlainDateTimeFor(outputTimeZone, instant, isoCalendar).
-    auto* date_time = TRY(builtin_time_zone_get_plain_date_time_for(vm, output_time_zone, instant, *iso_calendar));
-
-    // 7. Let dateTimeString be ! TemporalDateTimeToString(dateTime.[[ISOYear]], dateTime.[[ISOMonth]], dateTime.[[ISODay]], dateTime.[[ISOHour]], dateTime.[[ISOMinute]], dateTime.[[ISOSecond]], dateTime.[[ISOMillisecond]], dateTime.[[ISOMicrosecond]], dateTime.[[ISONanosecond]], undefined, precision, "never").
-    auto date_time_string = MUST_OR_THROW_OOM(temporal_date_time_to_string(vm, date_time->iso_year(), date_time->iso_month(), date_time->iso_day(), date_time->iso_hour(), date_time->iso_minute(), date_time->iso_second(), date_time->iso_millisecond(), date_time->iso_microsecond(), date_time->iso_nanosecond(), nullptr, precision, "never"sv));
+    // 5. Let dateTimeString be ISODateTimeToString(isoDateTime, "iso8601", precision, NEVER).
+    auto date_time_string = iso_date_time_to_string(iso_date_time, "iso8601"sv, precision, ShowCalendar::Never);
 
     String time_zone_string;
 
-    // 8. If timeZone is undefined, then
-    if (time_zone.is_undefined()) {
+    // 6. If timeZone is undefined, then
+    if (!time_zone.has_value()) {
         // a. Let timeZoneString be "Z".
         time_zone_string = "Z"_string;
     }
-    // 9. Else,
+    // 7. Else,
     else {
-        auto time_zone_record = TRY(create_time_zone_methods_record(vm, GC::Ref<Object> { time_zone.as_object() }, { { TimeZoneMethod::GetOffsetNanosecondsFor } }));
+        // a. Let offsetNanoseconds be GetOffsetNanosecondsFor(outputTimeZone, epochNs).
+        auto offset_nanoseconds = get_offset_nanoseconds_for(output_time_zone, epoch_nanoseconds);
 
-        // a. Let offsetNs be ? GetOffsetNanosecondsFor(timeZone, instant).
-        auto offset_ns = TRY(get_offset_nanoseconds_for(vm, time_zone_record, instant));
-
-        // b. Let timeZoneString be ! FormatISOTimeZoneOffsetString(offsetNs).
-        time_zone_string = MUST_OR_THROW_OOM(format_iso_time_zone_offset_string(vm, offset_ns));
+        // b. Let timeZoneString be FormatDateTimeUTCOffsetRounded(offsetNanoseconds).
+        time_zone_string = format_date_time_utc_offset_rounded(offset_nanoseconds);
     }
 
-    // 10. Return the string-concatenation of dateTimeString and timeZoneString.
-    return TRY_OR_THROW_OOM(vm, String::formatted("{}{}", date_time_string, time_zone_string));
+    // 8. Return the string-concatenation of dateTimeString and timeZoneString.
+    return MUST(String::formatted("{}{}", date_time_string, time_zone_string));
 }
 
 // 8.5.9 DifferenceTemporalInstant ( operation, instant, other, options ), https://tc39.es/proposal-temporal/#sec-temporal-differencetemporalinstant
-ThrowCompletionOr<GC::Ref<Duration>> difference_temporal_instant(VM& vm, DifferenceOperation operation, Instant const& instant, Value other_value, Value options)
+ThrowCompletionOr<GC::Ref<Duration>> difference_temporal_instant(VM& vm, DurationOperation operation, Instant const& instant, Value other_value, Value options)
 {
-    // 1. If operation is since, let sign be -1. Otherwise, let sign be 1.
-    i8 sign = operation == DifferenceOperation::Since ? -1 : 1;
+    // 1. Set other to ? ToTemporalInstant(other).
+    auto other = TRY(to_temporal_instant(vm, other_value));
 
-    // 2. Set other to ? ToTemporalInstant(other).
-    auto* other = TRY(to_temporal_instant(vm, other_value));
+    // 2. Let resolvedOptions be ? GetOptionsObject(options).
+    auto resolved_options = TRY(get_options_object(vm, options));
 
-    // 3. Let resolvedOptions be ? SnapshotOwnProperties(? GetOptionsObject(options), null).
-    auto resolved_options = TRY(TRY(get_options_object(vm, options))->snapshot_own_properties(vm, nullptr));
+    // 3. Let settings be ? GetDifferenceSettings(operation, resolvedOptions, TIME, « », NANOSECOND, SECOND).
+    auto settings = TRY(get_difference_settings(vm, operation, resolved_options, UnitGroup::Time, {}, Unit::Nanosecond, Unit::Second));
 
-    // 4. Let settings be ? GetDifferenceSettings(operation, resolvedOptions, time, « », "nanosecond", "second").
-    auto settings = TRY(get_difference_settings(vm, operation, resolved_options, UnitGroup::Time, {}, { "nanosecond"sv }, "second"sv));
+    // 4. Let internalDuration be DifferenceInstant(instant.[[EpochNanoseconds]], other.[[EpochNanoseconds]], settings.[[RoundingIncrement]], settings.[[SmallestUnit]], settings.[[RoundingMode]]).
+    auto internal_duration = difference_instant(vm, instant.epoch_nanoseconds()->big_integer(), other->epoch_nanoseconds()->big_integer(), settings.rounding_increment, settings.smallest_unit, settings.rounding_mode);
 
-    // 5. Let result be DifferenceInstant(instant.[[Nanoseconds]], other.[[Nanoseconds]], settings.[[RoundingIncrement]], settings.[[SmallestUnit]], settings.[[LargestUnit]], settings.[[RoundingMode]]).
-    auto result = difference_instant(vm, instant.nanoseconds(), other->nanoseconds(), settings.rounding_increment, settings.smallest_unit, settings.largest_unit, settings.rounding_mode);
+    // 5. Let result be ! TemporalDurationFromInternal(internalDuration, settings.[[LargestUnit]]).
+    auto result = MUST(temporal_duration_from_internal(vm, internal_duration, settings.largest_unit));
 
-    // 6. Return ! CreateTemporalDuration(0, 0, 0, 0, sign × result.[[Hours]], sign × result.[[Minutes]], sign × result.[[Seconds]], sign × result.[[Milliseconds]], sign × result.[[Microseconds]], sign × result.[[Nanoseconds]]).
-    return MUST(create_temporal_duration(vm, 0, 0, 0, 0, sign * result.hours, sign * result.minutes, sign * result.seconds, sign * result.milliseconds, sign * result.microseconds, sign * result.nanoseconds));
+    // 6. If operation is SINCE, set result to CreateNegatedTemporalDuration(result).
+    if (operation == DurationOperation::Since)
+        result = create_negated_temporal_duration(vm, result);
+
+    // 7. Return result.
+    return result;
 }
 
-// 8.5.11 AddDurationToOrSubtractDurationFromInstant ( operation, instant, temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal-adddurationtoorsubtractdurationfrominstant
-ThrowCompletionOr<Instant*> add_duration_to_or_subtract_duration_from_instant(VM& vm, ArithmeticOperation operation, Instant const& instant, Value temporal_duration_like)
+// 8.5.10 AddDurationToInstant ( operation, instant, temporalDurationLike ), https://tc39.es/proposal-temporal/#sec-temporal-adddurationtoinstant
+ThrowCompletionOr<GC::Ref<Instant>> add_duration_to_instant(VM& vm, ArithmeticOperation operation, Instant const& instant, Value temporal_duration_like)
 {
-    // 1. If operation is subtract, let sign be -1. Otherwise, let sign be 1.
-    i8 sign = operation == ArithmeticOperation::Subtract ? -1 : 1;
+    // 1. Let duration be ? ToTemporalDuration(temporalDurationLike).
+    auto duration = TRY(to_temporal_duration(vm, temporal_duration_like));
 
-    // 2. Let duration be ? ToTemporalDurationRecord(temporalDurationLike).
-    auto duration = TRY(to_temporal_duration_record(vm, temporal_duration_like));
+    // 2. If operation is SUBTRACT, set duration to CreateNegatedTemporalDuration(duration).
+    if (operation == ArithmeticOperation::Subtract)
+        duration = create_negated_temporal_duration(vm, duration);
 
-    // 3. If duration.[[Days]] is not 0, throw a RangeError exception.
-    if (duration.days != 0)
-        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidDurationPropertyValueNonZero, "days", duration.days);
+    // 3. Let largestUnit be DefaultTemporalLargestUnit(duration).
+    auto largest_unit = default_temporal_largest_unit(duration);
 
-    // 4. If duration.[[Months]] is not 0, throw a RangeError exception.
-    if (duration.months != 0)
-        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidDurationPropertyValueNonZero, "months", duration.months);
+    // 4. If TemporalUnitCategory(largestUnit) is DATE, throw a RangeError exception.
+    if (temporal_unit_category(largest_unit) == UnitCategory::Date)
+        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidLargestUnit, temporal_unit_to_string(largest_unit));
 
-    // 5. If duration.[[Weeks]] is not 0, throw a RangeError exception.
-    if (duration.weeks != 0)
-        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidDurationPropertyValueNonZero, "weeks", duration.weeks);
+    // 5. Let internalDuration be ToInternalDurationRecordWith24HourDays(duration).
+    auto internal_duration = to_internal_duration_record_with_24_hour_days(vm, duration);
 
-    // 6. If duration.[[Years]] is not 0, throw a RangeError exception.
-    if (duration.years != 0)
-        return vm.throw_completion<RangeError>(ErrorType::TemporalInvalidDurationPropertyValueNonZero, "years", duration.years);
+    // 6. Let ns be ? AddInstant(instant.[[EpochNanoseconds]], internalDuration.[[Time]]).
+    auto nanoseconds = TRY(add_instant(vm, instant.epoch_nanoseconds()->big_integer(), internal_duration.time));
 
-    // 7. Let ns be ? AddInstant(instant.[[Nanoseconds]], sign × duration.[[Hours]], sign × duration.[[Minutes]], sign × duration.[[Seconds]], sign × duration.[[Milliseconds]], sign × duration.[[Microseconds]], sign × duration.[[Nanoseconds]]).
-    auto* ns = TRY(add_instant(vm, instant.nanoseconds(), sign * duration.hours, sign * duration.minutes, sign * duration.seconds, sign * duration.milliseconds, sign * duration.microseconds, sign * duration.nanoseconds));
-
-    // 8. Return ! CreateTemporalInstant(ns).
-    return MUST(create_temporal_instant(vm, *ns));
+    // 7. Return ! CreateTemporalInstant(ns).
+    return MUST(create_temporal_instant(vm, BigInt::create(vm, move(nanoseconds))));
 }
 
 }

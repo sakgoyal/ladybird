@@ -108,6 +108,13 @@ ErrorOr<NonnullRefPtr<WebView::WebContentClient>> launch_web_content_process(
         arguments.append("--force-fontconfig"sv);
     if (web_content_options.collect_garbage_on_every_allocation == WebView::CollectGarbageOnEveryAllocation::Yes)
         arguments.append("--collect-garbage-on-every-allocation"sv);
+    if (web_content_options.is_headless == WebView::IsHeadless::Yes)
+        arguments.append("--headless"sv);
+
+    if (auto const maybe_echo_server_port = web_content_options.echo_server_port; maybe_echo_server_port.has_value()) {
+        arguments.append("--echo-server-port"sv);
+        arguments.append(ByteString::number(maybe_echo_server_port.value()));
+    }
 
     if (auto server = mach_server_name(); server.has_value()) {
         arguments.append("--mach-server-name"sv);
@@ -163,7 +170,19 @@ ErrorOr<NonnullRefPtr<Requests::RequestClient>> launch_request_server_process()
         arguments.append(server.value());
     }
 
-    return launch_server_process<Requests::RequestClient>("RequestServer"sv, move(arguments));
+    auto client = TRY(launch_server_process<Requests::RequestClient>("RequestServer"sv, move(arguments)));
+    WebView::Application::chrome_options().dns_settings.visit(
+        [](WebView::SystemDNS) {},
+        [&](WebView::DNSOverTLS const& dns_over_tls) {
+            dbgln("Setting DNS server to {}:{} with TLS", dns_over_tls.server_address, dns_over_tls.port);
+            client->async_set_dns_server(dns_over_tls.server_address, dns_over_tls.port, true);
+        },
+        [&](WebView::DNSOverUDP const& dns_over_udp) {
+            dbgln("Setting DNS server to {}:{}", dns_over_udp.server_address, dns_over_udp.port);
+            client->async_set_dns_server(dns_over_udp.server_address, dns_over_udp.port, false);
+        });
+
+    return client;
 }
 
 ErrorOr<IPC::File> connect_new_request_server_client()

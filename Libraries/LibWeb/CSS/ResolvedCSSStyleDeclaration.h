@@ -24,6 +24,7 @@ public:
     virtual String item(size_t index) const override;
 
     virtual Optional<StyleProperty> property(PropertyID) const override;
+    virtual Optional<StyleProperty const&> custom_property(FlyString const& custom_property_name) const override;
     virtual WebIDL::ExceptionOr<void> set_property(PropertyID, StringView css_text, StringView priority) override;
     virtual WebIDL::ExceptionOr<void> set_property(StringView property_name, StringView css_text, StringView priority) override;
     virtual WebIDL::ExceptionOr<String> remove_property(PropertyID) override;
@@ -36,6 +37,8 @@ private:
     explicit ResolvedCSSStyleDeclaration(DOM::Element&, Optional<CSS::Selector::PseudoElement::Type>);
 
     virtual void visit_edges(Cell::Visitor&) override;
+
+    virtual bool computed_flag() const override { return true; }
 
     RefPtr<CSSStyleValue const> style_value_for_property(Layout::NodeWithStyle const&, PropertyID) const;
 

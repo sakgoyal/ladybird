@@ -22,6 +22,35 @@ describe("correct behavior", () => {
         ).toBe(1800000000000n);
     });
 
+    test("smallest unit", () => {
+        const instant = new Temporal.Instant(1732488841234567891n);
+
+        const tests = [
+            { smallestUnit: "hour", floor: 1732485600000000000n, ceil: 1732489200000000000n },
+            { smallestUnit: "minute", floor: 1732488840000000000n, ceil: 1732488900000000000n },
+            { smallestUnit: "second", floor: 1732488841000000000n, ceil: 1732488842000000000n },
+            {
+                smallestUnit: "millisecond",
+                floor: 1732488841234000000n,
+                ceil: 1732488841235000000n,
+            },
+            {
+                smallestUnit: "microsecond",
+                floor: 1732488841234567000n,
+                ceil: 1732488841234568000n,
+            },
+            { smallestUnit: "nanosecond", floor: 1732488841234567891n, ceil: 1732488841234567891n },
+        ];
+
+        for (const { smallestUnit, floor, ceil } of tests) {
+            let result = instant.round({ smallestUnit, roundingMode: "floor" });
+            expect(result.epochNanoseconds).toBe(floor);
+
+            result = instant.round({ smallestUnit, roundingMode: "ceil" });
+            expect(result.epochNanoseconds).toBe(ceil);
+        }
+    });
+
     test("string argument is implicitly converted to options object", () => {
         const instant = new Temporal.Instant(1111111111111n);
         expect(

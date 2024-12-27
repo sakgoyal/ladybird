@@ -7,6 +7,7 @@
 #pragma once
 
 #include <LibWeb/HTML/HTMLElement.h>
+#include <LibWeb/WebIDL/Types.h>
 
 namespace Web::HTML {
 
@@ -17,15 +18,16 @@ class HTMLTableColElement final : public HTMLElement {
 public:
     virtual ~HTMLTableColElement() override;
 
-    unsigned span() const;
-    WebIDL::ExceptionOr<void> set_span(unsigned);
+    WebIDL::UnsignedLong span() const;
+    WebIDL::ExceptionOr<void> set_span(WebIDL::UnsignedLong);
 
 private:
     HTMLTableColElement(DOM::Document&, DOM::QualifiedName);
 
     virtual void initialize(JS::Realm&) override;
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 };
 
 }

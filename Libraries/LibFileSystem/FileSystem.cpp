@@ -10,12 +10,13 @@
 #include <LibCore/DirIterator.h>
 #include <LibCore/System.h>
 #include <LibFileSystem/FileSystem.h>
-#include <limits.h>
 
 #if !defined(AK_OS_IOS) && defined(AK_OS_BSD_GENERIC)
 #    include <sys/disk.h>
 #elif defined(AK_OS_LINUX)
 #    include <linux/fs.h>
+#elif defined(AK_OS_WINDOWS)
+#    include <dirent.h>
 #endif
 
 // On Linux distros that use glibc `basename` is defined as a macro that expands to `__xpg_basename`, so we undefine it
@@ -32,16 +33,19 @@ ErrorOr<ByteString> current_working_directory()
 
 ErrorOr<ByteString> absolute_path(StringView path)
 {
+#ifndef AK_OS_WINDOWS
     if (exists(path))
         return real_path(path);
+#endif
 
-    if (path.starts_with("/"sv))
+    if (LexicalPath::is_absolute_path(path))
         return LexicalPath::canonicalized_path(path);
 
     auto working_directory = TRY(current_working_directory());
     return LexicalPath::absolute_path(working_directory, path);
 }
 
+#ifndef AK_OS_WINDOWS
 ErrorOr<ByteString> real_path(StringView path)
 {
     if (path.is_null())
@@ -56,6 +60,13 @@ ErrorOr<ByteString> real_path(StringView path)
 
     return ByteString { real_path, strlen(real_path) };
 }
+#else
+// NOTE: real_path on Windows does not resolve symlinks
+ErrorOr<ByteString> real_path(StringView path)
+{
+    return absolute_path(path);
+}
+#endif
 
 bool exists(StringView path)
 {
@@ -65,60 +76,6 @@ bool exists(StringView path)
 bool exists(int fd)
 {
     return !Core::System::fstat(fd).is_error();
-}
-
-bool is_device(StringView path)
-{
-    auto st_or_error = Core::System::stat(path);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode);
-}
-
-bool is_device(int fd)
-{
-    auto st_or_error = Core::System::fstat(fd);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISBLK(st.st_mode) || S_ISCHR(st.st_mode);
-}
-
-bool is_block_device(StringView path)
-{
-    auto st_or_error = Core::System::stat(path);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISBLK(st.st_mode);
-}
-
-bool is_block_device(int fd)
-{
-    auto st_or_error = Core::System::fstat(fd);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISBLK(st.st_mode);
-}
-
-bool is_char_device(StringView path)
-{
-    auto st_or_error = Core::System::stat(path);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISCHR(st.st_mode);
-}
-
-bool is_char_device(int fd)
-{
-    auto st_or_error = Core::System::fstat(fd);
-    if (st_or_error.is_error())
-        return false;
-    auto st = st_or_error.release_value();
-    return S_ISCHR(st.st_mode);
 }
 
 bool is_regular_file(StringView path)
@@ -157,6 +114,16 @@ bool is_directory(int fd)
     return S_ISDIR(st.st_mode);
 }
 
+#ifdef AK_OS_WINDOWS
+bool is_link(StringView path)
+{
+    ByteString string_path = path;
+    auto attr = GetFileAttributes(string_path.characters());
+    if (attr == INVALID_FILE_ATTRIBUTES)
+        return false;
+    return attr & FILE_ATTRIBUTE_REPARSE_POINT;
+}
+#else
 bool is_link(StringView path)
 {
     auto st_or_error = Core::System::lstat(path);
@@ -232,13 +199,13 @@ ErrorOr<void> copy_file(StringView destination_path, StringView source_path, str
 
     if (has_flag(preserve_mode, PreserveMode::Timestamps)) {
         struct timespec times[2] = {
-#if defined(AK_OS_MACOS) || defined(AK_OS_IOS)
+#    if defined(AK_OS_MACOS) || defined(AK_OS_IOS)
             source_stat.st_atimespec,
             source_stat.st_mtimespec,
-#else
+#    else
             source_stat.st_atim,
             source_stat.st_mtim,
-#endif
+#    endif
         };
         TRY(Core::System::utimensat(AT_FDCWD, destination_path, times, 0));
     }
@@ -280,13 +247,13 @@ ErrorOr<void> copy_directory(StringView destination_path, StringView source_path
 
     if (has_flag(preserve_mode, PreserveMode::Timestamps)) {
         struct timespec times[2] = {
-#if defined(AK_OS_MACOS) || defined(AK_OS_IOS)
+#    if defined(AK_OS_MACOS) || defined(AK_OS_IOS)
             source_stat.st_atimespec,
             source_stat.st_mtimespec,
-#else
+#    else
             source_stat.st_atim,
             source_stat.st_mtim,
-#endif
+#    endif
         };
         TRY(Core::System::utimensat(AT_FDCWD, destination_path, times, 0));
     }
@@ -338,6 +305,34 @@ ErrorOr<void> move_file(StringView destination_path, StringView source_path, Pre
     return Core::System::unlink(source_path);
 }
 
+bool can_delete_or_move(StringView path)
+{
+    VERIFY(!path.is_empty());
+    auto directory = LexicalPath::dirname(path);
+    auto directory_has_write_access = !Core::System::access(directory, W_OK).is_error();
+    if (!directory_has_write_access)
+        return false;
+
+    auto stat_or_empty = [](StringView path) {
+        auto stat_or_error = Core::System::stat(path);
+        if (stat_or_error.is_error()) {
+            struct stat stat { };
+            return stat;
+        }
+        return stat_or_error.release_value();
+    };
+
+    auto directory_stat = stat_or_empty(directory);
+    bool is_directory_sticky = (directory_stat.st_mode & S_ISVTX) != 0;
+    if (!is_directory_sticky)
+        return true;
+
+    // Directory is sticky, only the file owner, directory owner, and root can modify (rename, remove) it.
+    auto user_id = geteuid();
+    return user_id == 0 || directory_stat.st_uid == user_id || stat_or_empty(path).st_uid == user_id;
+}
+#endif // !AK_OS_WINDOWS
+
 ErrorOr<void> remove(StringView path, RecursionMode mode)
 {
     if (is_directory(path) && mode == RecursionMode::Allowed) {
@@ -366,90 +361,6 @@ ErrorOr<off_t> size_from_fstat(int fd)
 {
     auto st = TRY(Core::System::fstat(fd));
     return st.st_size;
-}
-
-ErrorOr<off_t> block_device_size_from_ioctl(StringView path)
-{
-    if (!path.characters_without_null_termination())
-        return Error::from_syscall("ioctl"sv, -EFAULT);
-
-    ByteString path_string = path;
-    int fd = open(path_string.characters(), O_RDONLY);
-
-    if (fd < 0)
-        return Error::from_errno(errno);
-
-    off_t size = TRY(block_device_size_from_ioctl(fd));
-
-    if (close(fd) != 0)
-        return Error::from_errno(errno);
-
-    return size;
-}
-
-ErrorOr<off_t> block_device_size_from_ioctl(int fd)
-{
-#if defined(AK_OS_MACOS)
-    u64 block_count = 0;
-    u32 block_size = 0;
-    TRY(Core::System::ioctl(fd, DKIOCGETBLOCKCOUNT, &block_count));
-    TRY(Core::System::ioctl(fd, DKIOCGETBLOCKSIZE, &block_size));
-    return static_cast<off_t>(block_count * block_size);
-#elif defined(AK_OS_FREEBSD) || defined(AK_OS_NETBSD)
-    off_t size = 0;
-    TRY(Core::System::ioctl(fd, DIOCGMEDIASIZE, &size));
-    return size;
-#elif defined(AK_OS_LINUX)
-    u64 size = 0;
-    TRY(Core::System::ioctl(fd, BLKGETSIZE64, &size));
-    return static_cast<off_t>(size);
-#else
-    // FIXME: Add support for more platforms.
-    (void)fd;
-    return Error::from_string_literal("Platform does not support getting block device size");
-#endif
-}
-
-bool can_delete_or_move(StringView path)
-{
-    VERIFY(!path.is_empty());
-    auto directory = LexicalPath::dirname(path);
-    auto directory_has_write_access = !Core::System::access(directory, W_OK).is_error();
-    if (!directory_has_write_access)
-        return false;
-
-    auto stat_or_empty = [](StringView path) {
-        auto stat_or_error = Core::System::stat(path);
-        if (stat_or_error.is_error()) {
-            struct stat stat { };
-            return stat;
-        }
-        return stat_or_error.release_value();
-    };
-
-    auto directory_stat = stat_or_empty(directory);
-    bool is_directory_sticky = (directory_stat.st_mode & S_ISVTX) != 0;
-    if (!is_directory_sticky)
-        return true;
-
-    // Directory is sticky, only the file owner, directory owner, and root can modify (rename, remove) it.
-    auto user_id = geteuid();
-    return user_id == 0 || directory_stat.st_uid == user_id || stat_or_empty(path).st_uid == user_id;
-}
-
-ErrorOr<ByteString> read_link(StringView link_path)
-{
-    return Core::System::readlink(link_path);
-}
-
-ErrorOr<void> link_file(StringView destination_path, StringView source_path)
-{
-    return TRY(Core::System::symlink(source_path, TRY(get_duplicate_file_name(destination_path))));
-}
-
-bool looks_like_shared_library(StringView path)
-{
-    return path.ends_with(".so"sv) || path.contains(".so."sv);
 }
 
 }

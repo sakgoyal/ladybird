@@ -1,6 +1,10 @@
 {
-  "builtin-baseline": "10b7a178346f3f0abef60cecd5130e295afd8da4",
+  "builtin-baseline": "b322364f06308bdd24823f9d8f03fe0cc86fd46f",
   "dependencies": [
+    {
+      "name": "angle",
+      "platform": "osx"
+    },
     {
       "name": "curl",
       "features": [
@@ -57,6 +61,7 @@
         "apng"
       ]
     },
+    "libproxy",
     {
       "name": "libavif",
       "features": [
@@ -70,6 +75,15 @@
         "libwebpmux",
         "simd"
       ]
+    },
+    {
+      "name": "mman",
+      "platform": "windows"
+    },
+    "openssl",
+    {
+      "name": "pthread",
+      "platform": "windows"
     },
     "simdutf",
     {
@@ -110,8 +124,16 @@
   ],
   "overrides": [
     {
+      "name": "angle",
+      "version": "chromium_5414#9"
+    },
+    {
       "name": "curl",
       "version": "8.10.1#0"
+    },
+    {
+      "name": "dirent",
+      "version": "1.24#0"
     },
     {
       "name": "ffmpeg",
@@ -131,11 +153,15 @@
     },
     {
       "name": "libjxl",
-      "version": "0.11.0"
+      "version": "0.11.1"
     },
     {
       "name": "libpng",
       "version": "1.6.43#3"
+    },
+    {
+      "name": "libproxy",
+      "version": "0.4.18#3"
     },
     {
       "name": "libavif",
@@ -144,6 +170,14 @@
     {
       "name": "libwebp",
       "version": "1.4.0#1"
+    },
+    {
+      "name": "mman",
+      "version": "git-f5ff813#5"
+    },
+    {
+      "name": "openssl",
+      "version": "3.4.0#0"
     },
     {
       "name": "simdutf",

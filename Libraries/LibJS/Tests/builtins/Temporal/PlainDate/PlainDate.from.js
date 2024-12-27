@@ -11,25 +11,16 @@ describe("correct behavior", () => {
         expect(createdPlainDate.day).toBe(26);
     });
 
-    test("PlainDateTime instance argument", () => {
-        const plainDateTime = new Temporal.PlainDateTime(2021, 7, 26, 1, 2, 3);
-        const createdPlainDate = Temporal.PlainDate.from(plainDateTime);
+    test("PlainDate string argument", () => {
+        const createdPlainDate = Temporal.PlainDate.from("2021-07-26");
         expect(createdPlainDate.year).toBe(2021);
         expect(createdPlainDate.month).toBe(7);
         expect(createdPlainDate.day).toBe(26);
     });
 
     test("ZonedDateTime instance argument", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(1627318123456789000n, timeZone);
+        const zonedDateTime = new Temporal.ZonedDateTime(1627318123456789000n, "UTC");
         const createdPlainDate = Temporal.PlainDate.from(zonedDateTime);
-        expect(createdPlainDate.year).toBe(2021);
-        expect(createdPlainDate.month).toBe(7);
-        expect(createdPlainDate.day).toBe(26);
-    });
-
-    test("PlainDate string argument", () => {
-        const createdPlainDate = Temporal.PlainDate.from("2021-07-26");
         expect(createdPlainDate.year).toBe(2021);
         expect(createdPlainDate.month).toBe(7);
         expect(createdPlainDate.day).toBe(26);
@@ -37,25 +28,30 @@ describe("correct behavior", () => {
 });
 
 describe("errors", () => {
-    test("custom time zone doesn't have a getOffsetNanosecondsFor function", () => {
-        const zonedDateTime = new Temporal.ZonedDateTime(0n, {});
+    test("missing fields", () => {
         expect(() => {
-            Temporal.PlainDate.from(zonedDateTime);
-        }).toThrowWithMessage(TypeError, "getOffsetNanosecondsFor is undefined");
+            Temporal.PlainDate.from({});
+        }).toThrowWithMessage(TypeError, "Required property year is missing or undefined");
+        expect(() => {
+            Temporal.PlainDate.from({ year: 0 });
+        }).toThrowWithMessage(TypeError, "Required property day is missing or undefined");
+        expect(() => {
+            Temporal.PlainDate.from({ month: 1 });
+        }).toThrowWithMessage(TypeError, "Required property year is missing or undefined");
     });
 
     test("invalid date time string", () => {
         expect(() => {
             Temporal.PlainDate.from("foo");
-        }).toThrowWithMessage(RangeError, "Invalid date time string 'foo'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 
     test("extended year must not be negative zero", () => {
         expect(() => {
             Temporal.PlainDate.from("-000000-01-01");
-        }).toThrowWithMessage(RangeError, "Invalid date time string '-000000-01-01'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
         expect(() => {
             Temporal.PlainDate.from("−000000-01-01"); // U+2212
-        }).toThrowWithMessage(RangeError, "Invalid date time string '−000000-01-01'");
+        }).toThrowWithMessage(RangeError, "Invalid ISO date time");
     });
 });

@@ -10,7 +10,7 @@
 #include <LibGfx/Forward.h>
 #include <LibGfx/PaintingSurface.h>
 #include <LibWeb/HTML/HTMLElement.h>
-#include <LibWeb/WebGL/WebGLRenderingContext.h>
+#include <LibWeb/WebIDL/Types.h>
 
 namespace Web::HTML {
 
@@ -19,26 +19,32 @@ class HTMLCanvasElement final : public HTMLElement {
     GC_DECLARE_ALLOCATOR(HTMLCanvasElement);
 
 public:
-    using RenderingContext = Variant<GC::Root<CanvasRenderingContext2D>, GC::Root<WebGL::WebGLRenderingContext>, Empty>;
+    using RenderingContext = Variant<GC::Root<CanvasRenderingContext2D>, GC::Root<WebGL::WebGLRenderingContext>, GC::Root<WebGL::WebGL2RenderingContext>, Empty>;
 
     virtual ~HTMLCanvasElement() override;
 
-    bool allocate_painting_surface(size_t minimum_width = 0, size_t minimum_height = 0);
-    RefPtr<Gfx::PaintingSurface> surface() { return m_surface; }
-    RefPtr<Gfx::PaintingSurface const> surface() const { return m_surface; }
+    Gfx::IntSize bitmap_size_for_canvas(size_t minimum_width = 0, size_t minimum_height = 0) const;
 
     JS::ThrowCompletionOr<RenderingContext> get_context(String const& type, JS::Value options);
+    enum class HasOrCreatedContext {
+        No,
+        Yes,
+    };
+    HasOrCreatedContext create_2d_context();
 
-    unsigned width() const;
-    unsigned height() const;
+    WebIDL::UnsignedLong width() const;
+    WebIDL::UnsignedLong height() const;
 
-    WebIDL::ExceptionOr<void> set_width(unsigned);
-    WebIDL::ExceptionOr<void> set_height(unsigned);
+    WebIDL::ExceptionOr<void> set_width(WebIDL::UnsignedLong);
+    WebIDL::ExceptionOr<void> set_height(WebIDL::UnsignedLong);
 
     String to_data_url(StringView type, JS::Value quality);
     WebIDL::ExceptionOr<void> to_blob(GC::Ref<WebIDL::CallbackType> callback, StringView type, JS::Value quality);
 
     void present();
+
+    RefPtr<Gfx::PaintingSurface> surface() const;
+    void allocate_painting_surface_if_needed();
 
 private:
     HTMLCanvasElement(DOM::Document&, DOM::QualifiedName);
@@ -46,23 +52,18 @@ private:
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
+    virtual bool is_presentational_hint(FlyString const&) const override;
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const override;
 
-    virtual GC::Ptr<Layout::Node> create_layout_node(CSS::StyleProperties) override;
-    virtual void adjust_computed_style(CSS::StyleProperties&) override;
+    virtual GC::Ptr<Layout::Node> create_layout_node(GC::Ref<CSS::ComputedProperties>) override;
+    virtual void adjust_computed_style(CSS::ComputedProperties&) override;
 
-    enum class HasOrCreatedContext {
-        No,
-        Yes,
-    };
-
-    HasOrCreatedContext create_2d_context();
+    template<typename ContextType>
     JS::ThrowCompletionOr<HasOrCreatedContext> create_webgl_context(JS::Value options);
     void reset_context_to_default_state();
+    void notify_context_about_canvas_size_change();
 
-    RefPtr<Gfx::PaintingSurface> m_surface;
-
-    Variant<GC::Ref<HTML::CanvasRenderingContext2D>, GC::Ref<WebGL::WebGLRenderingContext>, Empty> m_context;
+    Variant<GC::Ref<HTML::CanvasRenderingContext2D>, GC::Ref<WebGL::WebGLRenderingContext>, GC::Ref<WebGL::WebGL2RenderingContext>, Empty> m_context;
 };
 
 }

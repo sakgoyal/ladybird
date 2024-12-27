@@ -36,7 +36,7 @@ WebIDL::ExceptionOr<GC::Ref<CSSStyleSheet>> CSSStyleSheet::construct_impl(JS::Re
 
     // 2. Set sheet’s location to the base URL of the associated Document for the current principal global object.
     auto associated_document = verify_cast<HTML::Window>(HTML::current_principal_global_object()).document();
-    sheet->set_location(MUST(associated_document->base_url().to_string()));
+    sheet->set_location(associated_document->base_url().to_string());
 
     // 3. Set sheet’s stylesheet base URL to the baseURL attribute value from options.
     if (options.has_value() && options->base_url.has_value()) {
@@ -99,7 +99,7 @@ CSSStyleSheet::CSSStyleSheet(JS::Realm& realm, CSSRuleList& rules, MediaList& me
     , m_rules(&rules)
 {
     if (location.has_value())
-        set_location(MUST(location->to_string()));
+        set_location(location->to_string());
 
     for (auto& rule : *m_rules)
         rule->set_parent_style_sheet(this);
@@ -218,7 +218,7 @@ GC::Ref<WebIDL::Promise> CSSStyleSheet::replace(String text)
         auto& rules = parsed_stylesheet->rules();
 
         // 2. If rules contains one or more @import rules, remove those rules from rules.
-        GC::MarkedVector<GC::Ref<CSSRule>> rules_without_import(realm.heap());
+        GC::RootVector<GC::Ref<CSSRule>> rules_without_import(realm.heap());
         for (auto rule : rules) {
             if (rule->type() != CSSRule::Type::Import)
                 rules_without_import.append(rule);
@@ -252,7 +252,7 @@ WebIDL::ExceptionOr<void> CSSStyleSheet::replace_sync(StringView text)
     auto& rules = parsed_stylesheet->rules();
 
     // 3. If rules contains one or more @import rules, remove those rules from rules.
-    GC::MarkedVector<GC::Ref<CSSRule>> rules_without_import(realm().heap());
+    GC::RootVector<GC::Ref<CSSRule>> rules_without_import(realm().heap());
     for (auto rule : rules) {
         if (rule->type() != CSSRule::Type::Import)
             rules_without_import.append(rule);

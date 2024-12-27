@@ -20,6 +20,7 @@
 #include <AK/Vector.h>
 #include <AK/WeakPtr.h>
 #include <LibGfx/Color.h>
+#include <LibGfx/Font/FontVariant.h>
 #include <LibURL/URL.h>
 #include <LibWeb/CSS/Enums.h>
 #include <LibWeb/CSS/Keyword.h>
@@ -93,6 +94,7 @@ public:
         BackgroundSize,
         BasicShape,
         BorderRadius,
+        Calculated,
         Color,
         ConicGradient,
         Content,
@@ -104,6 +106,7 @@ public:
         Edge,
         FilterValueList,
         Flex,
+        FontVariant,
         Frequency,
         GridAutoFlow,
         GridTemplateArea,
@@ -114,7 +117,6 @@ public:
         Keyword,
         Length,
         LinearGradient,
-        Math,
         MathDepth,
         Number,
         OpenTypeTagged,
@@ -125,6 +127,7 @@ public:
         Rect,
         Resolution,
         Rotation,
+        Scale,
         ScrollbarGutter,
         Shadow,
         Shorthand,
@@ -132,6 +135,7 @@ public:
         Time,
         Transformation,
         Transition,
+        Translation,
         Unresolved,
         URL,
         ValueList,
@@ -165,6 +169,10 @@ public:
     bool is_border_radius() const { return type() == Type::BorderRadius; }
     BorderRadiusStyleValue const& as_border_radius() const;
     BorderRadiusStyleValue& as_border_radius() { return const_cast<BorderRadiusStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_border_radius()); }
+
+    bool is_calculated() const { return type() == Type::Calculated; }
+    CalculatedStyleValue const& as_calculated() const;
+    CalculatedStyleValue& as_calculated() { return const_cast<CalculatedStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_calculated()); }
 
     bool is_color() const { return type() == Type::Color; }
     CSSColorValue const& as_color() const;
@@ -250,10 +258,6 @@ public:
     LinearGradientStyleValue const& as_linear_gradient() const;
     LinearGradientStyleValue& as_linear_gradient() { return const_cast<LinearGradientStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_linear_gradient()); }
 
-    bool is_math() const { return type() == Type::Math; }
-    CSSMathValue const& as_math() const;
-    CSSMathValue& as_math() { return const_cast<CSSMathValue&>(const_cast<CSSStyleValue const&>(*this).as_math()); }
-
     bool is_math_depth() const { return type() == Type::MathDepth; }
     MathDepthStyleValue const& as_math_depth() const;
     MathDepthStyleValue& as_math_depth() { return const_cast<MathDepthStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_math_depth()); }
@@ -294,6 +298,10 @@ public:
     RotationStyleValue const& as_rotation() const;
     RotationStyleValue& as_rotation() { return const_cast<RotationStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_rotation()); }
 
+    bool is_scale() const { return type() == Type::Scale; }
+    ScaleStyleValue const& as_scale() const;
+    ScaleStyleValue& as_scale() { return const_cast<ScaleStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_scale()); }
+
     bool is_scrollbar_gutter() const { return type() == Type::ScrollbarGutter; }
     ScrollbarGutterStyleValue const& as_scrollbar_gutter() const;
     ScrollbarGutterStyleValue& as_scrollbar_gutter() { return const_cast<ScrollbarGutterStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_scrollbar_gutter()); }
@@ -321,6 +329,10 @@ public:
     bool is_transition() const { return type() == Type::Transition; }
     TransitionStyleValue const& as_transition() const;
     TransitionStyleValue& as_transition() { return const_cast<TransitionStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_transition()); }
+
+    bool is_translation() const { return type() == Type::Translation; }
+    TranslationStyleValue const& as_translation() const;
+    TranslationStyleValue& as_translation() { return const_cast<TranslationStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_translation()); }
 
     bool is_unresolved() const { return type() == Type::Unresolved; }
     UnresolvedStyleValue const& as_unresolved() const;
@@ -350,11 +362,23 @@ public:
 
     virtual Color to_color(Optional<Layout::NodeWithStyle const&>) const { return {}; }
     Keyword to_keyword() const;
-    virtual String to_string() const = 0;
+
+    enum class SerializationMode {
+        Normal,
+        ResolvedValue,
+    };
+    virtual String to_string(SerializationMode) const = 0;
 
     [[nodiscard]] int to_font_weight() const;
     [[nodiscard]] int to_font_slope() const;
     [[nodiscard]] int to_font_width() const;
+    [[nodiscard]] Optional<Gfx::FontVariantAlternates> to_font_variant_alternates() const;
+    [[nodiscard]] Optional<FontVariantCaps> to_font_variant_caps() const;
+    [[nodiscard]] Optional<Gfx::FontVariantEastAsian> to_font_variant_east_asian() const;
+    [[nodiscard]] Optional<FontVariantEmoji> to_font_variant_emoji() const;
+    [[nodiscard]] Optional<Gfx::FontVariantLigatures> to_font_variant_ligatures() const;
+    [[nodiscard]] Optional<Gfx::FontVariantNumeric> to_font_variant_numeric() const;
+    [[nodiscard]] Optional<FontVariantPosition> to_font_variant_position() const;
 
     virtual bool equals(CSSStyleValue const& other) const = 0;
 
@@ -389,6 +413,6 @@ template<>
 struct AK::Formatter<Web::CSS::CSSStyleValue> : Formatter<StringView> {
     ErrorOr<void> format(FormatBuilder& builder, Web::CSS::CSSStyleValue const& style_value)
     {
-        return Formatter<StringView>::format(builder, style_value.to_string());
+        return Formatter<StringView>::format(builder, style_value.to_string(Web::CSS::CSSStyleValue::SerializationMode::Normal));
     }
 };

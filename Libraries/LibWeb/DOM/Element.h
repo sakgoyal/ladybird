@@ -8,14 +8,16 @@
 
 #include <AK/Optional.h>
 #include <LibWeb/ARIA/ARIAMixin.h>
+#include <LibWeb/ARIA/AttributeNames.h>
 #include <LibWeb/Animations/Animatable.h>
 #include <LibWeb/Bindings/ElementPrototype.h>
 #include <LibWeb/Bindings/Intrinsics.h>
 #include <LibWeb/Bindings/ShadowRootPrototype.h>
+#include <LibWeb/CSS/CascadedProperties.h>
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/CSS/CountersSet.h>
 #include <LibWeb/CSS/Selector.h>
 #include <LibWeb/CSS/StyleInvalidation.h>
-#include <LibWeb/CSS/StyleProperties.h>
 #include <LibWeb/CSS/StyleProperty.h>
 #include <LibWeb/DOM/ChildNode.h>
 #include <LibWeb/DOM/NonDocumentTypeChildNode.h>
@@ -70,7 +72,7 @@ struct CustomElementUpgradeReaction {
 // A callback reaction, which will call a lifecycle callback, and contains a callback function as well as a list of arguments.
 struct CustomElementCallbackReaction {
     GC::Root<WebIDL::CallbackType> callback;
-    GC::MarkedVector<JS::Value> arguments;
+    GC::RootVector<JS::Value> arguments;
 };
 
 // https://dom.spec.whatwg.org/#concept-element-custom-element-state
@@ -171,11 +173,13 @@ public:
     // https://html.spec.whatwg.org/multipage/embedded-content-other.html#dimension-attributes
     virtual bool supports_dimension_attributes() const { return false; }
 
-    virtual void apply_presentational_hints(CSS::StyleProperties&) const { }
+    virtual bool is_presentational_hint(FlyString const&) const { return false; }
+    virtual void apply_presentational_hints(GC::Ref<CSS::CascadedProperties>) const { }
 
     void run_attribute_change_steps(FlyString const& local_name, Optional<String> const& old_value, Optional<String> const& value, Optional<FlyString> const& namespace_);
 
     CSS::RequiredInvalidationAfterStyleChange recompute_style();
+    CSS::RequiredInvalidationAfterStyleChange recompute_inherited_style();
 
     Optional<CSS::Selector::PseudoElement::Type> use_pseudo_element() const { return m_use_pseudo_element; }
     void set_use_pseudo_element(Optional<CSS::Selector::PseudoElement::Type> use_pseudo_element) { m_use_pseudo_element = move(use_pseudo_element); }
@@ -183,13 +187,16 @@ public:
     GC::Ptr<Layout::NodeWithStyle> layout_node();
     GC::Ptr<Layout::NodeWithStyle const> layout_node() const;
 
-    Optional<CSS::StyleProperties>& computed_css_values() { return m_computed_css_values; }
-    Optional<CSS::StyleProperties> const& computed_css_values() const { return m_computed_css_values; }
-    void set_computed_css_values(Optional<CSS::StyleProperties>);
-    CSS::StyleProperties resolved_css_values(Optional<CSS::Selector::PseudoElement::Type> = {});
+    GC::Ptr<CSS::ComputedProperties> computed_properties() { return m_computed_properties; }
+    GC::Ptr<CSS::ComputedProperties const> computed_properties() const { return m_computed_properties; }
+    void set_computed_properties(GC::Ptr<CSS::ComputedProperties>);
+    GC::Ref<CSS::ComputedProperties> resolved_css_values(Optional<CSS::Selector::PseudoElement::Type> = {});
 
-    void set_pseudo_element_computed_css_values(CSS::Selector::PseudoElement::Type, Optional<CSS::StyleProperties>);
-    Optional<CSS::StyleProperties&> pseudo_element_computed_css_values(CSS::Selector::PseudoElement::Type);
+    [[nodiscard]] GC::Ptr<CSS::CascadedProperties> cascaded_properties(Optional<CSS::Selector::PseudoElement::Type>) const;
+    void set_cascaded_properties(Optional<CSS::Selector::PseudoElement::Type>, GC::Ptr<CSS::CascadedProperties>);
+
+    void set_pseudo_element_computed_properties(CSS::Selector::PseudoElement::Type, GC::Ptr<CSS::ComputedProperties>);
+    GC::Ptr<CSS::ComputedProperties> pseudo_element_computed_properties(CSS::Selector::PseudoElement::Type);
 
     void reset_animated_css_properties();
 
@@ -235,13 +242,13 @@ public:
     GC::Ref<Geometry::DOMRect> get_bounding_client_rect() const;
     GC::Ref<Geometry::DOMRectList> get_client_rects() const;
 
-    virtual GC::Ptr<Layout::Node> create_layout_node(CSS::StyleProperties);
-    virtual void adjust_computed_style(CSS::StyleProperties&) { }
+    virtual GC::Ptr<Layout::Node> create_layout_node(GC::Ref<CSS::ComputedProperties>);
+    virtual void adjust_computed_style(CSS::ComputedProperties&) { }
 
     virtual void did_receive_focus() { }
     virtual void did_lose_focus() { }
 
-    static GC::Ptr<Layout::NodeWithStyle> create_layout_node_for_display_type(DOM::Document&, CSS::Display const&, CSS::StyleProperties, Element*);
+    static GC::Ptr<Layout::NodeWithStyle> create_layout_node_for_display_type(DOM::Document&, CSS::Display const&, GC::Ref<CSS::ComputedProperties>, Element*);
 
     void set_pseudo_element_node(Badge<Layout::TreeBuilder>, CSS::Selector::PseudoElement::Type, GC::Ptr<Layout::NodeWithStyle>);
     GC::Ptr<Layout::NodeWithStyle> get_pseudo_element_node(CSS::Selector::PseudoElement::Type) const;
@@ -271,85 +278,35 @@ public:
     ErrorOr<void> scroll_into_view(Optional<Variant<bool, ScrollIntoViewOptions>> = {});
 
     // https://www.w3.org/TR/wai-aria-1.2/#ARIAMixin
-#define ARIA_IMPL(name, attribute)                                               \
+#define __ENUMERATE_ARIA_ATTRIBUTE(name, attribute)                              \
     Optional<String> name() const override                                       \
     {                                                                            \
-        return get_attribute(attribute);                                         \
+        return get_attribute(ARIA::AttributeNames::name);                        \
     }                                                                            \
                                                                                  \
     WebIDL::ExceptionOr<void> set_##name(Optional<String> const& value) override \
     {                                                                            \
         if (value.has_value())                                                   \
-            TRY(set_attribute(attribute, *value));                               \
+            TRY(set_attribute(ARIA::AttributeNames::name, *value));              \
         else                                                                     \
-            remove_attribute(attribute);                                         \
+            remove_attribute(ARIA::AttributeNames::name);                        \
         return {};                                                               \
     }
-
-    // https://www.w3.org/TR/wai-aria-1.2/#accessibilityroleandproperties-correspondence
-    ARIA_IMPL(role, "role"_fly_string);
-    ARIA_IMPL(aria_active_descendant, "aria-activedescendant"_fly_string);
-    ARIA_IMPL(aria_atomic, "aria-atomic"_fly_string);
-    ARIA_IMPL(aria_auto_complete, "aria-autocomplete"_fly_string);
-    ARIA_IMPL(aria_braille_label, "aria-braillelabel"_fly_string);
-    ARIA_IMPL(aria_braille_role_description, "aria-brailleroledescription"_fly_string);
-    ARIA_IMPL(aria_busy, "aria-busy"_fly_string);
-    ARIA_IMPL(aria_checked, "aria-checked"_fly_string);
-    ARIA_IMPL(aria_col_count, "aria-colcount"_fly_string);
-    ARIA_IMPL(aria_col_index, "aria-colindex"_fly_string);
-    ARIA_IMPL(aria_col_index_text, "aria-colindextext"_fly_string);
-    ARIA_IMPL(aria_col_span, "aria-colspan"_fly_string);
-    ARIA_IMPL(aria_controls, "aria-controls"_fly_string);
-    ARIA_IMPL(aria_current, "aria-current"_fly_string);
-    ARIA_IMPL(aria_described_by, "aria-describedby"_fly_string);
-    ARIA_IMPL(aria_description, "aria-description"_fly_string);
-    ARIA_IMPL(aria_details, "aria-details"_fly_string);
-    ARIA_IMPL(aria_drop_effect, "aria-dropeffect"_fly_string);
-    ARIA_IMPL(aria_error_message, "aria-errormessage"_fly_string);
-    ARIA_IMPL(aria_disabled, "aria-disabled"_fly_string);
-    ARIA_IMPL(aria_expanded, "aria-expanded"_fly_string);
-    ARIA_IMPL(aria_flow_to, "aria-flowto"_fly_string);
-    ARIA_IMPL(aria_grabbed, "aria-grabbed"_fly_string);
-    ARIA_IMPL(aria_has_popup, "aria-haspopup"_fly_string);
-    ARIA_IMPL(aria_hidden, "aria-hidden"_fly_string);
-    ARIA_IMPL(aria_invalid, "aria-invalid"_fly_string);
-    ARIA_IMPL(aria_key_shortcuts, "aria-keyshortcuts"_fly_string);
-    ARIA_IMPL(aria_label, "aria-label"_fly_string);
-    ARIA_IMPL(aria_labelled_by, "aria-labelledby"_fly_string);
-    ARIA_IMPL(aria_level, "aria-level"_fly_string);
-    ARIA_IMPL(aria_live, "aria-live"_fly_string);
-    ARIA_IMPL(aria_modal, "aria-modal"_fly_string);
-    ARIA_IMPL(aria_multi_line, "aria-multiline"_fly_string);
-    ARIA_IMPL(aria_multi_selectable, "aria-multiselectable"_fly_string);
-    ARIA_IMPL(aria_orientation, "aria-orientation"_fly_string);
-    ARIA_IMPL(aria_owns, "aria-owns"_fly_string);
-    ARIA_IMPL(aria_placeholder, "aria-placeholder"_fly_string);
-    ARIA_IMPL(aria_pos_in_set, "aria-posinset"_fly_string);
-    ARIA_IMPL(aria_pressed, "aria-pressed"_fly_string);
-    ARIA_IMPL(aria_read_only, "aria-readonly"_fly_string);
-    ARIA_IMPL(aria_relevant, "aria-relevant"_fly_string);
-    ARIA_IMPL(aria_required, "aria-required"_fly_string);
-    ARIA_IMPL(aria_role_description, "aria-roledescription"_fly_string);
-    ARIA_IMPL(aria_row_count, "aria-rowcount"_fly_string);
-    ARIA_IMPL(aria_row_index, "aria-rowindex"_fly_string);
-    ARIA_IMPL(aria_row_index_text, "aria-rowindextext"_fly_string);
-    ARIA_IMPL(aria_row_span, "aria-rowspan"_fly_string);
-    ARIA_IMPL(aria_selected, "aria-selected"_fly_string);
-    ARIA_IMPL(aria_set_size, "aria-setsize"_fly_string);
-    ARIA_IMPL(aria_sort, "aria-sort"_fly_string);
-    ARIA_IMPL(aria_value_max, "aria-valuemax"_fly_string);
-    ARIA_IMPL(aria_value_min, "aria-valuemin"_fly_string);
-    ARIA_IMPL(aria_value_now, "aria-valuenow"_fly_string);
-    ARIA_IMPL(aria_value_text, "aria-valuetext"_fly_string);
-
-#undef ARIA_IMPL
+    ENUMERATE_ARIA_ATTRIBUTES
+#undef __ENUMERATE_ARIA_ATTRIBUTE
 
     virtual bool exclude_from_accessibility_tree() const override;
 
     virtual bool include_in_accessibility_tree() const override;
 
+    bool is_hidden() const;
+    bool has_hidden_ancestor() const;
+
+    bool is_referenced() const;
+    bool has_referenced_and_hidden_ancestor() const;
+
     void enqueue_a_custom_element_upgrade_reaction(HTML::CustomElementDefinition& custom_element_definition);
-    void enqueue_a_custom_element_callback_reaction(FlyString const& callback_name, GC::MarkedVector<JS::Value> arguments);
+    void enqueue_a_custom_element_callback_reaction(FlyString const& callback_name, GC::RootVector<JS::Value> arguments);
 
     using CustomElementReactionQueue = Vector<Variant<CustomElementUpgradeReaction, CustomElementCallbackReaction>>;
     CustomElementReactionQueue* custom_element_reaction_queue() { return m_custom_element_reaction_queue; }
@@ -414,7 +371,7 @@ public:
     bool has_non_empty_counters_set() const { return m_counters_set; }
     Optional<CSS::CountersSet const&> counters_set();
     CSS::CountersSet& ensure_counters_set();
-    void resolve_counters(CSS::StyleProperties&);
+    void resolve_counters(CSS::ComputedProperties&);
     void inherit_counters();
 
 protected:
@@ -429,7 +386,7 @@ protected:
     // https://dom.spec.whatwg.org/#concept-element-attributes-change-ext
     virtual void attribute_changed(FlyString const& local_name, Optional<String> const& old_value, Optional<String> const& value, Optional<FlyString> const& namespace_);
 
-    virtual void computed_css_values_changed() { }
+    virtual void computed_properties_changed() { }
 
     virtual void visit_edges(Cell::Visitor&) override;
 
@@ -459,12 +416,14 @@ private:
     GC::Ptr<DOMTokenList> m_class_list;
     GC::Ptr<ShadowRoot> m_shadow_root;
 
-    Optional<CSS::StyleProperties> m_computed_css_values;
+    GC::Ptr<CSS::CascadedProperties> m_cascaded_properties;
+    GC::Ptr<CSS::ComputedProperties> m_computed_properties;
     HashMap<FlyString, CSS::StyleProperty> m_custom_properties;
 
     struct PseudoElement {
         GC::Ptr<Layout::NodeWithStyle> layout_node;
-        Optional<CSS::StyleProperties> computed_css_values;
+        GC::Ptr<CSS::CascadedProperties> cascaded_properties;
+        GC::Ptr<CSS::ComputedProperties> computed_properties;
         HashMap<FlyString, CSS::StyleProperty> custom_properties;
     };
     // TODO: CSS::Selector::PseudoElement::Type includes a lot of pseudo-elements that exist in shadow trees,

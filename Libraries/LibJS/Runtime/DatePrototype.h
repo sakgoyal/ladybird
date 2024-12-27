@@ -62,9 +62,10 @@ private:
     JS_DECLARE_NATIVE_FUNCTION(to_locale_string);
     JS_DECLARE_NATIVE_FUNCTION(to_locale_time_string);
     JS_DECLARE_NATIVE_FUNCTION(to_string);
-    JS_DECLARE_NATIVE_FUNCTION(to_temporal_instant);
     JS_DECLARE_NATIVE_FUNCTION(to_time_string);
     JS_DECLARE_NATIVE_FUNCTION(to_utc_string);
+
+    JS_DECLARE_NATIVE_FUNCTION(to_temporal_instant);
 
     JS_DECLARE_NATIVE_FUNCTION(get_year);
     JS_DECLARE_NATIVE_FUNCTION(set_year);

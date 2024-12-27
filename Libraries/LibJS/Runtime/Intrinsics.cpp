@@ -99,8 +99,6 @@
 #include <LibJS/Runtime/SuppressedErrorPrototype.h>
 #include <LibJS/Runtime/SymbolConstructor.h>
 #include <LibJS/Runtime/SymbolPrototype.h>
-#include <LibJS/Runtime/Temporal/CalendarConstructor.h>
-#include <LibJS/Runtime/Temporal/CalendarPrototype.h>
 #include <LibJS/Runtime/Temporal/DurationConstructor.h>
 #include <LibJS/Runtime/Temporal/DurationPrototype.h>
 #include <LibJS/Runtime/Temporal/InstantConstructor.h>
@@ -116,8 +114,6 @@
 #include <LibJS/Runtime/Temporal/PlainYearMonthConstructor.h>
 #include <LibJS/Runtime/Temporal/PlainYearMonthPrototype.h>
 #include <LibJS/Runtime/Temporal/Temporal.h>
-#include <LibJS/Runtime/Temporal/TimeZoneConstructor.h>
-#include <LibJS/Runtime/Temporal/TimeZonePrototype.h>
 #include <LibJS/Runtime/Temporal/ZonedDateTimeConstructor.h>
 #include <LibJS/Runtime/Temporal/ZonedDateTimePrototype.h>
 #include <LibJS/Runtime/TypedArray.h>

@@ -23,6 +23,7 @@
 #include <LibWeb/HTML/HTMLLIElement.h>
 #include <LibWeb/HTML/HTMLOListElement.h>
 #include <LibWeb/HTML/HTMLSlotElement.h>
+#include <LibWeb/Layout/FieldSetBox.h>
 #include <LibWeb/Layout/ListItemBox.h>
 #include <LibWeb/Layout/ListItemMarkerBox.h>
 #include <LibWeb/Layout/Node.h>
@@ -75,6 +76,9 @@ static Layout::Node& insertion_parent_for_inline_node(Layout::NodeWithStyle& lay
         }
         return *layout_parent.last_child();
     };
+
+    if (is<FieldSetBox>(layout_parent))
+        return last_child_creating_anonymous_wrapper_if_needed(layout_parent);
 
     if (layout_parent.display().is_inline_outside() && layout_parent.display().is_flow_inside())
         return layout_parent;
@@ -192,8 +196,8 @@ void TreeBuilder::create_pseudo_element_if_needed(DOM::Element& element, CSS::Se
 {
     auto& document = element.document();
 
-    auto pseudo_element_style = element.pseudo_element_computed_css_values(pseudo_element);
-    if (!pseudo_element_style.has_value())
+    auto pseudo_element_style = element.pseudo_element_computed_properties(pseudo_element);
+    if (!pseudo_element_style)
         return;
 
     auto initial_quote_nesting_level = m_quote_nesting_level;
@@ -342,14 +346,14 @@ void TreeBuilder::create_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
 
     auto& document = dom_node.document();
     auto& style_computer = document.style_computer();
-    Optional<CSS::StyleProperties> style;
+    GC::Ptr<CSS::ComputedProperties> style;
     CSS::Display display;
 
     if (is<DOM::Element>(dom_node)) {
         auto& element = static_cast<DOM::Element&>(dom_node);
         element.clear_pseudo_element_nodes({});
         VERIFY(!element.needs_style_update());
-        style = element.computed_css_values();
+        style = element.computed_properties();
         element.resolve_counters(*style);
         display = style->display();
         if (display.is_none())
@@ -392,7 +396,7 @@ void TreeBuilder::create_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
     auto element_has_content_visibility_hidden = [&dom_node]() {
         if (is<DOM::Element>(dom_node)) {
             auto& element = static_cast<DOM::Element&>(dom_node);
-            return element.computed_css_values()->content_visibility() == CSS::ContentVisibility::Hidden;
+            return element.computed_properties()->content_visibility() == CSS::ContentVisibility::Hidden;
         }
         return false;
     }();
@@ -439,7 +443,7 @@ void TreeBuilder::create_layout_tree(DOM::Node& dom_node, TreeBuilder::Context& 
     if (is<HTML::HTMLSlotElement>(dom_node)) {
         auto& slot_element = static_cast<HTML::HTMLSlotElement&>(dom_node);
 
-        if (slot_element.computed_css_values()->content_visibility() == CSS::ContentVisibility::Hidden)
+        if (slot_element.computed_properties()->content_visibility() == CSS::ContentVisibility::Hidden)
             return;
 
         auto slottables = slot_element.assigned_nodes_internal();

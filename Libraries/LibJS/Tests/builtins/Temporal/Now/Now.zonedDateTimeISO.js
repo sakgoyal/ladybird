@@ -6,14 +6,14 @@ describe("correct behavior", () => {
     test("basic functionality", () => {
         const zonedDateTime = Temporal.Now.zonedDateTimeISO();
         expect(zonedDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(zonedDateTime.calendar.id).toBe("iso8601");
+        expect(zonedDateTime.calendarId).toBe("iso8601");
     });
 
     test("with time zone", () => {
-        const timeZone = new Temporal.TimeZone("UTC");
+        const timeZone = "UTC";
         const zonedDateTime = Temporal.Now.zonedDateTimeISO(timeZone);
         expect(zonedDateTime).toBeInstanceOf(Temporal.ZonedDateTime);
-        expect(zonedDateTime.calendar.id).toBe("iso8601");
-        expect(zonedDateTime.timeZone).toBe(timeZone);
+        expect(zonedDateTime.calendarId).toBe("iso8601");
+        expect(zonedDateTime.timeZoneId).toBe(timeZone);
     });
 });

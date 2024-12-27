@@ -122,20 +122,8 @@ describe("errors", () => {
     });
 
     test("cannot compare dates from different calendars", () => {
-        const calendarOne = {
-            toString() {
-                return "calendarOne";
-            },
-        };
-
-        const calendarTwo = {
-            toString() {
-                return "calendarTwo";
-            },
-        };
-
-        const dateOneWithCalendar = new Temporal.PlainDate(2021, 11, 14, calendarOne);
-        const dateTwoWithCalendar = new Temporal.PlainDate(2022, 12, 25, calendarTwo);
+        const dateOneWithCalendar = new Temporal.PlainDate(2021, 11, 14, "iso8601");
+        const dateTwoWithCalendar = new Temporal.PlainDate(2022, 12, 25, "gregory");
 
         expect(() => {
             dateOneWithCalendar.since(dateTwoWithCalendar);
@@ -257,30 +245,5 @@ describe("errors", () => {
                 );
             }
         }
-    });
-
-    test("dateUntil only called once with rounding mode of days and small enough granularity", () => {
-        const actual = [];
-
-        class DateUntilOptionsCalendar extends Temporal.Calendar {
-            constructor() {
-                super("iso8601");
-            }
-
-            dateUntil(earlier, later, options) {
-                actual.push(options.largestUnit);
-                return super.dateUntil(earlier, later, options);
-            }
-        }
-
-        const calendar = new DateUntilOptionsCalendar();
-
-        largestUnit = "days";
-        expected = [];
-
-        const earlier = new Temporal.PlainDate(2000, 5, 2, calendar);
-        const later = new Temporal.PlainDate(2001, 6, 3, calendar);
-        later.since(earlier, { largestUnit });
-        expect(actual).toEqual([]);
     });
 });

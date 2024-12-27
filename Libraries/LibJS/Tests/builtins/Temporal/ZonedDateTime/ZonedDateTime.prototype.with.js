@@ -4,8 +4,7 @@ describe("correct behavior", () => {
     });
 
     test("basic functionality", () => {
-        const utc = new Temporal.TimeZone("UTC");
-        const zonedDateTime = new Temporal.ZonedDateTime(0n, utc);
+        const zonedDateTime = new Temporal.ZonedDateTime(0n, "UTC");
         const values = [
             [{ year: 2021 }, 1609459200000000000n],
             [{ year: 2021, month: 7 }, 1625097600000000000n],
@@ -28,7 +27,7 @@ describe("correct behavior", () => {
             ],
         ];
         for (const [arg, epochNanoseconds] of values) {
-            const expected = new Temporal.ZonedDateTime(epochNanoseconds, utc);
+            const expected = new Temporal.ZonedDateTime(epochNanoseconds, "UTC");
             expect(zonedDateTime.with(arg).equals(expected)).toBeTrue();
         }
 
@@ -58,28 +57,25 @@ describe("errors", () => {
 
     test("argument must be an object", () => {
         expect(() => {
-            new Temporal.ZonedDateTime(0n, {}).with("foo");
-        }).toThrowWithMessage(TypeError, "foo is not an object");
+            new Temporal.ZonedDateTime(0n, "UTC").with("foo");
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
-            new Temporal.ZonedDateTime(0n, {}).with(42);
-        }).toThrowWithMessage(TypeError, "42 is not an object");
+            new Temporal.ZonedDateTime(0n, "UTC").with(42);
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument must have one of 'day', 'hour', 'microsecond', 'millisecond', 'minute', 'month', 'monthCode', 'nanosecond', 'second', 'year'", () => {
         expect(() => {
-            new Temporal.ZonedDateTime(0n, {}).with({});
-        }).toThrowWithMessage(
-            TypeError,
-            "Object must have at least one of the following properties: day, hour, microsecond, millisecond, minute, month, monthCode, nanosecond, second, year"
-        );
+            new Temporal.ZonedDateTime(0n, "UTC").with({});
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 
     test("argument must not have 'calendar' or 'timeZone'", () => {
         expect(() => {
-            new Temporal.ZonedDateTime(0n, {}).with({ calendar: {} });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined calendar property");
+            new Temporal.ZonedDateTime(0n, "UTC").with({ calendar: {} });
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
         expect(() => {
-            new Temporal.ZonedDateTime(0n, {}).with({ timeZone: {} });
-        }).toThrowWithMessage(TypeError, "Object must not have a defined timeZone property");
+            new Temporal.ZonedDateTime(0n, "UTC").with({ timeZone: {} });
+        }).toThrowWithMessage(TypeError, "Object must be a partial Temporal object");
     });
 });

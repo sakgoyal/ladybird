@@ -429,7 +429,7 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
     bool check_for_cancelation,
     IGNORE_USE_IN_ESCAPING_LAMBDA Optional<SourceSnapshotParams> source_snapshot_params,
     GC::Ptr<Navigable> initiator_to_check,
-    Optional<UserNavigationInvolvement> user_involvement_for_navigate_events,
+    IGNORE_USE_IN_ESCAPING_LAMBDA Optional<UserNavigationInvolvement> user_involvement_for_navigate_events,
     IGNORE_USE_IN_ESCAPING_LAMBDA Optional<Bindings::NavigationType> navigation_type,
     IGNORE_USE_IN_ESCAPING_LAMBDA SynchronousNavigation synchronous_navigation)
 {
@@ -487,7 +487,7 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
     }
 
     // 9. Let totalChangeJobs be the size of changingNavigables.
-    auto total_change_jobs = changing_navigables.size();
+    IGNORE_USE_IN_ESCAPING_LAMBDA auto total_change_jobs = changing_navigables.size();
 
     // 10. Let completedChangeJobs be 0.
     IGNORE_USE_IN_ESCAPING_LAMBDA size_t completed_change_jobs = 0;
@@ -644,7 +644,7 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
                 //    targetSnapshotParams, with allowPOST set to allowPOST and completionSteps set to queue a global task on the navigation and traversal task source given
                 //    navigable's active window to run afterDocumentPopulated.
                 Platform::EventLoopPlugin::the().deferred_invoke(GC::create_function(this->heap(), [populated_target_entry, potentially_target_specific_source_snapshot_params, target_snapshot_params, this, allow_POST, navigable, after_document_populated = GC::create_function(this->heap(), move(after_document_populated))] {
-                    navigable->populate_session_history_entry_document(populated_target_entry, *potentially_target_specific_source_snapshot_params, target_snapshot_params, {}, Empty {}, CSPNavigationType::Other, allow_POST, GC::create_function(this->heap(), [this, after_document_populated, populated_target_entry]() mutable {
+                    navigable->populate_session_history_entry_document(populated_target_entry, *potentially_target_specific_source_snapshot_params, target_snapshot_params, {}, Navigable::NullOrError {}, CSPNavigationType::Other, allow_POST, GC::create_function(this->heap(), [this, after_document_populated, populated_target_entry]() mutable {
                                  VERIFY(active_window());
                                  queue_global_task(Task::Source::NavigationAndTraversal, *active_window(), GC::create_function(this->heap(), [after_document_populated, populated_target_entry]() mutable {
                                      after_document_populated->function()(true, populated_target_entry);
@@ -799,7 +799,7 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
     }));
 
     // 15. Let totalNonchangingJobs be the size of nonchangingNavigablesThatStillNeedUpdates.
-    auto total_non_changing_jobs = non_changing_navigables_that_still_need_updates.size();
+    IGNORE_USE_IN_ESCAPING_LAMBDA auto total_non_changing_jobs = non_changing_navigables_that_still_need_updates.size();
 
     // 16. Let completedNonchangingJobs be 0.
     IGNORE_USE_IN_ESCAPING_LAMBDA auto completed_non_changing_jobs = 0u;
@@ -815,15 +815,17 @@ TraversableNavigable::HistoryStepResult TraversableNavigable::apply_the_history_
 
     // 18. For each navigable of nonchangingNavigablesThatStillNeedUpdates, queue a global task on the navigation and traversal task source given navigable's active window to run the steps:
     for (auto& navigable : non_changing_navigables_that_still_need_updates) {
-        if (navigable->has_been_destroyed()) {
+        // AD-HOC: This check is not in the spec but we should not continue navigation if navigable has been destroyed,
+        //         or if there's no active window.
+        if (navigable->has_been_destroyed() || !navigable->active_window()) {
             ++completed_non_changing_jobs;
             continue;
         }
 
-        VERIFY(navigable->active_window());
         queue_global_task(Task::Source::NavigationAndTraversal, *navigable->active_window(), GC::create_function(heap(), [&] {
-            // NOTE: This check is not in the spec but we should not continue navigation if navigable has been destroyed.
-            if (navigable->has_been_destroyed()) {
+            // AD-HOC: This check is not in the spec but we should not continue navigation if navigable has been destroyed,
+            //         or if there's no active window.
+            if (navigable->has_been_destroyed() || !navigable->active_window()) {
                 ++completed_non_changing_jobs;
                 return;
             }
@@ -878,10 +880,10 @@ TraversableNavigable::CheckIfUnloadingIsCanceledResult TraversableNavigable::che
         documents_to_fire_beforeunload.append(navigable->active_document());
 
     // 2. Let unloadPromptShown be false.
-    auto unload_prompt_shown = false;
+    IGNORE_USE_IN_ESCAPING_LAMBDA auto unload_prompt_shown = false;
 
     // 3. Let finalStatus be "continue".
-    auto final_status = CheckIfUnloadingIsCanceledResult::Continue;
+    IGNORE_USE_IN_ESCAPING_LAMBDA auto final_status = CheckIfUnloadingIsCanceledResult::Continue;
 
     // 4. If traversable was given, then:
     if (traversable) {
@@ -898,7 +900,7 @@ TraversableNavigable::CheckIfUnloadingIsCanceledResult TraversableNavigable::che
             VERIFY(user_involvement_for_navigate_events.has_value());
 
             // 2. Let eventsFired be false.
-            auto events_fired = false;
+            IGNORE_USE_IN_ESCAPING_LAMBDA auto events_fired = false;
 
             // 3. Let needsBeforeunload be true if navigablesThatNeedBeforeUnload contains traversable; otherwise false.
             auto it = navigables_that_need_before_unload.find_if([&traversable](GC::Root<Navigable> navigable) {
@@ -915,7 +917,7 @@ TraversableNavigable::CheckIfUnloadingIsCanceledResult TraversableNavigable::che
 
             // 5. Queue a global task on the navigation and traversal task source given traversable's active window to perform the following steps:
             VERIFY(traversable->active_window());
-            queue_global_task(Task::Source::NavigationAndTraversal, *traversable->active_window(), GC::create_function(heap(), [&] {
+            queue_global_task(Task::Source::NavigationAndTraversal, *traversable->active_window(), GC::create_function(heap(), [needs_beforeunload, user_involvement_for_navigate_events, traversable, target_entry, &final_status, &unload_prompt_shown, &events_fired] {
                 // 1. if needsBeforeunload is true, then:
                 if (needs_beforeunload) {
                     // 1. Let (unloadPromptShownForThisDocument, unloadPromptCanceledByThisDocument) be the result of running the steps to fire beforeunload given traversable's active document and false.
@@ -962,14 +964,14 @@ TraversableNavigable::CheckIfUnloadingIsCanceledResult TraversableNavigable::che
     }
 
     // 5. Let totalTasks be the size of documentsThatNeedBeforeunload.
-    auto total_tasks = documents_to_fire_beforeunload.size();
+    IGNORE_USE_IN_ESCAPING_LAMBDA auto total_tasks = documents_to_fire_beforeunload.size();
 
     // 6. Let completedTasks be 0.
-    size_t completed_tasks = 0;
+    IGNORE_USE_IN_ESCAPING_LAMBDA size_t completed_tasks = 0;
 
     // 7. For each document of documents, queue a global task on the navigation and traversal task source given document's relevant global object to run the steps:
     for (auto& document : documents_to_fire_beforeunload) {
-        queue_global_task(Task::Source::NavigationAndTraversal, relevant_global_object(*document), GC::create_function(heap(), [&] {
+        queue_global_task(Task::Source::NavigationAndTraversal, relevant_global_object(*document), GC::create_function(heap(), [document, &final_status, &completed_tasks, &unload_prompt_shown] {
             // 1. Let (unloadPromptShownForThisDocument, unloadPromptCanceledByThisDocument) be the result of running the steps to fire beforeunload given document and unloadPromptShown.
             auto [unload_prompt_shown_for_this_document, unload_prompt_canceled_by_this_document] = document->steps_to_fire_beforeunload(unload_prompt_shown);
 
@@ -1406,8 +1408,7 @@ void TraversableNavigable::paint(DevicePixelRect const& content_rect, Painting::
 #ifdef AK_OS_MACOS
         if (m_metal_context && m_skia_backend_context && is<Painting::IOSurfaceBackingStore>(target)) {
             auto& iosurface_backing_store = static_cast<Painting::IOSurfaceBackingStore&>(target);
-            auto texture = m_metal_context->create_texture_from_iosurface(iosurface_backing_store.iosurface_handle());
-            auto painting_surface = Gfx::PaintingSurface::wrap_metal_surface(*texture, m_skia_backend_context);
+            auto painting_surface = Gfx::PaintingSurface::wrap_iosurface(iosurface_backing_store.iosurface_handle(), *m_skia_backend_context);
             Painting::DisplayListPlayerSkia player(*m_skia_backend_context, painting_surface);
             player.execute(*display_list);
             return;

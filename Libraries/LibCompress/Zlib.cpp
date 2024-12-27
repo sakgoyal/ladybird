@@ -17,31 +17,35 @@ namespace Compress {
 
 ErrorOr<NonnullOwnPtr<ZlibDecompressor>> ZlibDecompressor::create(MaybeOwned<Stream> stream)
 {
-    auto header = TRY(stream->read_value<ZlibHeader>());
-
-    if (header.compression_method != ZlibCompressionMethod::Deflate || header.compression_info > 7)
-        return Error::from_string_literal("Non-DEFLATE compression inside Zlib is not supported");
-
-    if (header.present_dictionary)
-        return Error::from_string_literal("Zlib compression with a pre-defined dictionary is currently not supported");
-
-    if (header.as_u16 % 31 != 0)
-        return Error::from_string_literal("Zlib error correction code does not match");
-
-    auto bit_stream = make<LittleEndianInputBitStream>(move(stream));
-    auto deflate_stream = TRY(Compress::DeflateDecompressor::construct(move(bit_stream)));
-
-    return adopt_nonnull_own_or_enomem(new (nothrow) ZlibDecompressor(header, move(deflate_stream)));
+    return adopt_nonnull_own_or_enomem(new (nothrow) ZlibDecompressor(move(stream)));
 }
 
-ZlibDecompressor::ZlibDecompressor(ZlibHeader header, NonnullOwnPtr<Stream> stream)
-    : m_header(header)
+ZlibDecompressor::ZlibDecompressor(MaybeOwned<Stream> stream)
+    : m_has_seen_header(false)
     , m_stream(move(stream))
 {
 }
 
 ErrorOr<Bytes> ZlibDecompressor::read_some(Bytes bytes)
 {
+    if (!m_has_seen_header) {
+        auto header = TRY(m_stream->read_value<ZlibHeader>());
+
+        if (header.compression_method != ZlibCompressionMethod::Deflate || header.compression_info > 7)
+            return Error::from_string_literal("Non-DEFLATE compression inside Zlib is not supported");
+
+        if (header.present_dictionary)
+            return Error::from_string_literal("Zlib compression with a pre-defined dictionary is currently not supported");
+
+        if (header.as_u16 % 31 != 0)
+            return Error::from_string_literal("Zlib error correction code does not match");
+
+        auto bit_stream = make<LittleEndianInputBitStream>(move(m_stream));
+        auto deflate_stream = TRY(Compress::DeflateDecompressor::construct(move(bit_stream)));
+
+        m_stream = move(deflate_stream);
+        m_has_seen_header = true;
+    }
     return m_stream->read_some(bytes);
 }
 
@@ -84,10 +88,7 @@ ZlibCompressor::ZlibCompressor(MaybeOwned<Stream> stream, NonnullOwnPtr<Stream> 
 {
 }
 
-ZlibCompressor::~ZlibCompressor()
-{
-    VERIFY(m_finished);
-}
+ZlibCompressor::~ZlibCompressor() = default;
 
 ErrorOr<void> ZlibCompressor::write_header(ZlibCompressionMethod compression_method, ZlibCompressionLevel compression_level)
 {

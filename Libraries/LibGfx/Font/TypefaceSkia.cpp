@@ -6,12 +6,10 @@
 
 #include <AK/LsanSuppressions.h>
 #include <LibGfx/Font/FontDatabase.h>
-#include <LibGfx/Font/Typeface.h>
 #include <LibGfx/Font/TypefaceSkia.h>
 
 #include <core/SkData.h>
 #include <core/SkFontMgr.h>
-#include <core/SkRefCnt.h>
 #include <core/SkTypeface.h>
 #ifndef AK_OS_ANDROID
 #    include <ports/SkFontMgr_fontconfig.h>
@@ -114,7 +112,7 @@ void TypefaceSkia::populate_glyph_page(GlyphPage& glyph_page, size_t page_index)
     }
 }
 
-FlyString TypefaceSkia::family() const
+FlyString const& TypefaceSkia::family() const
 {
     if (!m_family.has_value()) {
         SkString family_name;

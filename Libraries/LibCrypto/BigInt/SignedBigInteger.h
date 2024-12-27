@@ -9,7 +9,6 @@
 
 #include <AK/Concepts.h>
 #include <AK/Span.h>
-#include <AK/String.h>
 #include <LibCrypto/BigInt/UnsignedBigInteger.h>
 
 namespace Crypto {
@@ -22,7 +21,7 @@ public:
     requires(sizeof(T) <= sizeof(i32))
     SignedBigInteger(T value)
         : m_sign(value < 0)
-        , m_unsigned_data(abs(static_cast<i32>(value)))
+        , m_unsigned_data(static_cast<u32>(abs(static_cast<i64>(value))))
     {
     }
 

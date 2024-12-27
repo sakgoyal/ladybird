@@ -6,14 +6,10 @@
 
 #include <AK/MemoryStream.h>
 #include <LibGfx/Bitmap.h>
-#include <LibGfx/ICC/BinaryWriter.h>
-#include <LibGfx/ICC/Profile.h>
-#include <LibGfx/ICC/WellKnownProfiles.h>
 #include <LibGfx/ImageFormats/AnimationWriter.h>
 #include <LibGfx/ImageFormats/BMPLoader.h>
 #include <LibGfx/ImageFormats/BMPWriter.h>
 #include <LibGfx/ImageFormats/GIFLoader.h>
-#include <LibGfx/ImageFormats/GIFWriter.h>
 #include <LibGfx/ImageFormats/JPEGLoader.h>
 #include <LibGfx/ImageFormats/JPEGWriter.h>
 #include <LibGfx/ImageFormats/PNGLoader.h>
@@ -108,58 +104,6 @@ TEST_CASE(test_bmp)
     TRY_OR_FAIL((test_roundtrip<Gfx::BMPWriter, Gfx::BMPImageDecoderPlugin>(TRY_OR_FAIL(create_test_rgba_bitmap()))));
 }
 
-TEST_CASE(test_gif)
-{
-    // Let's limit the size of the image so every color can fit in a color table of 256 elements.
-    auto bitmap = TRY_OR_FAIL(TRY_OR_FAIL(create_test_rgb_bitmap())->cropped({ 0, 0, 16, 16 }));
-
-    auto encoded_bitmap = TRY_OR_FAIL((encode_bitmap<Gfx::GIFWriter>(bitmap)));
-    auto decoder = TRY_OR_FAIL(Gfx::GIFImageDecoderPlugin::create(encoded_bitmap));
-
-    EXPECT_EQ(decoder->size(), bitmap->size());
-    EXPECT_EQ(decoder->frame_count(), 1u);
-    EXPECT(!decoder->is_animated());
-
-    expect_bitmaps_equal(*TRY_OR_FAIL(decoder->frame(0)).image, bitmap);
-}
-
-TEST_CASE(test_gif_animated)
-{
-    auto bitmap_1 = TRY_OR_FAIL(TRY_OR_FAIL(create_test_rgb_bitmap())->cropped({ 0, 0, 16, 16 }));
-    auto bitmap_2 = TRY_OR_FAIL(TRY_OR_FAIL(create_test_rgb_bitmap())->cropped({ 16, 16, 16, 16 }));
-    auto bitmap_3 = TRY_OR_FAIL(bitmap_2->clone());
-
-    bitmap_3->scanline(3)[3] = Color(Color::NamedColor::Red).value();
-
-    auto stream_buffer = TRY_OR_FAIL(ByteBuffer::create_uninitialized(3072));
-    FixedMemoryStream stream { Bytes { stream_buffer } };
-    auto animation_writer = TRY_OR_FAIL(Gfx::GIFWriter::start_encoding_animation(stream, bitmap_1->size(), 0));
-    TRY_OR_FAIL(animation_writer->add_frame(*bitmap_1, 100));
-    TRY_OR_FAIL(animation_writer->add_frame(*bitmap_2, 200));
-    TRY_OR_FAIL(animation_writer->add_frame_relative_to_last_frame(*bitmap_3, 200, *bitmap_2));
-
-    auto encoded_animation = ReadonlyBytes { stream_buffer.data(), stream.offset() };
-
-    auto decoder = TRY_OR_FAIL(Gfx::GIFImageDecoderPlugin::create(encoded_animation));
-
-    EXPECT_EQ(decoder->size(), bitmap_1->size());
-    EXPECT_EQ(decoder->frame_count(), 3u);
-    EXPECT_EQ(decoder->loop_count(), 0u);
-    EXPECT(decoder->is_animated());
-
-    auto const frame_1 = TRY_OR_FAIL(decoder->frame(0));
-    EXPECT_EQ(frame_1.duration, 100);
-    expect_bitmaps_equal(*frame_1.image, bitmap_1);
-
-    auto const frame_2 = TRY_OR_FAIL(decoder->frame(1));
-    EXPECT_EQ(frame_2.duration, 200);
-    expect_bitmaps_equal(*frame_2.image, bitmap_2);
-
-    auto const frame_3 = TRY_OR_FAIL(decoder->frame(2));
-    EXPECT_EQ(frame_3.duration, 200);
-    expect_bitmaps_equal(*frame_3.image, bitmap_3);
-}
-
 TEST_CASE(test_jpeg)
 {
     // JPEG is lossy, so the roundtripped bitmap won't match the original bitmap. But it should still have the same size.
@@ -239,23 +183,6 @@ TEST_CASE(test_webp_color_indexing_transform_single_channel)
         auto decoded_bitmap_without_color_indexing = TRY_OR_FAIL(expect_single_frame_of_size(*TRY_OR_FAIL(Gfx::WebPImageDecoderPlugin::create(encoded_data)), bitmap->size()));
         expect_bitmaps_equal(*decoded_bitmap_without_color_indexing, *decoded_bitmap);
     }
-}
-
-TEST_CASE(test_webp_icc)
-{
-    auto sRGB_icc_profile = MUST(Gfx::ICC::sRGB());
-    auto sRGB_icc_data = MUST(Gfx::ICC::encode(sRGB_icc_profile));
-
-    auto rgba_bitmap = TRY_OR_FAIL(create_test_rgba_bitmap());
-    Gfx::WebPEncoderOptions options;
-    options.icc_data = sRGB_icc_data;
-    auto encoded_rgba_bitmap = TRY_OR_FAIL((encode_bitmap<Gfx::WebPWriter>(rgba_bitmap, options)));
-
-    auto decoded_rgba_plugin = TRY_OR_FAIL(Gfx::WebPImageDecoderPlugin::create(encoded_rgba_bitmap));
-    expect_bitmaps_equal(*TRY_OR_FAIL(expect_single_frame_of_size(*decoded_rgba_plugin, rgba_bitmap->size())), rgba_bitmap);
-    auto decoded_rgba_profile = TRY_OR_FAIL(Gfx::ICC::Profile::try_load_from_externally_owned_memory(TRY_OR_FAIL(decoded_rgba_plugin->icc_data()).value()));
-    auto reencoded_icc_data = TRY_OR_FAIL(Gfx::ICC::encode(decoded_rgba_profile));
-    EXPECT_EQ(sRGB_icc_data, reencoded_icc_data);
 }
 
 TEST_CASE(test_webp_animation)
