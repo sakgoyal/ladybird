@@ -48,6 +48,8 @@ static bool is_platform_object(Type const& type)
         "ClipboardItem"sv,
         "CloseWatcher"sv,
         "CryptoKey"sv,
+        "Credential"sv,
+        "CredentialsContainer"sv,
         "DataTransfer"sv,
         "Document"sv,
         "DocumentType"sv,
@@ -55,6 +57,7 @@ static bool is_platform_object(Type const& type)
         "DynamicsCompressorNode"sv,
         "ElementInternals"sv,
         "EventTarget"sv,
+        "FederatedCredential"sv,
         "File"sv,
         "FileList"sv,
         "FontFace"sv,
@@ -79,6 +82,7 @@ static bool is_platform_object(Type const& type)
         "NavigationDestination"sv,
         "NavigationHistoryEntry"sv,
         "Node"sv,
+        "PasswordCredential"sv,
         "Path2D"sv,
         "PerformanceEntry"sv,
         "PerformanceMark"sv,
@@ -3807,7 +3811,7 @@ JS_DEFINE_NATIVE_FUNCTION(@class_name@::@attribute.getter_callback@)
             else if (attribute.type->is_nullable() && attribute.type->name() == "Element") {
                 // The getter steps are to return the result of running this's get the attr-associated element.
                 attribute_generator.append(R"~~~(
-    auto retval = GC::Ptr<Element> {};                
+    auto retval = GC::Ptr<Element> {};
 )~~~");
 
                 // 1. Let element be the result of running reflectedTarget's get the element.
@@ -4406,6 +4410,7 @@ static void generate_using_namespace_definitions(SourceGenerator& generator)
 // FIXME: This is a total hack until we can figure out the namespace for a given type somehow.
 using namespace Web::Animations;
 using namespace Web::Clipboard;
+using namespace Web::CredentialManagement;
 using namespace Web::Crypto;
 using namespace Web::CSS;
 using namespace Web::DOM;

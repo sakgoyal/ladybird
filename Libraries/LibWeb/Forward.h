@@ -99,6 +99,12 @@ struct ParsedCookie;
 enum class Source;
 }
 
+namespace Web::CredentialManagement {
+class Credential;
+class CredentialsContainer;
+class FederatedCredential;
+}
+
 namespace Web::Crypto {
 class Crypto;
 class SubtleCrypto;
